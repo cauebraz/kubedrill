@@ -933,7 +933,7 @@ from an unversioned tree)`) and the Go version.
 | Key | Effect |
 |-----|--------|
 | `c` | Grade now instead of waiting for the interval (`a check is already running` while one runs) |
-| `h` | Next hint, labeled like `kubedrill hint`; the last one waits for `kubedrill diagnose`. A second `h` while the first is on its way only says `a hint is already on its way` |
+| `h` | Next hint, labeled like `kubedrill hint` and rendered the same way (the paragraph reflows to the pane width); the last one waits for `kubedrill diagnose`. A second `h` while the first is on its way only says `a hint is already on its way` |
 | `s` twice | Surrender and print the solution (needs a diagnosis); any other key cancels |
 | `x` twice | Start the same scenario again with a new seed, in place; any other key cancels. While a hint is on its way it only says `a hint is on its way; press x again once it shows`. The start's progress lines (`creating namespace <ns>...`) replace the status line instead of printing over the screen. Refused during an exam with the `reset` message |
 | `n` | After a solve only; see below. Before a solve it only explains itself |

@@ -116,6 +116,7 @@ func (a *app) watchOptions(interval time.Duration) watch.Options {
 		ExamActive:      a.examActive,
 		Revealed:        a.spoilersRevealed,
 		HintLabel:       hintLabel,
+		Markdown:        func(md string, width int) string { return a.term.PrinterAt(width).Markdown(md) },
 		DiagnosisNeeded: func(what string) string { return diagnosisNeeded(what).Error() },
 		ResetInExam:     errResetInExam.Error(),
 	}

@@ -55,7 +55,9 @@ type Pick struct {
 // scenario after a solve, ExamActive reports an exam before its deadline
 // (which refuses x) and Revealed whether the episode has a hint or a
 // diagnosis (which shows spoiler values); each defaults to none. HintLabel
-// names a hint by its rung, DiagnosisNeeded is the refusal when what (the
+// names a hint by its rung, Markdown renders the hint text at a width (the
+// same rendering kubedrill hint prints; default: the source wrapped as
+// markdown without color), DiagnosisNeeded is the refusal when what (the
 // last hint, the solution) waits for a diagnosis, and ResetInExam is the
 // refusal of x during an exam.
 type Options struct {
@@ -66,6 +68,7 @@ type Options struct {
 	ExamActive      func() bool
 	Revealed        func() bool
 	HintLabel       func(index, total int) string
+	Markdown        func(md string, width int) string
 	DiagnosisNeeded func(what string) string
 	ResetInExam     string
 }
@@ -110,6 +113,7 @@ type Model struct {
 	examActive      func() bool
 	revealed        func() bool
 	hintLabel       func(index, total int) string
+	markdown        func(md string, width int) string
 	diagnosisNeeded func(what string) string
 	resetInExam     string
 	flight          *inflight
@@ -134,6 +138,7 @@ type Model struct {
 	grade        *grader.Grade
 	pollErr      error
 	hint         string
+	hintText     string
 	notice       string
 	confirm      bool
 	confirmReset bool
@@ -208,6 +213,7 @@ func New(ctx context.Context, s Session, ep *journal.Episode, title string, tota
 		examActive:      o.ExamActive,
 		revealed:        o.Revealed,
 		hintLabel:       o.HintLabel,
+		markdown:        o.Markdown,
 		diagnosisNeeded: o.DiagnosisNeeded,
 		resetInExam:     o.ResetInExam,
 		flight:          newInflight(),
@@ -238,6 +244,11 @@ func New(ctx context.Context, s Session, ep *journal.Episode, title string, tota
 	}
 	if m.hintLabel == nil {
 		m.hintLabel = func(index, total int) string { return fmt.Sprintf("hint %d of %d", index, total) }
+	}
+	if m.markdown == nil {
+		m.markdown = func(md string, width int) string {
+			return render.Printer{IsTerminal: true, Width: width}.Markdown(md)
+		}
 	}
 	if m.diagnosisNeeded == nil {
 		m.diagnosisNeeded = func(what string) string { return what + " needs your diagnosis first" }

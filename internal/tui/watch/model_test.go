@@ -209,7 +209,7 @@ func TestWatchHintKeys(t *testing.T) {
 	msg := runCmd(t, cmd)
 	next, _ := m.Update(msg)
 	m = next.(Model)
-	if !strings.Contains(m.View().Content, "hint 1 of 1 (where to look): Look at events.") || m.hints != 1 {
+	if !strings.Contains(m.View().Content, "hint 1 of 1 (where to look):\nLook at events.") || m.hints != 1 {
 		t.Errorf("hint view:\n%s", m.View().Content)
 	}
 	_, cmd = m.Update(key("h"))
@@ -814,7 +814,7 @@ func TestWatchHintRevealsSpoilers(t *testing.T) {
 		t.Fatalf("hints: got %d, want 1", m.hints)
 	}
 	view := m.View().Content
-	mustContain(t, view, "actual: nginx:1.2x", "hint 1 of 1 (where to look): Look at the image.")
+	mustContain(t, view, "actual: nginx:1.2x", "hint 1 of 1 (where to look):\nLook at the image.")
 	mustNotContain(t, view, render.SpoilerHidden)
 }
 
@@ -980,4 +980,39 @@ type ctxWatcher struct {
 func (w *ctxWatcher) Grade(ctx context.Context) (grader.Grade, *journal.Episode, error) {
 	w.gradeErr = ctx.Err()
 	return w.fakeWatcher.Grade(ctx)
+}
+
+func TestWatchHintReflowsAtPaneWidth(t *testing.T) {
+	hint := "An image reference has three parts: registry host,\nrepository and tag. Compare each part of the reference in the event with what\nthe team runs everywhere else: the `1.27-alpine` tag."
+	for _, color := range []bool{true, false} {
+		w := &fakeWatcher{observe: failGrade(), hints: []string{hint}}
+		m := New(context.Background(), w, &journal.Episode{ScenarioID: "001-x", StartedAt: time.Unix(0, 0)}, "T", 1, 1, Options{
+			Now:      time.Unix(0, 0),
+			Interval: time.Second,
+			Markdown: func(md string, width int) string {
+				return render.Printer{Color: color, IsTerminal: true, Width: width}.Markdown(md)
+			},
+		})
+		m.width = 64
+		_, cmd := m.Update(key("h"))
+		next, _ := m.Update(runCmd(t, cmd))
+		view := render.StripANSI(next.(Model).View().Content)
+		start := strings.Index(view, "hint 1 of 1:")
+		if start < 0 {
+			t.Fatalf("color %v: no hint in view:\n%s", color, view)
+		}
+		section := view[start:]
+		section = section[:strings.Index(section, "\n\n")]
+		for _, l := range strings.Split(section, "\n") {
+			if width := len([]rune(l)); width > 64 {
+				t.Errorf("color %v: hint line of %d columns: %q", color, width, l)
+			}
+		}
+		if color && !strings.Contains(section, "registry host, repository") {
+			t.Errorf("color %v: hint not reflowed across the source line break:\n%s", color, section)
+		}
+		if color && strings.Contains(section, "`") {
+			t.Errorf("color %v: hint shows raw backticks:\n%s", color, section)
+		}
+	}
 }

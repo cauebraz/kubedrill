@@ -133,7 +133,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.hints = msg.index
 		m.totalHints = msg.total
-		m.hint = m.hintLabel(msg.index, msg.total) + ": " + strings.TrimSpace(msg.text)
+		m.hint = m.hintLabel(msg.index, msg.total)
+		m.hintText = strings.TrimSpace(msg.text)
 		m.notice = ""
 		return m, nil
 	case surrenderMsg:
@@ -251,6 +252,7 @@ func (m Model) reload(ep *journal.Episode, rd *scenario.Rendered) (tea.Model, te
 	m.pollErr = nil
 	m.reveal = false
 	m.hint = ""
+	m.hintText = ""
 	m.hinting = false
 	m.solved = false
 	m.solvedEp = nil
@@ -500,7 +502,9 @@ func (m Model) render() string {
 	}
 	b.WriteByte('\n')
 	if m.hint != "" {
-		b.WriteString(render.Wrap(m.hint, m.width))
+		b.WriteString(render.Wrap(m.hint+":", m.width))
+		b.WriteByte('\n')
+		b.WriteString(strings.Trim(m.markdown(m.hintText, m.width), "\n"))
 		b.WriteString("\n\n")
 	}
 	if m.notice != "" {
