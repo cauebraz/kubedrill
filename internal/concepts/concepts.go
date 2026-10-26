@@ -96,6 +96,38 @@ func Load(root string) (*Library, error) {
 	return lib, nil
 }
 
+// fencedLines marks the lines of a fenced code block, fences included: a
+// fence is a line of three or more backticks or tildes indented by at most
+// three spaces, closed by a line of the same character at least as long.
+func fencedLines(lines []string) []bool {
+	marks := make([]bool, len(lines))
+	var fence string
+	for i, l := range lines {
+		t := strings.TrimRight(l, " \t")
+		trimmed := strings.TrimLeft(t, " ")
+		indent := len(t) - len(trimmed)
+		if fence != "" {
+			marks[i] = true
+			if indent <= 3 && strings.HasPrefix(trimmed, fence) && strings.Trim(trimmed, fence[:1]) == "" {
+				fence = ""
+			}
+			continue
+		}
+		if indent > 3 {
+			continue
+		}
+		for _, c := range []string{"`", "~"} {
+			n := len(trimmed) - len(strings.TrimLeft(trimmed, c))
+			if n >= 3 {
+				fence = trimmed[:n]
+				marks[i] = true
+				break
+			}
+		}
+	}
+	return marks
+}
+
 func parse(body string) (Concept, []error) {
 	var errs []error
 	c := Concept{Body: body}
@@ -117,9 +149,10 @@ func parse(body string) (Concept, []error) {
 		c.Title = strings.TrimSpace(lines[first][2:])
 	}
 
+	fenced := fencedLines(lines)
 	h1 := 0
-	for _, l := range lines {
-		if strings.HasPrefix(l, "# ") {
+	for i, l := range lines {
+		if !fenced[i] && strings.HasPrefix(l, "# ") {
 			h1++
 		}
 	}
@@ -145,7 +178,10 @@ func parse(body string) (Concept, []error) {
 	}
 
 	var found []string
-	for _, l := range lines {
+	for i, l := range lines {
+		if fenced[i] {
+			continue
+		}
 		t := strings.TrimRight(l, " \t")
 		for _, want := range requiredSections {
 			if t == want {

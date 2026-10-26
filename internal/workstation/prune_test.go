@@ -93,21 +93,84 @@ func TestEnsureImagePruneKeepsCurrentAndHandMadeTags(t *testing.T) {
 }
 
 func TestEnsureImagePruneKeepsRecentTags(t *testing.T) {
-	listing := imageListing(
-		imageEntry{"aaaaaaaaaaaa", 6 * 24 * time.Hour},
-		imageEntry{"bbbbbbbbbbbb", 7*24*time.Hour + time.Minute},
-		imageEntry{"cccccccccccc", time.Hour},
-	) + "dddddddddddd\n" + "eeeeeeeeeeee\tnot a date\n"
-	m, fr, out := pruneManager(t, listing)
-	if _, err := m.EnsureImage(context.Background()); err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name        string
+		listing     string
+		wantRemoved []string
+		wantMsg     string
+	}{
+		{
+			name: "mixed ages",
+			listing: imageListing(
+				imageEntry{"aaaaaaaaaaaa", 6 * 24 * time.Hour},
+				imageEntry{"bbbbbbbbbbbb", 7*24*time.Hour + time.Minute},
+				imageEntry{"cccccccccccc", time.Hour},
+			) + "dddddddddddd\n" + "eeeeeeeeeeee\tnot a date\n",
+			wantRemoved: []string{imageRepo + ":bbbbbbbbbbbb"},
+			wantMsg:     "(sources changed)...",
+		},
+		{
+			name:    "only a one-day-old tag",
+			listing: imageListing(imageEntry{"aaaaaaaaaaaa", 24 * time.Hour}),
+			wantMsg: "(sources changed)...",
+		},
+		{
+			name:    "only tags within seven days or undated",
+			listing: imageListing(imageEntry{"aaaaaaaaaaaa", 6 * 24 * time.Hour}, imageEntry{"cccccccccccc", time.Hour}) + "eeeeeeeeeeee\tnot a date\n",
+			wantMsg: "(sources changed)...",
+		},
+		{
+			name:    "no other tag with the image tag shape",
+			listing: imageListing(imageEntry{"dev", 24 * time.Hour}),
+			wantMsg: "(first time only, a few minutes)...",
+		},
 	}
-	want := []string{imageRepo + ":bbbbbbbbbbbb"}
-	if got := removedImages(fr); !reflect.DeepEqual(got, want) {
-		t.Errorf("image rm calls: got %v, want %v (tags created within 7 days or without a readable date are kept)", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, fr, out := pruneManager(t, tt.listing)
+			if _, err := m.EnsureImage(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if got := removedImages(fr); !reflect.DeepEqual(got, tt.wantRemoved) {
+				t.Errorf("image rm calls: got %v, want %v (tags created within 7 days or without a readable date are kept)", got, tt.wantRemoved)
+			}
+			if !strings.Contains(out.String(), tt.wantMsg) {
+				t.Errorf("output: got %q, want the line ending %q", out.String(), tt.wantMsg)
+			}
+		})
 	}
-	if !strings.Contains(out.String(), "rebuilding workstation image") {
-		t.Errorf("output: got %q, want the rebuild line (older tags exist)", out.String())
+}
+
+func TestEnsureImageBuildCancelKillsTheProcessGroup(t *testing.T) {
+	fr := &fakeRunner{scripts: map[string]string{
+		"docker image inspect": "false",
+		"docker build":         "sleep 30 & wait",
+	}}
+	m := New(writeRepo(t), t.TempDir(), WithRunner(fr.run), WithOutput(&bytes.Buffer{}))
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := m.EnsureImage(ctx)
+	if err == nil {
+		t.Fatal("EnsureImage with the context over: got nil error, want the build error")
+	}
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Errorf("EnsureImage returned after %s, want the build and its grandchild killed on cancel", elapsed)
+	}
+	for _, c := range fr.calls {
+		if len(c.args) > 0 && c.args[0] == "build" && c.cmd.WaitDelay != waitDelay {
+			t.Errorf("docker build WaitDelay: got %v, want %v", c.cmd.WaitDelay, waitDelay)
+		}
+	}
+}
+
+func TestProbeErrorCarriesStderr(t *testing.T) {
+	msg := "permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock"
+	fr := &fakeRunner{scripts: map[string]string{"docker info": "echo " + shellQuote(msg) + " >&2; exit 1"}}
+	err := New(t.TempDir(), t.TempDir(), WithRunner(fr.run)).DockerAvailable(context.Background())
+	want := "docker is not available (is Docker Desktop or the daemon running?): docker info: " + msg + ": exit status 1"
+	if err == nil || err.Error() != want {
+		t.Errorf("DockerAvailable with a socket permission error: got %v, want %q", err, want)
 	}
 }
 

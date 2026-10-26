@@ -5,17 +5,18 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/cauebraz/kubedrill/internal/env"
 	"github.com/cauebraz/kubedrill/internal/grader"
+	"github.com/cauebraz/kubedrill/internal/render"
 	"github.com/cauebraz/kubedrill/internal/scenario"
 )
 
-func (a *App) smokeCommand() *cobra.Command {
+func (a *app) smokeCommand() *cobra.Command {
 	var force, verbose bool
 	cmd := &cobra.Command{
 		Use:   "smoke [refs...]",
@@ -36,7 +37,7 @@ func (a *App) smokeCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *App) runSmoke(ctx context.Context, refs []string, force, verbose bool) error {
+func (a *app) runSmoke(ctx context.Context, refs []string, force, verbose bool) error {
 	targets, err := a.smokeTargets(refs)
 	if err != nil {
 		return err
@@ -59,7 +60,7 @@ func (a *App) runSmoke(ctx context.Context, refs []string, force, verbose bool) 
 	if err != nil {
 		return fmt.Errorf("smoke: open throwaway journal in %s: %w", dir, err)
 	}
-	s, conn, err := a.getSession(j, nil, false)
+	s, conn, err := a.getSession(ctx, j, nil, false)
 	if err != nil {
 		return err
 	}
@@ -69,14 +70,10 @@ func (a *App) runSmoke(ctx context.Context, refs []string, force, verbose bool) 
 	}
 	fmt.Fprintf(a.stderr, "running scenario scripts from %s\n", root)
 	namespaces := map[string]bool{}
+	defer a.smokeCleanup(ctx, conn, j, namespaces)
 	failures, err := a.smokeRuns(ctx, s, targets, kubeconfig, namespaces, verbose)
 	if err != nil {
 		return err
-	}
-	for _, ns := range sortedKeys(namespaces) {
-		if err := conn.DeleteNamespace(ctx, ns); err != nil {
-			a.printf("warn delete namespace %s: %v\n", ns, err)
-		}
 	}
 	if failures > 0 {
 		return fmt.Errorf("smoke: %d of %d runs failed", failures, countRuns(targets))
@@ -85,9 +82,31 @@ func (a *App) runSmoke(ctx context.Context, refs []string, force, verbose bool) 
 	return nil
 }
 
+// smokeCleanupTimeout bounds the namespace deletion at the end of smoke,
+// which runs even after the command context is cancelled.
+const smokeCleanupTimeout = 30 * time.Second
+
+// smokeCleanup deletes the namespaces smoke recorded, then every other
+// namespace labeled with the throwaway journal's ID: the one a failed
+// Reset created before it could be recorded. It runs detached from ctx's
+// cancellation, under smokeCleanupTimeout.
+func (a *app) smokeCleanup(ctx context.Context, conn *lazyConn, j Journal, namespaces map[string]bool) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), smokeCleanupTimeout)
+	defer cancel()
+	for _, ns := range sortedMapKeys(namespaces) {
+		if err := conn.DeleteNamespace(ctx, ns); err != nil {
+			a.printf("warn delete namespace %s: %v\n", ns, err)
+		}
+	}
+	selector := env.NamespaceSelector(j.JournalID())
+	if _, err := conn.DeleteNamespaces(ctx, selector, ""); err != nil {
+		a.printf("warn delete namespaces %s: %v\n", selector, err)
+	}
+}
+
 // smokeTargets resolves refs to scenarios, or every scenario in id order
 // when there are none.
-func (a *App) smokeTargets(refs []string) ([]*scenario.Scenario, error) {
+func (a *app) smokeTargets(refs []string) ([]*scenario.Scenario, error) {
 	cat, err := a.getCatalog()
 	if err != nil {
 		return nil, err
@@ -113,7 +132,7 @@ func (a *App) smokeTargets(refs []string) ([]*scenario.Scenario, error) {
 // FAIL line per run (with the solve.sh output on a failure, or always
 // when verbose), and returns the failure count; a cancelled context stops
 // it with an error.
-func (a *App) smokeRuns(ctx context.Context, s *env.Session, targets []*scenario.Scenario, kubeconfig string, namespaces map[string]bool, verbose bool) (int, error) {
+func (a *app) smokeRuns(ctx context.Context, s *env.Session, targets []*scenario.Scenario, kubeconfig string, namespaces map[string]bool, verbose bool) (int, error) {
 	failures := 0
 	for _, sc := range targets {
 		for seed := int64(1); seed <= int64(seedCount(sc)); seed++ {
@@ -138,7 +157,7 @@ func (a *App) smokeRuns(ctx context.Context, s *env.Session, targets []*scenario
 
 // smokeGuard refuses to run when the learner's active episode is of one of
 // the targets, naming the namespace that episode runs in.
-func (a *App) smokeGuard(targets []*scenario.Scenario) error {
+func (a *app) smokeGuard(targets []*scenario.Scenario) error {
 	j, err := a.getJournal()
 	if err != nil {
 		return err
@@ -177,15 +196,6 @@ func countRuns(targets []*scenario.Scenario) int {
 	return n
 }
 
-func sortedKeys(set map[string]bool) []string {
-	keys := make([]string, 0, len(set))
-	for k := range set {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 func indent(s string) string {
 	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
 	for i, l := range lines {
@@ -197,7 +207,7 @@ func indent(s string) string {
 // smokeSeed runs one reset -> observe -> solve -> grade cycle and returns the
 // variant name and an empty string, or the failure description. The
 // namespace used is added to namespaces; solve.sh output goes to output.
-func (a *App) smokeSeed(ctx context.Context, s *env.Session, sc *scenario.Scenario, seed int64, kubeconfig string, namespaces map[string]bool, output *bytes.Buffer) (variant, failed string) {
+func (a *app) smokeSeed(ctx context.Context, s *env.Session, sc *scenario.Scenario, seed int64, kubeconfig string, namespaces map[string]bool, output *bytes.Buffer) (variant, failed string) {
 	ep, rd, err := s.Reset(ctx, sc.Meta.ID, seed)
 	if err != nil {
 		if r, rerr := sc.Render(seed); rerr == nil {
@@ -236,9 +246,9 @@ func failingChecks(g grader.Grade) string {
 		if r.Status == grader.StatusPass {
 			continue
 		}
-		part := fmt.Sprintf("%s %s", statusTag(r.Status), r.ID)
+		part := fmt.Sprintf("%s %s", render.StatusTag(r.Status), r.ID)
 		if r.Expected != "" || r.Actual != "" {
-			part += fmt.Sprintf(" (expected %s, actual %s)", orDash(r.Expected), orDash(r.Actual))
+			part += fmt.Sprintf(" (expected %s, actual %s)", render.OrDash(r.Expected), render.OrDash(r.Actual))
 		} else if r.Message != "" {
 			part += " (" + r.Message + ")"
 		}

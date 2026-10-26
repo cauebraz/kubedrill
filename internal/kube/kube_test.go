@@ -245,8 +245,8 @@ func TestProbePod(t *testing.T) {
 	if limits["memory"] != "64Mi" || limits["cpu"] != nil {
 		t.Errorf("limits: got %v, want memory 64Mi and no cpu", limits)
 	}
-	if got := waitingReason(pod); got != "" {
-		t.Errorf("waitingReason without status: got %q, want empty", got)
+	if got, _ := waitingState(pod); got != "" {
+		t.Errorf("waitingState without status: got %q, want empty", got)
 	}
 	pod.Object["status"] = map[string]any{
 		"phase": "Pending",
@@ -254,8 +254,8 @@ func TestProbePod(t *testing.T) {
 			map[string]any{"name": probeContainer, "state": map[string]any{"waiting": map[string]any{"reason": "ImagePullBackOff"}}},
 		},
 	}
-	if got := waitingReason(pod); got != "ImagePullBackOff" {
-		t.Errorf("waitingReason: got %q, want ImagePullBackOff", got)
+	if got, _ := waitingState(pod); got != "ImagePullBackOff" {
+		t.Errorf("waitingState: got %q, want ImagePullBackOff", got)
 	}
 	code, ok := terminatedExitCode(pod)
 	if ok || code != 0 {
@@ -309,8 +309,13 @@ func TestDecodeGenerateName(t *testing.T) {
 		wantErr          string
 	}{
 		{
-			name:             "generateName without name is accepted",
-			manifest:         "apiVersion: v1\nkind: Pod\nmetadata:\n  generateName: probe-\n",
+			name:     "generateName without name is rejected",
+			manifest: "apiVersion: v1\nkind: Pod\nmetadata:\n  generateName: probe-\n",
+			wantErr:  "decode document 1: v1/Pod has no metadata.name (generateName is not supported: objects are applied by name)",
+		},
+		{
+			name:             "generateName next to name is kept",
+			manifest:         "apiVersion: v1\nkind: Pod\nmetadata:\n  name: probe-a\n  generateName: probe-\n",
 			wantGenerateName: "probe-",
 		},
 		{
@@ -337,8 +342,8 @@ func TestDecodeGenerateName(t *testing.T) {
 			if got := objs[0].GetGenerateName(); got != tc.wantGenerateName {
 				t.Errorf("GenerateName: got %q, want %q", got, tc.wantGenerateName)
 			}
-			if got := objs[0].GetName(); got != "" {
-				t.Errorf("Name: got %q, want empty", got)
+			if got := objs[0].GetName(); got != "probe-a" {
+				t.Errorf("Name: got %q, want probe-a", got)
 			}
 		})
 	}

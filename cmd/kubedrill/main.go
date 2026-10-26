@@ -39,9 +39,9 @@ const (
 
 func main() {
 	kube.QuietClientLogs()
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := interruptContext(context.Background())
 	code := cli.Main(ctx, os.Args[1:], cli.Options{
-		Factories:       factories(os.Stderr, os.Getenv, time.Now),
+		Factories:       factories(os.Stderr, os.Getenv, time.Now, resolveStateDir()),
 		Stdout:          os.Stdout,
 		Stderr:          os.Stderr,
 		Stdin:           os.Stdin,
@@ -54,35 +54,72 @@ func main() {
 	os.Exit(code)
 }
 
-// factories wires the real packages. The kubeconfig handed to scenario
-// scripts is a pinned copy holding only the cluster context, written to
-// cluster.ScriptKubeconfigPath (<cluster state>/kubeconfig-scripts, mode
-// 0600) by ScriptKubeconfig, which also removes the <journal>/kubeconfig an
-// older version wrote there, best effort; the cli passes that path to
-// Connect, whose grader exports it to script checks (the cluster kubeconfig
-// when it is empty). Script checks run with <cluster state>/bin first on
-// PATH, where a kubectl wrapper sets argv[0] to kubedrill-check so their
-// requests never count as the learner's. Inside the workstation container
-// (KUBEDRILL_WORKSTATION=1) KUBECONFIG already is the pinned internal copy
-// with a single context, so scripts receive it unchanged and Connect reads
-// it with an empty context name; the cluster manager is wrapped so
-// lifecycle commands refuse to run and Exists answers from the API server,
-// and no fault manager is wired because the node containers are not
-// reachable. On the host the fault manager records faults in the cluster
-// state directory the cli hands it, whatever journal is in use, and the
-// workstation keeps the linux kubedrill binary there too, outside the
-// journal it mounts read-write. Telemetry reads the cluster audit log
-// (KUBEDRILL_AUDIT_LOG when set, as in the workstation, else
-// cluster.AuditLogPath), and the shell log (journal.ShellLogPath) and the
-// recordings (journal.RecordingsDir) of the journal directory; an episode
-// still active is summarized up to now().
-func factories(stderr io.Writer, getenv func(string) string, now func() time.Time) cli.Factories {
+// interruptContext returns a context canceled by the first SIGINT or SIGTERM.
+// Once it is canceled the signals get their default behavior back, so a
+// second Ctrl-C ends a step that does not watch the context (kind create).
+// The returned stop releases the signals and waits for the goroutine that
+// does so.
+func interruptContext(parent context.Context) (context.Context, func()) {
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		<-ctx.Done()
+		stop()
+	}()
+	return ctx, func() {
+		stop()
+		<-done
+	}
+}
+
+// stateDir is the cluster state directory (cluster.StateDir), resolved once
+// in main; err is set when it cannot be resolved.
+type stateDir struct {
+	path string
+	err  error
+}
+
+func resolveStateDir() stateDir {
+	p, err := cluster.StateDir()
+	return stateDir{path: p, err: err}
+}
+
+// factories wires the real packages. state is the cluster state directory
+// resolved once by main; the cluster manager (its audit policy record),
+// the workstation, the script check wrapper, the pinned script kubeconfig,
+// the audit log path and the cli (StateDir) use it, and fail when it could
+// not be resolved (the cli and the workstation with its error). The
+// kubeconfig handed to scenario scripts is a pinned copy holding only the
+// cluster context, written to cluster.ScriptKubeconfigPathIn
+// (<cluster state>/kubeconfig-scripts, mode 0600) by ScriptKubeconfig,
+// which also removes the <journal>/kubeconfig an older version wrote there,
+// best effort; the cli passes that path to Connect, whose grader exports it
+// to script checks. On the host Connect writes the pinned copy itself when
+// it receives none and fails when that fails, so script checks never see
+// the learner's kubeconfig. Script checks run with <cluster state>/bin
+// first on PATH, where a kubectl wrapper sets argv[0] to kubedrill-check so
+// their requests never count as the learner's. Inside the workstation
+// container (KUBEDRILL_WORKSTATION=1) KUBECONFIG already is the pinned
+// internal copy with a single context, so scripts receive it unchanged and
+// Connect reads it with an empty context name; the cluster is
+// workstationCluster, which refuses every host-only operation, and no fault
+// manager is wired because the node containers are not reachable. On the
+// host the fault manager records faults in the cluster state directory the
+// cli hands it, whatever journal is in use, and the workstation keeps the
+// linux kubedrill binary there too, outside the journal it mounts
+// read-write. Telemetry reads the cluster audit log (KUBEDRILL_AUDIT_LOG
+// when set, as in the workstation, else cluster.AuditLogPathIn), and the
+// shell log (journal.ShellLogPath) and the recordings
+// (journal.RecordingsDir) of the journal directory; an episode still active
+// is summarized up to now().
+func factories(stderr io.Writer, getenv func(string) string, now func() time.Time, state stateDir) cli.Factories {
 	inWorkstation := getenv(workstationEnv) == "1"
 	return cli.Factories{
 		Cluster: func(profilesDir string) cli.Cluster {
-			m := cluster.New(profilesDir, cluster.WithOutput(stderr), cluster.WithGetenv(getenv))
+			m := cluster.New(profilesDir, cluster.WithOutput(stderr), cluster.WithGetenv(getenv), cluster.WithStateDir(state.path))
 			if inWorkstation {
-				return &workstationCluster{Manager: m, kubeconfig: getenv("KUBECONFIG")}
+				return &workstationCluster{addons: m, kubeconfig: getenv("KUBECONFIG")}
 			}
 			return m
 		},
@@ -90,44 +127,31 @@ func factories(stderr io.Writer, getenv func(string) string, now func() time.Tim
 		Catalog:  func(root string) (cli.Catalog, error) { return scenario.NewCatalog(root) },
 		Concepts: func(root string) (cli.Concepts, error) { return concepts.Load(root) },
 		Workstation: func(root, dataDir string) cli.Workstation {
-			opts := []workstation.Option{workstation.WithOutput(stderr)}
-			if dir, err := cluster.StateDir(); err == nil {
-				opts = append(opts, workstation.WithStateDir(dir))
+			if state.err != nil {
+				return unavailableWorkstation{err: fmt.Errorf("workstation: %w", state.err)}
 			}
-			if dir, err := cluster.AuditDir(); err == nil {
-				opts = append(opts, workstation.WithAuditDir(dir))
-			}
+			opts := []workstation.Option{workstation.WithOutput(stderr), workstation.WithStateDir(state.path)}
+			opts = append(opts, workstation.WithAuditDir(cluster.AuditDirIn(state.path)))
 			return workstation.New(root, dataDir, opts...)
 		},
 		ScriptKubeconfig: func(journalDir, kubeconfig, contextName string) (string, error) {
 			if inWorkstation {
 				return getenv("KUBECONFIG"), nil
 			}
-			ok, err := kube.HasContext(kubeconfig, contextName)
-			if err != nil {
-				return "", err
-			}
-			if !ok {
-				return "", fmt.Errorf("context %s not found in %s; run kubedrill up", contextName, kubeconfig)
-			}
-			pinned, err := cluster.ScriptKubeconfigPath()
-			if err != nil {
-				return "", err
-			}
-			if err := kube.WriteContextKubeconfig(kubeconfig, contextName, pinned); err != nil {
-				return "", err
-			}
-			if journalDir != "" {
-				_ = os.Remove(filepath.Join(journalDir, staleScriptKubeconf))
-			}
-			return pinned, nil
+			return pinScriptKubeconfig(state, journalDir, kubeconfig, contextName)
 		},
 		Connect: func(kubeconfig, contextName, scriptKubeconfig string) (cli.Kube, cli.Grader, error) {
 			if inWorkstation {
 				kubeconfig, contextName = getenv("KUBECONFIG"), ""
-			}
-			if scriptKubeconfig == "" {
-				scriptKubeconfig = kubeconfig
+				if scriptKubeconfig == "" {
+					scriptKubeconfig = kubeconfig
+				}
+			} else if scriptKubeconfig == "" {
+				pinned, err := pinScriptKubeconfig(state, "", kubeconfig, contextName)
+				if err != nil {
+					return nil, nil, fmt.Errorf("write script kubeconfig: %w", err)
+				}
+				scriptKubeconfig = pinned
 			}
 			k, err := kube.New(kubeconfig, contextName)
 			if err != nil {
@@ -139,7 +163,7 @@ func factories(stderr io.Writer, getenv func(string) string, now func() time.Tim
 					return env.ScriptEnv(rd, scriptKubeconfig, "")
 				}),
 			}
-			if dir, err := checkBinDir(); err != nil {
+			if dir, err := checkBinDir(state); err != nil {
 				fmt.Fprintf(stderr, "warning: script checks run the plain kubectl and count as learner requests: %v\n", err)
 			} else {
 				opts = append(opts, grader.WithPathPrefix(dir))
@@ -152,6 +176,7 @@ func factories(stderr io.Writer, getenv func(string) string, now func() time.Tim
 		Run: func(ctx context.Context, script string, envv []string, out io.Writer) error {
 			return env.RunScript(out)(ctx, script, envv)
 		},
+		StateDir: func() (string, error) { return state.path, state.err },
 		Faults: func(stateDir string) cli.Faults {
 			if inWorkstation {
 				return nil
@@ -164,48 +189,93 @@ func factories(stderr io.Writer, getenv func(string) string, now func() time.Tim
 		},
 		Telemetry: func(journalDir string, auditAvailable func() bool) cli.TelemetryFunc {
 			return func(ep journal.Episode, rd *scenario.Rendered) journal.Telemetry {
-				return episodeTelemetry(journalDir, auditLogPath(getenv), ep, rd, auditAvailable, inWorkstation, now())
+				return episodeTelemetry(stderr, journalDir, auditLogPath(getenv, state), ep, rd, auditAvailable, inWorkstation, now())
 			}
 		},
 	}
 }
 
-// checkBinDir writes the kubedrill-check kubectl wrapper into
-// <cluster state>/bin and returns that directory.
-func checkBinDir() (string, error) {
-	state, err := cluster.StateDir()
+// pinScriptKubeconfig writes the context contextName of kubeconfig to
+// <cluster state>/kubeconfig-scripts (cluster.ScriptKubeconfigPathIn) and
+// returns that path; it fails with the state error when the cluster state
+// directory could not be resolved; it removes the
+// <journalDir>/kubeconfig an older version wrote, best effort, when
+// journalDir is set.
+func pinScriptKubeconfig(state stateDir, journalDir, kubeconfig, contextName string) (string, error) {
+	if state.err != nil {
+		return "", state.err
+	}
+	ok, err := kube.HasContext(kubeconfig, contextName)
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(state, "bin")
+	if !ok {
+		return "", fmt.Errorf("context %s not found in %s; run kubedrill up", contextName, kubeconfig)
+	}
+	pinned := cluster.ScriptKubeconfigPathIn(state.path)
+	if err := kube.WriteContextKubeconfig(kubeconfig, contextName, pinned); err != nil {
+		return "", err
+	}
+	if journalDir != "" {
+		_ = os.Remove(filepath.Join(journalDir, staleScriptKubeconf))
+	}
+	return pinned, nil
+}
+
+// unavailableWorkstation is the workstation when the cluster state
+// directory, which holds its linux binary, cannot be resolved: every method
+// returns err.
+type unavailableWorkstation struct {
+	err error
+}
+
+func (u unavailableWorkstation) DockerAvailable(context.Context) error { return u.err }
+
+func (u unavailableWorkstation) Shell(context.Context, workstation.ShellOptions) error { return u.err }
+
+func (u unavailableWorkstation) NodeShell(context.Context, string, string) error { return u.err }
+
+func (u unavailableWorkstation) Replay(context.Context, string) error { return u.err }
+
+// checkBinDir writes the kubedrill-check kubectl wrapper into
+// <cluster state>/bin and returns that directory.
+func checkBinDir(state stateDir) (string, error) {
+	if state.err != nil {
+		return "", state.err
+	}
+	dir := filepath.Join(state.path, "bin")
 	if _, err := grader.WriteKubectlWrapper(dir); err != nil {
 		return "", err
 	}
 	return dir, nil
 }
 
-// auditLogPath is KUBEDRILL_AUDIT_LOG when set, else the cluster audit log;
-// "" when neither resolves.
-func auditLogPath(getenv func(string) string) string {
+// auditLogPath is KUBEDRILL_AUDIT_LOG when set, else the audit log under
+// the cluster state directory; "" when neither resolves.
+func auditLogPath(getenv func(string) string, state stateDir) string {
 	if p := getenv(auditLogEnv); p != "" {
 		return p
 	}
-	p, err := cluster.AuditLogPath()
-	if err != nil {
+	if state.err != nil {
 		return ""
 	}
-	return p
+	return cluster.AuditLogPathIn(state.path)
 }
 
 const auditLogEnv = "KUBEDRILL_AUDIT_LOG"
+
+const shellLogRotateSize = 10 << 20
 
 // episodeTelemetry summarizes the episode window (start to end, or now)
 // from the audit log at auditPath, and the shell log and the recordings of
 // the episode namespace under dir. Inside the workstation the cluster
 // cannot be asked whether the audit log is on, so an audit log file counts
 // as on. An audit log that is on but missing or unreadable leaves the
-// verdict unknown instead of reporting no writes.
-func episodeTelemetry(dir, auditPath string, ep journal.Episode, rd *scenario.Rendered, auditAvailable func() bool, inWorkstation bool, now time.Time) journal.Telemetry {
+// verdict unknown instead of reporting no writes. A shell log that cannot be
+// read is reported on stderr in one line and left out. Once read, a shell
+// log over 10 MiB is renamed to commands.jsonl.1, so the next episode starts
+// on a short file; a failed rename is reported on stderr.
+func episodeTelemetry(stderr io.Writer, dir, auditPath string, ep journal.Episode, rd *scenario.Rendered, auditAvailable func() bool, inWorkstation bool, now time.Time) journal.Telemetry {
 	since, until := ep.StartedAt, now
 	if ep.EndedAt != nil {
 		until = *ep.EndedAt
@@ -231,9 +301,14 @@ func episodeTelemetry(dir, auditPath string, ep journal.Episode, rd *scenario.Re
 			events, available = nil, false
 		}
 	}
-	shell, err := telemetry.ReadShellLog(journal.ShellLogPath(dir), since, until)
+	shellPath := journal.ShellLogPath(dir)
+	shell, err := telemetry.ReadShellLog(shellPath, since, until)
 	if err != nil {
+		fmt.Fprintf(stderr, "warning: telemetry without the shell log: %v\n", err)
 		shell = nil
+	}
+	if _, err := telemetry.RotateShellLog(shellPath, shellLogRotateSize); err != nil {
+		fmt.Fprintf(stderr, "warning: %v\n", err)
 	}
 	t := telemetry.Summarize(events, available, shell, fixTargets)
 	t.Recordings = recordings(dir, ns, since, until)
@@ -271,14 +346,25 @@ func recordings(dir, ns string, since, until time.Time) []string {
 	return out
 }
 
-// workstationCluster is the cluster manager seen from inside the workstation
-// container: the kind cluster lives on the host, so Exists asks the API
-// server through the mounted kubeconfig and every lifecycle operation is
-// refused with a message naming the host.
+// workstationCluster is the cluster seen from inside the workstation
+// container: the kind cluster, its state directory and docker live on the
+// host. Exists asks the API server through the mounted kubeconfig,
+// Kubeconfig returns that kubeconfig with an empty context name (it holds a
+// single context), Addons and BaseAddons read the repository, and every
+// other operation is refused with a message naming the host.
 type workstationCluster struct {
-	*cluster.Manager
+	addons     addonLister
 	kubeconfig string
 }
+
+// addonLister is the part of cluster.Manager that only reads the
+// repository and is safe inside the container.
+type addonLister interface {
+	Addons() []string
+	BaseAddons() []string
+}
+
+var _ cli.Cluster = (*workstationCluster)(nil)
 
 func (w *workstationCluster) Exists(ctx context.Context) (bool, error) {
 	k, err := kube.New(w.kubeconfig, "")
@@ -291,6 +377,27 @@ func (w *workstationCluster) Exists(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
+func (w *workstationCluster) Kubeconfig() (string, string, error) {
+	if w.kubeconfig == "" {
+		return "", "", errors.New("KUBECONFIG is not set inside the workstation; start it with kubedrill shell")
+	}
+	return w.kubeconfig, "", nil
+}
+
+func (w *workstationCluster) Addons() []string {
+	if w.addons == nil {
+		return nil
+	}
+	return w.addons.Addons()
+}
+
+func (w *workstationCluster) BaseAddons() []string {
+	if w.addons == nil {
+		return nil
+	}
+	return w.addons.BaseAddons()
+}
+
 func (w *workstationCluster) Ensure(context.Context, string, cluster.ProfileData) error {
 	return hostOnly("kubedrill up")
 }
@@ -299,8 +406,16 @@ func (w *workstationCluster) EnsureAddons(context.Context, cluster.AddonApplier,
 	return hostOnly("kubedrill up")
 }
 
+func (w *workstationCluster) RenderProfile(string, cluster.ProfileData) ([]byte, error) {
+	return nil, hostOnly("rendering a cluster profile")
+}
+
 func (w *workstationCluster) AuditEnabled(context.Context) (bool, error) {
 	return false, hostOnly("the audit check")
+}
+
+func (w *workstationCluster) AuditPolicyStale(context.Context) (bool, error) {
+	return false, hostOnly("the audit policy check")
 }
 
 func (w *workstationCluster) Created(context.Context) (time.Time, error) {

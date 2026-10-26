@@ -5,11 +5,12 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/cauebraz/kubedrill/internal/journal"
 	"github.com/cauebraz/kubedrill/internal/progress"
+	"github.com/cauebraz/kubedrill/internal/render"
 	"github.com/cauebraz/kubedrill/internal/scenario"
+	"github.com/cauebraz/kubedrill/internal/tui/watch"
 )
 
 // scenarioInfos is the catalog as progress sees it, sorted by id.
@@ -53,7 +54,7 @@ func withoutEpisode(eps []journal.Episode, id string) []journal.Episode {
 }
 
 // recommend runs progress.Next over the catalog and the journal.
-func (a *App) recommend(cat Catalog, eps []journal.Episode) (progress.Recommendation, bool) {
+func (a *app) recommend(cat Catalog, eps []journal.Episode) (progress.Recommendation, bool) {
 	return progress.Next(scenarioInfos(cat), eps, a.now(), a.rnd)
 }
 
@@ -61,7 +62,7 @@ func (a *App) recommend(cat Catalog, eps []journal.Episode) (progress.Recommenda
 // "Next") and of the solved banner (label "Recommended"): the scenario with
 // its reason as a sentence, wrapped to the terminal width, then the command
 // to run.
-func (a *App) recommendationLines(cat Catalog, rec progress.Recommendation, label string) []string {
+func recommendationLines(p render.Printer, cat Catalog, rec progress.Recommendation, label string) []string {
 	title, meta := rec.ScenarioID, ""
 	if sc, err := cat.Find(rec.ScenarioID); err == nil {
 		title = sc.Meta.Title
@@ -72,14 +73,14 @@ func (a *App) recommendationLines(cat Catalog, rec progress.Recommendation, labe
 		cmd += fmt.Sprintf(" --seed %d", rec.Seed)
 	}
 	return []string{
-		a.wrapLine(fmt.Sprintf("%s: %s%s: %s", label, title, meta, reasonSentence(rec.Reason)), "  "),
-		"  " + a.style(styleBold, cmd),
+		p.WrapLine(fmt.Sprintf("%s: %s%s: %s", label, title, meta, reasonSentence(rec.Reason)), "  "),
+		"  " + p.Style(render.StyleBold, cmd),
 	}
 }
 
 // printRecommendation prints the lines of recommendationLines.
-func (a *App) printRecommendation(cat Catalog, rec progress.Recommendation, label string) {
-	for _, l := range a.recommendationLines(cat, rec, label) {
+func (a *app) printRecommendation(cat Catalog, rec progress.Recommendation, label string) {
+	for _, l := range recommendationLines(a.printer(), cat, rec, label) {
 		a.println(l)
 	}
 }
@@ -119,34 +120,24 @@ func reasonSentence(reason string) string {
 }
 
 // nextPick is the recommendation the watch n key starts.
-func (a *App) nextPick() (nextPick, bool) {
+func (a *app) nextPick() (watch.Pick, bool) {
 	cat, err := a.getCatalog()
 	if err != nil {
-		return nextPick{}, false
+		return watch.Pick{}, false
 	}
 	j, err := a.getJournal()
 	if err != nil {
-		return nextPick{}, false
+		return watch.Pick{}, false
 	}
 	eps, err := allEpisodes(j)
 	if err != nil {
-		return nextPick{}, false
+		return watch.Pick{}, false
 	}
 	rec, ok := a.recommend(cat, eps)
 	if !ok {
-		return nextPick{}, false
+		return watch.Pick{}, false
 	}
-	return nextPick{ref: rec.ScenarioID, seed: rec.Seed, reason: reasonSentence(rec.Reason)}, true
-}
-
-// minutesCell prints a duration in minutes with one decimal, "1.2 min", or
-// "-"; a duration under 0.1 min prints "0.1 min". list, journal, stats, the
-// debrief and the ticket footer share the unit.
-func minutesCell(d time.Duration) string {
-	if d <= 0 {
-		return "-"
-	}
-	return fmt.Sprintf("%.1f min", max(d.Minutes(), 0.1))
+	return watch.Pick{Ref: rec.ScenarioID, Seed: rec.Seed, Reason: reasonSentence(rec.Reason)}, true
 }
 
 // lastCell prints the clean attempts of the window as "3/4", or "-".

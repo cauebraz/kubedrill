@@ -5,14 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"os/exec"
+	"math"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
+	"unicode/utf8"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -20,6 +19,7 @@ import (
 
 	"github.com/cauebraz/kubedrill/internal/kube"
 	"github.com/cauebraz/kubedrill/internal/scenario"
+	"github.com/cauebraz/kubedrill/internal/scriptrun"
 )
 
 // Kube is what the grader needs from a cluster client; *kube.Client satisfies it.
@@ -44,29 +44,9 @@ type Option func(*Runner)
 const DefaultCheckTimeout = 30 * time.Second
 
 const (
-	maxTextLen      = 200
-	probeGrace      = 30 * time.Second
-	scriptWaitDelay = 2 * time.Second
+	maxTextLen = 200
+	probeGrace = 30 * time.Second
 )
-
-// scriptHostVars are the variables of the process environment a scenario
-// script inherits; everything else (cloud credentials, tokens, SSH agent)
-// stays out of third-party scripts.
-var scriptHostVars = []string{"PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "TERM", "USER"}
-
-// ScriptHostEnv returns the KEY=VALUE pairs of the process environment that
-// scenario scripts (setup hooks, solutions, script checks) inherit: PATH,
-// HOME, TMPDIR, LANG, LC_ALL, TERM and USER, each when set. Callers append
-// the scenario pairs (env.ScriptEnv) after them.
-func ScriptHostEnv() []string {
-	out := make([]string, 0, len(scriptHostVars))
-	for _, k := range scriptHostVars {
-		if v, ok := os.LookupEnv(k); ok {
-			out = append(out, k+"="+v)
-		}
-	}
-	return out
-}
 
 // WithCheckTimeout sets the time budget of each check.
 func WithCheckTimeout(d time.Duration) Option {
@@ -77,7 +57,9 @@ func WithCheckTimeout(d time.Duration) Option {
 	}
 }
 
-// WithScriptRunner replaces the default bash -c runner used by script checks.
+// WithScriptRunner replaces the default runner of script checks, which runs
+// bash -c through scriptrun.Run in the scenario directory and keeps at most
+// scriptrun.DefaultLimit bytes of output.
 func WithScriptRunner(fn ScriptRunner) Option {
 	return func(r *Runner) {
 		if fn != nil {
@@ -244,6 +226,9 @@ func (r *Runner) runCheck(ctx context.Context, rd *scenario.Rendered, c scenario
 		if done {
 			return
 		}
+	case c.Exists != nil && c.Resource == nil:
+		setError(res, "exists applies to a resource source only")
+		return
 	case c.Probe != nil:
 		pr, err := r.k.RunProbe(ctx, rd.Namespace, *c.Probe)
 		if err != nil {
@@ -310,8 +295,11 @@ func (r *Runner) extractResource(ctx context.Context, rd *scenario.Rendered, c s
 	if ref.Namespace == "" {
 		ref.Namespace = rd.Namespace
 	}
+	if c.Exists != nil && c.Path != "" {
+		setError(res, "exists applies to a resource without path; use not_empty for a path")
+		return true
+	}
 	wantAbsent := c.Exists != nil && !*c.Exists
-	pathExists := c.Exists != nil && c.Path != ""
 	var content map[string]any
 	if ref.Selector != "" {
 		list, err := r.k.List(ctx, ref)
@@ -323,7 +311,7 @@ func (r *Runner) extractResource(ctx context.Context, rd *scenario.Rendered, c s
 		if list != nil {
 			n = len(list.Items)
 		}
-		if c.Exists != nil && !pathExists {
+		if c.Exists != nil {
 			if wantAbsent && n > 0 {
 				setFail(res, "no matching objects", fmt.Sprintf("%d matching objects", n))
 				return true
@@ -352,7 +340,7 @@ func (r *Runner) extractResource(ctx context.Context, rd *scenario.Rendered, c s
 		case err != nil:
 			setError(res, fmt.Sprintf("get %s %s/%s: %v", ref.Kind, ref.Namespace, ref.Name, truncate(err.Error())))
 			return true
-		case wantAbsent && !pathExists:
+		case wantAbsent:
 			setFail(res, "absent", "exists")
 			return true
 		}
@@ -432,21 +420,6 @@ func validate(c scenario.Check, ex extracted, res *Result) {
 		return truncate(value)
 	}
 
-	if c.Exists != nil && (fromPath || ex.exitCode != nil) {
-		has := len(ex.values) > 0
-		if *c.Exists != has {
-			expected := "no value"
-			if *c.Exists {
-				expected = "a value"
-				if fromPath {
-					expected = "a value at " + c.Path
-				}
-			}
-			setFail(res, expected, actual())
-			return
-		}
-	}
-
 	if c.Equals != nil && value != strings.TrimSpace(*c.Equals) {
 		setFail(res, fmt.Sprintf("%q", strings.TrimSpace(*c.Equals)), actual())
 		return
@@ -519,9 +492,15 @@ func parsePair(value, bound, name string) (float64, float64, error) {
 	if err != nil {
 		return 0, 0, fmt.Errorf("%s: bound %q is not a number", name, bound)
 	}
+	if math.IsNaN(want) || math.IsInf(want, 0) {
+		return 0, 0, fmt.Errorf("%s: bound %q is not a finite number", name, bound)
+	}
 	got, err := strconv.ParseFloat(value, 64)
 	if err != nil {
 		return 0, 0, fmt.Errorf("%s: value %q is not a number", name, truncate(value))
+	}
+	if math.IsNaN(got) || math.IsInf(got, 0) {
+		return 0, 0, fmt.Errorf("%s: value %q is not a finite number", name, truncate(value))
 	}
 	return got, want, nil
 }
@@ -541,26 +520,17 @@ func truncate(s string) string {
 	if len(s) <= maxTextLen {
 		return s
 	}
-	return s[:maxTextLen-3] + "..."
+	cut := maxTextLen - 3
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "..."
 }
 
 func runBash(ctx context.Context, dir, script string, env []string) (int, string, error) {
-	cmd := exec.CommandContext(ctx, "bash", "-c", script)
-	cmd.Dir = dir
-	cmd.Env = append(ScriptHostEnv(), env...)
-	cmd.WaitDelay = scriptWaitDelay
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	out, err := cmd.CombinedOutput()
+	res, err := scriptrun.Run(ctx, scriptrun.Spec{Script: script, Dir: dir, Env: env})
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && ctx.Err() == nil {
-			return exitErr.ExitCode(), string(out), nil
-		}
-		if ctx.Err() != nil {
-			return -1, string(out), fmt.Errorf("script: %w", ctx.Err())
-		}
-		return -1, string(out), fmt.Errorf("script: %w", err)
+		return -1, res.Output, err
 	}
-	return 0, string(out), nil
+	return res.ExitCode, res.Output, nil
 }

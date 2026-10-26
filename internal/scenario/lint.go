@@ -49,7 +49,8 @@ const maxScenarioNamespaceLen = 57
 // scenario.concepts id is one of conceptIDs when that list is not nil,
 // rejects scenarios that still carry the template markers, requires the
 // "## Done when" bullets of instruction.md to equal the check descriptions in
-// order, and requires every Deployment in setup/ to set
+// order, parses every rendered check path as a JSONPath and every gte and
+// lte bound as a finite number, and requires every Deployment in setup/ to set
 // spec.template.spec.terminationGracePeriodSeconds to 1 so that a reset does
 // not wait for the default 30 second grace period. It rejects a rendered
 // scenario.namespace longer than 57 characters, since the episode namespace
@@ -149,6 +150,7 @@ func lintScenario(s *Scenario, real bool, modules, concepts map[string]bool) err
 		problems := flatten(err)
 		if err == nil {
 			problems = lintGracePeriod(s, r)
+			problems = append(problems, lintCheckValues(r.Checks)...)
 			if !s.Meta.AllowPrivileged {
 				problems = append(problems, lintPrivileged(s, r)...)
 			}

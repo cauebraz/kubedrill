@@ -104,7 +104,7 @@ case "$mode" in
     fi
     shell_pane=$(tmux -f /etc/kubedrill/tmux.conf new-session -d -P -F '#{pane_id}' -s "$session" -n work -x "$(terminal_columns)" -y "$lines" -e KUBEDRILL_TICKET_PANE="$ticket_pane" "$(recorded_shell_command)")
     tmux set-environment -t "$session" KUBEDRILL_MOTD_SHOWN 1
-    tmux set-hook -t "$session" pane-exited "kill-session -t $session"
+    tmux set-hook -t "$session" pane-exited "if-shell -F '#{==:#{hook_pane},$shell_pane}' 'kill-session -t $session'"
     if [ "$exam" = 0 ] && [ "$active" = 1 ]; then
       tmux split-window -t "$shell_pane" -h -l 40% "kubedrill watch; exec bash -l"
     fi

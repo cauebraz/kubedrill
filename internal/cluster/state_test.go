@@ -81,7 +81,7 @@ func TestEnsureDefaultsAuditDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("KUBECONFIG", filepath.Join(dir, "kubeconfig"))
-	m := New(dir)
+	m := New(dir, WithStateDir(testStateDir(t)))
 	m.provider = &fakeProvider{}
 	m.run = (&fakeDocker{}).run
 	data := testData(t)
@@ -127,7 +127,7 @@ func deadlineRecorder(got *[]time.Duration) func(ctx context.Context, name strin
 
 func TestDockerTimeouts(t *testing.T) {
 	var got []time.Duration
-	m := New(t.TempDir())
+	m := New(t.TempDir(), WithStateDir(testStateDir(t)))
 	m.run = deadlineRecorder(&got)
 	if _, err := m.AuditEnabled(context.Background()); err != nil {
 		t.Fatal(err)
@@ -144,7 +144,7 @@ func TestDockerTimeouts(t *testing.T) {
 
 func TestWriteInternalKubeconfigSkipsUnchanged(t *testing.T) {
 	dir := t.TempDir()
-	m := New(dir)
+	m := New(dir, WithStateDir(testStateDir(t)))
 	m.provider = &fakeProvider{kubeconfig: "apiVersion: v1\nkind: Config\n"}
 	m.run = (&fakeDocker{}).run
 	dst := filepath.Join(dir, "ws", "kubeconfig")
@@ -188,5 +188,33 @@ func TestInternalKubeconfigPath(t *testing.T) {
 	got, err := InternalKubeconfigPath()
 	if err != nil || got != filepath.Join(xdg, "kubedrill", "kubedrill", "kubeconfig-internal") {
 		t.Errorf("InternalKubeconfigPath: got %q, %v", got, err)
+	}
+}
+
+func TestPathsInStateDir(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	state, err := StateDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved := []struct {
+		name string
+		fn   func() (string, error)
+		in   string
+		want string
+	}{
+		{"audit dir", AuditDir, AuditDirIn(state), filepath.Join(state, "audit")},
+		{"audit log", AuditLogPath, AuditLogPathIn(state), filepath.Join(state, "audit", "audit.log")},
+		{"script kubeconfig", ScriptKubeconfigPath, ScriptKubeconfigPathIn(state), filepath.Join(state, "kubeconfig-scripts")},
+		{"internal kubeconfig", InternalKubeconfigPath, InternalKubeconfigPathIn(state), filepath.Join(state, "kubeconfig-internal")},
+	}
+	for _, tc := range resolved {
+		got, err := tc.fn()
+		if err != nil || got != tc.want {
+			t.Errorf("%s: got %q, %v, want %q", tc.name, got, err, tc.want)
+		}
+		if tc.in != tc.want {
+			t.Errorf("%s In: got %q, want %q", tc.name, tc.in, tc.want)
+		}
 	}
 }

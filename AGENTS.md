@@ -21,20 +21,24 @@ stays on the learner's machine.
 ```
 cmd/kubedrill/            composition root and main; telemetry reads the cluster audit log and the journal's shell log and recordings
 internal/scenario/        on-disk scenario format: scenario.toml, instruction.md, hints.md, setup/, checks.yaml, solution/, approaches/
-internal/grader/          runs checks.yaml as a DAG against the cluster, produces Grade with Results; script checks get an env allowlist (PATH, HOME, TMPDIR, LANG, LC_ALL, TERM, USER plus TASK_NS, SEED, VARIANT, VAR_*, KUBECONFIG) shared with hook.sh and solve.sh (env.RunScript); wrapper.go puts a kubectl tagged kubedrill-check first on PATH for them
+internal/grader/          runs checks.yaml as a DAG against the cluster, produces Grade with Results; script checks get an env allowlist (PATH, HOME, TMPDIR, LANG, LC_ALL, TERM, USER plus TASK_NS, SEED, VARIANT, VAR_*, KUBECONFIG) shared with hook.sh and solve.sh through internal/scriptrun; wrapper.go puts a kubectl tagged kubedrill-check first on PATH for them
 internal/kube/            the Kubernetes API client (dynamic client, server-side apply, probes, namespace GC, APIService health); cluster/ uses clientcmd, grader/ uses client-go jsonpath
 internal/yamldoc/         one YAML document splitter (Split) shared by kube, scenario lint and the addon loader
 internal/cluster/         kind lifecycle (doctor, ensure, delete, kubeconfig, audit check, audit policy drift, profile render), profile templates and addons; the cluster state dir ($XDG_STATE_HOME/kubedrill/kubedrill) holds audit/ (the audit log), bin/ (the kubedrill-check kubectl wrapper and the linux binary), kubeconfig-internal, kubeconfig-scripts, audit-policy.sha256 and faults.json
 internal/env/             learner loop and state machine: Start/Observe/Grade/Diagnose/Hint/Surrender/Submit/Expire
-internal/atomicfile/      file writes through a temporary file and a rename
-internal/journal/         episodes, outcomes, diagnosis, debrief and telemetry under ~/.local/share/kubedrill (XDG_DATA_HOME)
+internal/atomicfile/      file writes through a temporary file, a rename and a directory fsync
+internal/scriptrun/       bash runner for script checks, hook.sh and solve.sh: process-group kill after exit and on cancel, output cap, host env allowlist
+internal/journal/         episodes, outcomes, diagnosis, debrief and telemetry under ~/.local/share/kubedrill (XDG_DATA_HOME); a lock file (exclusive create, stale rule) serializes host and container writers
 internal/progress/        pure rules over the journal: clean solve, mastery per scenario and concept, Next, Stats
 internal/telemetry/       reads the audit log and the shell log (drops kubedrill's own requests), summarizes them into journal.Telemetry and a verdict
 internal/faults/          node faults through docker (pause, stop kubelet, tc netem), recorded in faults.json in the cluster state dir, Heal
 internal/curriculum/      curriculum.yaml: levels L0-L6, modules, exam map
 internal/concepts/        loads and validates docs/concepts/*.md (title, intro, four sections)
 internal/workstation/     the workstation container: image tag, linux binary and kubeconfig-internal (both in the cluster state dir, mounted read-only), docker run, exam mode, replay, node shell
-internal/cli/             cobra commands and the Bubble Tea watch mode
+internal/cli/             cobra commands, Factories/Options, session assembly and command handlers
+internal/render/          terminal text: width resolution, wrap and truncate, markdown, styles, check result lines, Printer, progress line
+internal/tui/watch/       Bubble Tea model of kubedrill watch (Session, Options, Run)
+internal/tui/ticket/      Bubble Tea model of kubedrill ticket --follow (Loader, Run)
 scenarios/<level>/<id>/   one directory per scenario, id = NNN-kebab-slug
 cluster/profiles/         kind configurations as Go templates over the audit paths (base.yaml is the default)
 cluster/addons/<name>/    addon.yaml plus vendored upstream manifests: metrics-server (base), gateway, kwok; README.md lists sources and local changes

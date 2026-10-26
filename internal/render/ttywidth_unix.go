@@ -1,6 +1,6 @@
 //go:build linux || darwin
 
-package cli
+package render
 
 import (
 	"io"
@@ -9,9 +9,9 @@ import (
 	"unsafe"
 )
 
-// ttyWidth asks the terminal behind w for its column count with the
+// TTYWidth asks the terminal behind w for its column count with the
 // TIOCGWINSZ ioctl; it returns 0 when w is not a terminal.
-func ttyWidth(w io.Writer) int {
+func TTYWidth(w io.Writer) int {
 	f, ok := w.(*os.File)
 	if !ok {
 		return 0

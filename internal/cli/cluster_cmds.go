@@ -11,9 +11,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cauebraz/kubedrill/internal/cluster"
+	"github.com/cauebraz/kubedrill/internal/render"
 )
 
-func (a *App) runDefault(ctx context.Context) error {
+func (a *app) runDefault(ctx context.Context) error {
 	tools, err := a.runDoctor(ctx)
 	if err != nil {
 		return err
@@ -44,7 +45,7 @@ func (a *App) runDefault(ctx context.Context) error {
 // continuePractice takes the learner from the default run into practice:
 // the workstation of the active episode, or the recommended scenario after
 // a [Y/n] prompt, so ./start.sh is the one command to remember.
-func (a *App) continuePractice(ctx context.Context) error {
+func (a *app) continuePractice(ctx context.Context) error {
 	a.expireIfDue(ctx)
 	j, err := a.getJournal()
 	if err != nil {
@@ -63,15 +64,15 @@ func (a *App) continuePractice(ctx context.Context) error {
 		return nil
 	}
 	a.println()
-	switch strings.ToLower(a.ask(fmt.Sprintf("Start %s now? [Y/n]", pick.ref))) {
+	switch strings.ToLower(a.ask(fmt.Sprintf("Start %s now? [Y/n]", pick.Ref))) {
 	case "", "y", "yes":
-		return a.runStart(ctx, pick.ref, startOptions{seed: pick.seed, layout: layoutTmux})
+		return a.runStart(ctx, pick.Ref, startOptions{seed: pick.Seed, layout: layoutTmux})
 	}
-	a.println(a.wrapLine(fmt.Sprintf("not started; run ./start.sh again or kubedrill start %s when you are ready", pick.ref), "  "))
+	a.println(a.printer().WrapLine(fmt.Sprintf("not started; run ./start.sh again or kubedrill start %s when you are ready", pick.Ref), "  "))
 	return nil
 }
 
-func (a *App) doctorCommand() *cobra.Command {
+func (a *app) doctorCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
 		Short: "Report on docker, kubectl and kind",
@@ -91,7 +92,7 @@ func (a *App) doctorCommand() *cobra.Command {
 	}
 }
 
-func (a *App) runDoctor(ctx context.Context) ([]cluster.Tool, error) {
+func (a *app) runDoctor(ctx context.Context) ([]cluster.Tool, error) {
 	cl, err := a.getCluster()
 	if err != nil {
 		return nil, err
@@ -106,13 +107,13 @@ func (a *App) runDoctor(ctx context.Context) ([]cluster.Tool, error) {
 		if !t.Found && t.Install != "" {
 			detail = "install: " + t.Install
 		}
-		rows = append(rows, []string{t.Name, yesNo(t.Found), orDash(t.Version), orDash(detail)})
+		rows = append(rows, []string{t.Name, yesNo(t.Found), render.OrDash(t.Version), render.OrDash(detail)})
 	}
 	table(a.stdout, []string{"TOOL", "FOUND", "VERSION", "DETAIL"}, rows)
 	return tools, nil
 }
 
-func (a *App) upCommand() *cobra.Command {
+func (a *app) upCommand() *cobra.Command {
 	var profile, addons string
 	cmd := &cobra.Command{
 		Use:   "up",
@@ -148,7 +149,7 @@ func (a *App) upCommand() *cobra.Command {
 				a.printf("cluster %s is ready (profile %s)\n", cluster.Name, profile)
 				return nil
 			}
-			if stale, err := a.auditPolicyStale(); err == nil && stale {
+			if stale, err := a.auditPolicyStale(cmd.Context()); err == nil && stale {
 				fmt.Fprintln(a.stderr, auditPolicyOld)
 			}
 			return nil
@@ -191,8 +192,8 @@ func parseAddons(cl Cluster, value string) ([]string, error) {
 }
 
 // ensureCluster ensures the cluster exists (audit log under
-// cluster.AuditDir), then installs the base addons plus extra.
-func (a *App) ensureCluster(ctx context.Context, cl Cluster, profile string, extra []string) error {
+// <cluster state>/audit), then installs the base addons plus extra.
+func (a *app) ensureCluster(ctx context.Context, cl Cluster, profile string, extra []string) error {
 	data, err := a.profileData()
 	if err != nil {
 		return err
@@ -222,19 +223,19 @@ func (a *App) ensureCluster(ctx context.Context, cl Cluster, profile string, ext
 
 // profileData is the template input of every profile: the audit directory
 // under the cluster state directory and the repository's audit policy.
-func (a *App) profileData() (cluster.ProfileData, error) {
+func (a *app) profileData() (cluster.ProfileData, error) {
 	root, err := a.repoRoot()
 	if err != nil {
 		return cluster.ProfileData{}, err
 	}
-	auditDir, err := cluster.AuditDir()
+	state, err := a.stateDir()
 	if err != nil {
 		return cluster.ProfileData{}, err
 	}
-	return cluster.ProfileData{AuditDir: auditDir, AuditPolicy: filepath.Join(root, "cluster", "audit-policy.yaml")}, nil
+	return cluster.ProfileData{AuditDir: cluster.AuditDirIn(state), AuditPolicy: filepath.Join(root, "cluster", "audit-policy.yaml")}, nil
 }
 
-func (a *App) waitAPIServices(ctx context.Context, conn *lazyConn, limit time.Duration) error {
+func (a *app) waitAPIServices(ctx context.Context, conn *lazyConn, limit time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	ticker := time.NewTicker(apiServicePoll)
@@ -263,7 +264,7 @@ func (a *App) waitAPIServices(ctx context.Context, conn *lazyConn, limit time.Du
 	}
 }
 
-func (a *App) downCommand() *cobra.Command {
+func (a *app) downCommand() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "down",

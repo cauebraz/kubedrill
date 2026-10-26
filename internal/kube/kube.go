@@ -64,7 +64,7 @@ type Client struct {
 
 // serverVersioner is the one discovery call Ping makes.
 type serverVersioner interface {
-	ServerVersion() (*version.Info, error)
+	ServerVersionWithContext(ctx context.Context) (*version.Info, error)
 }
 
 // New builds a Client from a kubeconfig path and context name. An empty
@@ -100,7 +100,7 @@ func newFromConfig(cfg *rest.Config) (*Client, error) {
 	return &Client{
 		dyn:          dyn,
 		core:         cs.CoreV1().RESTClient(),
-		disco:        cs.Discovery(),
+		disco:        cs.DiscoveryClient,
 		resolver:     &restResolver{mapper: mapper},
 		resetTimeout: resetTimeout,
 	}, nil
@@ -115,7 +115,7 @@ func (c *Client) Ping(ctx context.Context) error {
 	if c.disco == nil {
 		return errors.New("ping cluster: discovery client is not configured")
 	}
-	if _, err := c.disco.ServerVersion(); err != nil {
+	if _, err := c.disco.ServerVersionWithContext(ctx); err != nil {
 		return fmt.Errorf("ping cluster: %w", err)
 	}
 	return nil
@@ -236,7 +236,7 @@ func (c *Client) ResetNamespace(ctx context.Context, ns string, labels map[strin
 		if got := existing.GetLabels()[managedByLabel]; got != fieldManager {
 			return fmt.Errorf("refuse to reset namespace %s: it was %w", ns, ErrNotManaged)
 		}
-		if err := nsClient.Delete(ctx, ns, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+		if err := deleteExact(ctx, nsClient, existing); err != nil {
 			return fmt.Errorf("reset namespace %s: delete: %w", ns, err)
 		}
 	case !apierrors.IsNotFound(err):
@@ -298,10 +298,31 @@ func (c *Client) DeleteNamespace(ctx context.Context, ns string) error {
 	if existing.GetLabels()[managedByLabel] != fieldManager {
 		return fmt.Errorf("refuse to delete namespace %s: it was %w", ns, ErrNotManaged)
 	}
-	if err := nsClient.Delete(ctx, ns, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+	if err := deleteExact(ctx, nsClient, existing); err != nil {
 		return fmt.Errorf("delete namespace %s: %w", ns, err)
 	}
 	return nil
+}
+
+// deleteExact deletes obj with its UID and resourceVersion as
+// preconditions, so an object replaced or relabeled after the caller's
+// ownership check is not deleted. A missing object is not an error.
+func deleteExact(ctx context.Context, ri dynamic.ResourceInterface, obj *unstructured.Unstructured) error {
+	opts := metav1.DeleteOptions{Preconditions: &metav1.Preconditions{}}
+	if uid := obj.GetUID(); uid != "" {
+		opts.Preconditions.UID = &uid
+	}
+	if rv := obj.GetResourceVersion(); rv != "" {
+		opts.Preconditions.ResourceVersion = &rv
+	}
+	err := ri.Delete(ctx, obj.GetName(), opts)
+	switch {
+	case err == nil, apierrors.IsNotFound(err):
+		return nil
+	case apierrors.IsConflict(err):
+		return fmt.Errorf("changed after the ownership check, run the command again: %w", err)
+	}
+	return err
 }
 
 func (c *Client) resourceFor(apiVersion, kind, namespace string) (dynamic.ResourceInterface, error) {

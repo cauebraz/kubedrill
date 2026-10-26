@@ -12,12 +12,10 @@ import (
 	"io"
 	mrand "math/rand/v2"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/cauebraz/kubedrill/internal/faults"
@@ -26,6 +24,7 @@ import (
 	"github.com/cauebraz/kubedrill/internal/kube"
 	"github.com/cauebraz/kubedrill/internal/progress"
 	"github.com/cauebraz/kubedrill/internal/scenario"
+	"github.com/cauebraz/kubedrill/internal/scriptrun"
 )
 
 // ErrNoActiveEpisode is returned by actions that need an active episode.
@@ -80,10 +79,7 @@ const (
 // values are folded into 1..MaxSeed.
 const MaxSeed = 1_000_000
 
-const (
-	scriptTimeout   = 10 * time.Minute
-	scriptWaitDelay = 2 * time.Second
-)
+const scriptTimeout = 10 * time.Minute
 
 // Session is the environment for one learner against one cluster. The zero
 // value is not usable; use New.
@@ -149,12 +145,14 @@ type Grader interface {
 // Journal persists episodes. Modify changes the current episode under the
 // journal lock and finishes it when the change sets a final outcome (see
 // journal.Store.Modify); it fails with journal.ErrNoCurrent or
-// journal.ErrNotCurrent when the episode is no longer current.
+// journal.ErrNotCurrent when the episode is no longer current. ModifyEnded
+// changes a finished episode under the same lock and fails with
+// journal.ErrUnknownEpisode when no finished episode has the id.
 type Journal interface {
 	Current() (*journal.Episode, error)
 	Start(e journal.Episode) error
 	Modify(id string, fn func(*journal.Episode) error) (*journal.Episode, error)
-	UpdateEnded(e journal.Episode) error
+	ModifyEnded(id string, fn func(*journal.Episode) error) (*journal.Episode, error)
 	Episodes(scenarioID string) ([]journal.Episode, error)
 	JournalID() string
 }
@@ -194,31 +192,26 @@ func New(d Deps) *Session {
 	return &Session{d: d}
 }
 
-// RunScript returns a hook runner that executes script with bash, both
-// output streams on out, and an environment made only of the allowlisted
-// host variables (grader.ScriptHostEnv: PATH, HOME, TMPDIR, LANG, LC_ALL,
-// TERM, USER) plus env: environment variables other than the allowlist do
-// not reach the script. The script runs as the host user and reads the host
-// filesystem like any process of that user. The working directory is the
-// script's directory. The script and every process in its group are killed
-// when ctx ends or after ten minutes.
+// RunScript returns a hook runner that executes script with bash through
+// scriptrun.Run, both output streams on out, and an environment made only
+// of the allowlisted host variables (scriptrun.HostEnv: PATH, HOME, TMPDIR,
+// LANG, LC_ALL, TERM, USER) plus env: environment variables other than the
+// allowlist do not reach the script. The script runs as the host user and
+// reads the host filesystem like any process of that user. The working
+// directory is the script's directory. Every process in the script's group
+// is killed when the script exits, when ctx ends or after ten minutes, so a
+// background child never outlives the hook. A non-zero exit is an error
+// naming the script and the status.
 func RunScript(out io.Writer) func(ctx context.Context, script string, env []string) error {
 	return func(ctx context.Context, script string, env []string) error {
 		ctx, cancel := context.WithTimeout(ctx, scriptTimeout)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "bash", script)
-		cmd.Dir = filepath.Dir(script)
-		cmd.Env = append(grader.ScriptHostEnv(), env...)
-		cmd.Stdout = out
-		cmd.Stderr = out
-		cmd.WaitDelay = scriptWaitDelay
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-		cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-		if err := cmd.Run(); err != nil {
-			if ctx.Err() != nil {
-				return fmt.Errorf("run %s: %w", script, ctx.Err())
-			}
-			return fmt.Errorf("run %s: %w", script, err)
+		res, err := scriptrun.Run(ctx, scriptrun.Spec{File: script, Dir: filepath.Dir(script), Env: env, Stream: out})
+		if err != nil {
+			return err
+		}
+		if res.ExitCode != 0 {
+			return fmt.Errorf("run %s: exit status %d", script, res.ExitCode)
 		}
 		return nil
 	}
@@ -324,16 +317,10 @@ func (s *Session) drawSeed(sc *scenario.Scenario) int64 {
 		return seed
 	}
 	last := eps[len(eps)-1].Variant
-	for i := 1; i < seedDraws && variantOf(sc, seed) == last; i++ {
+	for i := 1; i < seedDraws && sc.VariantFor(seed).Name == last; i++ {
 		seed = foldSeed(s.d.Rand())
 	}
 	return seed
-}
-
-// variantOf names the variant Render picks for seed: (seed-1) mod the
-// number of variants.
-func variantOf(sc *scenario.Scenario, seed int64) string {
-	return sc.Variants[(seed-1)%int64(len(sc.Variants))].Name
 }
 
 // renderEpisode renders sc with seed in the episode namespace, the
@@ -428,10 +415,16 @@ func (s *Session) gc(ctx context.Context, keep string) {
 	if err != nil || cur == nil || cur.Namespace != keep {
 		return
 	}
-	selector := managedByLabel + "=" + managedBy + "," + journalLabel + "=" + s.d.Journal.JournalID()
+	selector := NamespaceSelector(s.d.Journal.JournalID())
 	if _, err := s.d.Kube.DeleteNamespaces(ctx, selector, keep); err != nil {
 		fmt.Fprintf(s.d.Out, "warning: delete old episode namespaces: %v\n", err)
 	}
+}
+
+// NamespaceSelector returns the label selector that matches every episode
+// namespace kubedrill created for the journal with journalID.
+func NamespaceSelector(journalID string) string {
+	return managedByLabel + "=" + managedBy + "," + journalLabel + "=" + journalID
 }
 
 // heal undoes the injected faults and reports each one that is gone
@@ -562,17 +555,26 @@ func (s *Session) endedElsewhere(id string, err error) (*journal.Episode, bool) 
 }
 
 func (s *Session) pastDeadline(ep *journal.Episode) bool {
-	return ep.Mode == journal.ModeExam && ep.Deadline != nil && !s.d.Now().Before(*ep.Deadline)
+	return pastDeadlineAt(ep, s.d.Now())
+}
+
+func pastDeadlineAt(ep *journal.Episode, at time.Time) bool {
+	return ep.Mode == journal.ModeExam && ep.Deadline != nil && !at.Before(*ep.Deadline)
 }
 
 // active returns the active episode and its rendering, or ErrTimedOut for
 // an exam past its deadline.
 func (s *Session) active() (*journal.Episode, *scenario.Rendered, error) {
+	return s.activeAt(s.d.Now())
+}
+
+// activeAt is active with the deadline judged at at.
+func (s *Session) activeAt(at time.Time) (*journal.Episode, *scenario.Rendered, error) {
 	ep, rd, err := s.Current()
 	if err != nil {
 		return nil, nil, err
 	}
-	if s.pastDeadline(ep) {
+	if pastDeadlineAt(ep, at) {
 		return nil, nil, fmt.Errorf("exam of %s ended at %s; run: kubedrill submit: %w", ep.ScenarioID, ep.Deadline.Format(time.RFC3339), ErrTimedOut)
 	}
 	return ep, rd, nil
@@ -636,7 +638,7 @@ func (s *Session) Grade(ctx context.Context) (grader.Grade, *journal.Episode, er
 	if g.Passed {
 		outcome = journal.OutcomeSolved
 	}
-	done, err := s.finish(ctx, ep, rd, &g, outcome)
+	done, err := s.finish(ctx, ep, rd, &g, outcome, s.d.Now())
 	if err != nil {
 		if ended, ok := s.endedElsewhere(ep.ID, err); ok {
 			return g, ended, nil
@@ -647,12 +649,11 @@ func (s *Session) Grade(ctx context.Context) (grader.Grade, *journal.Episode, er
 }
 
 // finish appends g (when not nil) to the stored episode and, for any
-// outcome but active, records telemetry and ends it with outcome at Now, in
+// outcome but active, records telemetry and ends it with outcome at now, in
 // one journal step. An episode that ends abandoned, failed or timed out has
 // its namespace deleted without waiting; a solved one keeps it until the
 // next Start's cleanup.
-func (s *Session) finish(ctx context.Context, ep *journal.Episode, rd *scenario.Rendered, g *grader.Grade, outcome journal.Outcome) (*journal.Episode, error) {
-	now := s.d.Now()
+func (s *Session) finish(ctx context.Context, ep *journal.Episode, rd *scenario.Rendered, g *grader.Grade, outcome journal.Outcome, now time.Time) (*journal.Episode, error) {
 	var tel *journal.Telemetry
 	if outcome != journal.OutcomeActive {
 		tel = s.telemetry(*ep, rd, now)
@@ -694,10 +695,13 @@ func (s *Session) telemetry(ep journal.Episode, rd *scenario.Rendered, now time.
 }
 
 // Submit grades an exam episode once and finishes it as Solved when every
-// check passes, Failed otherwise. A context that ends while grading returns
-// its error and leaves the exam active.
+// check passes, Failed otherwise. The submit is judged at the moment it
+// starts: a submit started before the deadline counts even when grading
+// runs past it, and the episode ends at that moment. A context that ends
+// while grading returns its error and leaves the exam active.
 func (s *Session) Submit(ctx context.Context) (grader.Grade, *journal.Episode, error) {
-	ep, rd, err := s.active()
+	at := s.d.Now()
+	ep, rd, err := s.activeAt(at)
 	if err != nil {
 		return grader.Grade{}, nil, err
 	}
@@ -712,7 +716,7 @@ func (s *Session) Submit(ctx context.Context) (grader.Grade, *journal.Episode, e
 	if g.Passed {
 		outcome = journal.OutcomeSolved
 	}
-	done, err := s.finish(ctx, ep, rd, &g, outcome)
+	done, err := s.finish(ctx, ep, rd, &g, outcome, at)
 	if err != nil {
 		if ended, ok := s.endedElsewhere(ep.ID, err); ok {
 			return g, ended, nil
@@ -725,7 +729,9 @@ func (s *Session) Submit(ctx context.Context) (grader.Grade, *journal.Episode, e
 // Expire ends an exam episode past its deadline as TimedOut, after a final
 // grade that is recorded but does not change the outcome, except that a
 // pass graded within 30 seconds after the deadline (the learner was
-// submitting as time ran out) counts as Solved. The episode is finished
+// submitting as time ran out) counts as Solved. The deadline and the grace
+// window are judged at the moment Expire starts, which is also the end
+// time recorded, so a slow grade does not move either. The episode is finished
 // even when the final grade fails; the grading error is returned with the
 // finished episode. A context that ends while grading returns its error
 // and finishes nothing.
@@ -737,7 +743,8 @@ func (s *Session) Expire(ctx context.Context) (*journal.Episode, error) {
 	if ep.Mode != journal.ModeExam || ep.Deadline == nil {
 		return nil, fmt.Errorf("expire: %w", ErrNotExam)
 	}
-	if !s.pastDeadline(ep) {
+	at := s.d.Now()
+	if !pastDeadlineAt(ep, at) {
 		return nil, fmt.Errorf("expire: deadline %s: %w", ep.Deadline.Format(time.RFC3339), ErrNotExpired)
 	}
 	outcome := journal.OutcomeTimedOut
@@ -748,11 +755,11 @@ func (s *Session) Expire(ctx context.Context) (*journal.Episode, error) {
 	var final *grader.Grade
 	if gradeErr == nil {
 		final = &g
-		if g.Passed && !s.d.Now().After(ep.Deadline.Add(expireGrace)) {
+		if g.Passed && !at.After(ep.Deadline.Add(expireGrace)) {
 			outcome = journal.OutcomeSolved
 		}
 	}
-	done, err := s.finish(ctx, ep, rd, final, outcome)
+	done, err := s.finish(ctx, ep, rd, final, outcome, at)
 	if err != nil {
 		return nil, err
 	}
@@ -854,7 +861,7 @@ func (s *Session) Surrender(ctx context.Context) (solution string, err error) {
 	if ep.Diagnosis == nil {
 		return "", fmt.Errorf("commit to a cause before reading the solution: kubedrill diagnose \"<one line>\": %w", ErrDiagnosisRequired)
 	}
-	if _, err := s.finish(ctx, ep, rd, nil, journal.OutcomeAbandoned); err != nil {
+	if _, err := s.finish(ctx, ep, rd, nil, journal.OutcomeAbandoned, s.d.Now()); err != nil {
 		return "", err
 	}
 	return rd.Solution, nil
@@ -886,22 +893,13 @@ func (s *Session) RecordDebrief(id string, d journal.Debrief, matched *bool) err
 	if !notCurrent(err) {
 		return fmt.Errorf("record debrief of %s: %w", id, err)
 	}
-	eps, err := s.d.Journal.Episodes("")
-	if err != nil {
+	if _, err := s.d.Journal.ModifyEnded(id, func(e *journal.Episode) error {
+		apply(e)
+		return nil
+	}); err != nil {
 		return fmt.Errorf("record debrief of %s: %w", id, err)
 	}
-	for i := len(eps) - 1; i >= 0; i-- {
-		if eps[i].ID != id || eps[i].Outcome == journal.OutcomeActive {
-			continue
-		}
-		e := eps[i]
-		apply(&e)
-		if err := s.d.Journal.UpdateEnded(e); err != nil {
-			return fmt.Errorf("record debrief of %s: %w", id, err)
-		}
-		return nil
-	}
-	return fmt.Errorf("record debrief of %s: %w", id, journal.ErrUnknownEpisode)
+	return nil
 }
 
 // Current returns the active episode and its rendered scenario, or

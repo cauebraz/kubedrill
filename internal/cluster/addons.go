@@ -138,6 +138,9 @@ func (m *Manager) EnsureAddons(ctx context.Context, k AddonApplier, names []stri
 		return fmt.Errorf("ensure addons: %s", strings.Join(problems, "; "))
 	}
 	for _, a := range addons {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("ensure addon %s: %w", a.Name, err)
+		}
 		manifests := make([]string, 0, len(a.Manifests))
 		for _, f := range a.Manifests {
 			data, err := os.ReadFile(filepath.Join(m.addonsDir, a.Name, f))
@@ -187,11 +190,7 @@ func (m *Manager) waitDeployments(ctx context.Context, addon string, manifests [
 		_, err := m.run(ctx, "docker", "exec", controlPlane, "kubectl", "--kubeconfig", adminKubeconfig,
 			"wait", "--for=condition=Available", "-n", ns, "deployment/"+name, "--timeout="+strconv.Itoa(int(left/time.Second))+"s")
 		if err != nil {
-			var exitErr *exec.ExitError
-			if errors.As(err, &exitErr) && len(bytes.TrimSpace(exitErr.Stderr)) > 0 {
-				return fmt.Errorf("deployment %s not available after %s: %s: %w", d, time.Since(start).Round(time.Second), bytes.TrimSpace(exitErr.Stderr), err)
-			}
-			return fmt.Errorf("deployment %s not available after %s: %w", d, time.Since(start).Round(time.Second), err)
+			return dockerError(fmt.Sprintf("deployment %s not available after %s", d, time.Since(start).Round(time.Second)), err)
 		}
 	}
 	fmt.Fprintf(m.out, "%s ready (%ds)\n", addon, int(time.Since(start).Round(time.Second)/time.Second))
@@ -281,7 +280,7 @@ func (m *Manager) ensureContainer(ctx context.Context, c *addonContainer) error 
 	if err != nil {
 		var exitErr *exec.ExitError
 		if !errors.As(err, &exitErr) || !bytes.Contains(bytes.ToLower(exitErr.Stderr), []byte("no such")) {
-			return fmt.Errorf("inspect container %s: %w", c.Name, err)
+			return dockerError("inspect container "+c.Name, err)
 		}
 		return m.runContainer(ctx, c)
 	}
@@ -292,12 +291,12 @@ func (m *Manager) ensureContainer(ctx context.Context, c *addonContainer) error 
 		return nil
 	case hash == want:
 		if _, err := m.runFor(ctx, dockerTimeout, "docker", "start", c.Name); err != nil {
-			return fmt.Errorf("start container %s: %w", c.Name, err)
+			return dockerError("start container "+c.Name, err)
 		}
 		return nil
 	}
 	if _, err := m.runFor(ctx, dockerTimeout, "docker", "rm", "-f", c.Name); err != nil {
-		return fmt.Errorf("replace container %s (spec %q, want %s): %w", c.Name, hash, want, err)
+		return dockerError(fmt.Sprintf("replace container %s (spec %q, want %s)", c.Name, hash, want), err)
 	}
 	return m.runContainer(ctx, c)
 }
@@ -325,11 +324,7 @@ func (m *Manager) runContainer(ctx context.Context, c *addonContainer) error {
 	args = append(args, c.Image)
 	args = append(args, c.Args...)
 	if _, err := m.runFor(ctx, dockerPullTimeout, "docker", args...); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && len(bytes.TrimSpace(exitErr.Stderr)) > 0 {
-			return fmt.Errorf("run container %s: %s: %w", c.Name, bytes.TrimSpace(exitErr.Stderr), err)
-		}
-		return fmt.Errorf("run container %s: %w", c.Name, err)
+		return dockerError("run container "+c.Name, err)
 	}
 	return nil
 }

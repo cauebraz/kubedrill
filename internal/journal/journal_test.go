@@ -21,6 +21,36 @@ func openTest(t *testing.T) *Store {
 	return s
 }
 
+// requireEnforcedModes skips the test unless the filesystem under dir
+// refuses writes that file and directory modes forbid; root and bind
+// mounts such as Docker Desktop's virtiofs ignore them.
+func requireEnforcedModes(t *testing.T, dir string) {
+	t.Helper()
+	probe, err := os.MkdirTemp(dir, "modes-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = os.Chmod(probe, 0o700)
+		_ = os.RemoveAll(probe)
+	}()
+	file := filepath.Join(probe, "ro")
+	if err := os.WriteFile(file, nil, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := os.OpenFile(file, os.O_WRONLY, 0); err == nil {
+		f.Close()
+		t.Skip("the filesystem ignores file modes (root or a bind mount such as virtiofs)")
+	}
+	if err := os.Chmod(probe, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := os.Create(filepath.Join(probe, "new")); err == nil {
+		f.Close()
+		t.Skip("the filesystem ignores directory modes (root or a bind mount such as virtiofs)")
+	}
+}
+
 func TestOpenCreatesDir(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "nested", "kubedrill")
 	s, err := Open(dir)
@@ -301,6 +331,7 @@ func TestFileModes(t *testing.T) {
 
 func TestStartAppendsBeforeWritingCurrent(t *testing.T) {
 	s := openTest(t)
+	requireEnforcedModes(t, s.Dir())
 	if err := s.Start(Episode{ID: "first", ScenarioID: "a"}); err != nil {
 		t.Fatalf("Start first: %v", err)
 	}
@@ -309,9 +340,6 @@ func TestStartAppendsBeforeWritingCurrent(t *testing.T) {
 	}
 	if err := os.Chmod(filepath.Join(s.Dir(), episodesFile), 0o400); err != nil {
 		t.Fatal(err)
-	}
-	if os.Getuid() == 0 {
-		t.Skip("root ignores file modes")
 	}
 	err := s.Start(Episode{ID: "second", ScenarioID: "b"})
 	if err == nil {
@@ -875,7 +903,7 @@ func TestDurationAt(t *testing.T) {
 	}
 }
 
-func TestUpdateEndedLastDuplicateAndActiveWithEnd(t *testing.T) {
+func TestUpdateEndedFirstDuplicateAndActiveWithEnd(t *testing.T) {
 	end := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
 	s := openTest(t)
 	content := `{"id":"a","scenario_id":"s","outcome":"failed","ended_at":"2026-03-01T10:00:00Z"}
@@ -894,8 +922,8 @@ func TestUpdateEndedLastDuplicateAndActiveWithEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n")
-	if len(lines) != 2 || strings.Contains(lines[0], "read events first") || !strings.Contains(lines[1], "read events first") {
-		t.Errorf("duplicate ids: got %q, want only the last line rewritten", raw)
+	if len(lines) != 2 || !strings.Contains(lines[0], "read events first") || strings.Contains(lines[1], "read events first") {
+		t.Errorf("duplicate ids: got %q, want only the first line rewritten", raw)
 	}
 	active := Episode{ID: "a", Outcome: OutcomeActive, EndedAt: &end}
 	if err := s.UpdateEnded(active); err == nil || !strings.Contains(err.Error(), "is not finished") {

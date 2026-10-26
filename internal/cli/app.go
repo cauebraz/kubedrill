@@ -1,6 +1,8 @@
-// Package cli holds the kubedrill cobra commands and the Bubble Tea watch
-// mode. Every collaborator arrives through Factories so the commands can be
-// exercised with fakes; cmd/kubedrill wires the real packages.
+// Package cli holds the kubedrill cobra commands, the session assembly and
+// the command handlers; the terminal text toolkit lives in render and the
+// two Bubble Tea screens in tui/watch and tui/ticket. Every collaborator
+// arrives through Factories so the commands can be exercised with fakes;
+// cmd/kubedrill wires the real packages.
 package cli
 
 import (
@@ -17,7 +19,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 
 	"github.com/cauebraz/kubedrill/internal/cluster"
 	"github.com/cauebraz/kubedrill/internal/concepts"
@@ -26,6 +27,7 @@ import (
 	"github.com/cauebraz/kubedrill/internal/faults"
 	"github.com/cauebraz/kubedrill/internal/grader"
 	"github.com/cauebraz/kubedrill/internal/journal"
+	"github.com/cauebraz/kubedrill/internal/render"
 	"github.com/cauebraz/kubedrill/internal/scenario"
 	"github.com/cauebraz/kubedrill/internal/workstation"
 )
@@ -114,13 +116,17 @@ type Grader = env.Grader
 // the kubeconfig path exported to setup hooks and solve scripts (a pinned
 // copy holding only the cluster context, cluster.ScriptKubeconfigPath in the
 // cluster state directory); when nil the cluster kubeconfig is exported as
-// is. Connect receives the cluster kubeconfig, its context and that pinned
-// path ("" when there is none). Run executes a scenario script with both
+// is. When ScriptKubeconfig is set, its error or an empty path stops the
+// command that needs the cluster: script checks never fall back to the
+// cluster kubeconfig. Connect receives the cluster kubeconfig, its context
+// and that pinned path ("" when there is none). Run executes a scenario script with both
 // output streams on out; when nil, env.RunScript is used. Workstation
 // receives the repository root and the journal directory; when nil, start
 // never opens a shell and shell and node report that no workstation is
-// wired. Faults receives the cluster state directory (cluster.StateDir),
-// where the manager records active faults; when nil, fault and heal report
+// wired. StateDir returns the cluster state directory, resolved once by the
+// caller; when nil, cluster.StateDir resolves it. The audit directory, the
+// workstation kubeconfig and the fault record are paths under it. Faults
+// receives that directory, where the manager records active faults; when nil, fault and heal report
 // that no fault manager is wired and start heals nothing. Telemetry receives
 // the journal directory (journal.ShellLogPath and journal.RecordingsDir name
 // the shell log and the recordings under it) and a cached answer to "is the
@@ -139,6 +145,7 @@ type Factories struct {
 	Run              func(ctx context.Context, script string, env []string, out io.Writer) error
 	TempDir          func() (string, error)
 	Faults           func(stateDir string) Faults
+	StateDir         func() (string, error)
 	Telemetry        func(journalDir string, auditAvailable func() bool) TelemetryFunc
 }
 
@@ -167,8 +174,8 @@ type Options struct {
 	TermWidth       func() int
 }
 
-// App is the state shared by the commands of one run.
-type App struct {
+// app is the state shared by the commands of one run.
+type app struct {
 	f               Factories
 	stdout          io.Writer
 	stderr          io.Writer
@@ -176,15 +183,12 @@ type App struct {
 	rawStdin        io.Reader
 	getenv          func(string) string
 	getwd           func() (string, error)
-	isTerminal      bool
 	isInputTerminal bool
-	color           bool
+	term            render.Terminal
 	now             func() time.Time
 	executable      func() (string, error)
 	rnd             func(n int64) int64
 	suffix          func() string
-	termWidth       func() int
-	paneWidth       int
 	teaOptions      []tea.ProgramOption
 
 	rootFlag string
@@ -198,12 +202,8 @@ type App struct {
 	session  *env.Session
 	faults   Faults
 
-	cmdCtx     context.Context
-	auditState func() (on, known bool)
-
-	progressOpen  bool
-	progressStart time.Time
-	progressSink  func(string)
+	audit    auditCache
+	progress *render.Progress
 }
 
 // Main runs kubedrill with args and returns the process exit code.
@@ -214,7 +214,7 @@ func Main(ctx context.Context, args []string, o Options) int {
 	cmd.SetOut(a.stdout)
 	cmd.SetErr(a.stderr)
 	err := cmd.ExecuteContext(ctx)
-	a.endProgress("")
+	a.progress.End("")
 	if err == nil {
 		return ExitOK
 	}
@@ -225,7 +225,7 @@ func Main(ctx context.Context, args []string, o Options) int {
 	return ExitError
 }
 
-func newApp(o Options) *App {
+func newApp(o Options) *app {
 	if o.Stdout == nil {
 		o.Stdout = os.Stdout
 	}
@@ -259,13 +259,13 @@ func newApp(o Options) *App {
 		o.Factories.TempDir = func() (string, error) { return os.MkdirTemp("", "kubedrill-smoke-") }
 	}
 	if o.TermWidth == nil && o.IsTerminal {
-		o.TermWidth = func() int { return ttyWidth(o.Stdout) }
+		o.TermWidth = func() int { return render.TTYWidth(o.Stdout) }
 	}
 	inputTerminal := o.IsInputTerminal
 	if !inputTerminal && o.IsTerminal {
 		inputTerminal = isCharDevice(o.Stdin)
 	}
-	a := &App{
+	a := &app{
 		f:               o.Factories,
 		stdout:          o.Stdout,
 		stderr:          o.Stderr,
@@ -273,16 +273,20 @@ func newApp(o Options) *App {
 		rawStdin:        o.Stdin,
 		getenv:          o.Getenv,
 		getwd:           o.Getwd,
-		isTerminal:      o.IsTerminal,
 		isInputTerminal: inputTerminal,
-		color:           o.IsTerminal && o.Getenv("NO_COLOR") == "",
 		now:             o.Now,
 		executable:      o.Executable,
 		rnd:             o.Rand,
 		suffix:          o.NamespaceSuffix,
-		termWidth:       o.TermWidth,
+		term: render.Terminal{
+			Out:        o.Stdout,
+			IsTerminal: o.IsTerminal,
+			Color:      o.IsTerminal && o.Getenv("NO_COLOR") == "",
+			Getenv:     o.Getenv,
+			Columns:    o.TermWidth,
+		},
+		progress: render.NewProgress(o.Stderr, o.Now),
 	}
-	a.auditState = sync.OnceValues(a.askAudit)
 	return a
 }
 
@@ -299,7 +303,7 @@ func isCharDevice(r io.Reader) bool {
 }
 
 // explain turns a command error into the learner-facing line.
-func (a *App) explain(err error) string {
+func (a *app) explain(err error) string {
 	var notFound *scenario.NotFoundError
 	switch {
 	case errors.Is(err, env.ErrNoActiveEpisode):
@@ -330,7 +334,7 @@ func withoutCause(err, cause error) string {
 // repoRoot resolves the repository root from --root, KUBEDRILL_ROOT, or the
 // first ancestor of the working directory holding curriculum.yaml and
 // scenarios/.
-func (a *App) repoRoot() (string, error) {
+func (a *app) repoRoot() (string, error) {
 	if a.root != "" {
 		return a.root, nil
 	}
@@ -373,7 +377,7 @@ func isRepoRoot(dir string) bool {
 	return err == nil && st.IsDir()
 }
 
-func (a *App) getCatalog() (Catalog, error) {
+func (a *app) getCatalog() (Catalog, error) {
 	if a.catalog != nil {
 		return a.catalog, nil
 	}
@@ -389,7 +393,7 @@ func (a *App) getCatalog() (Catalog, error) {
 	return c, nil
 }
 
-func (a *App) getConcepts() (Concepts, error) {
+func (a *app) getConcepts() (Concepts, error) {
 	if a.concepts != nil {
 		return a.concepts, nil
 	}
@@ -406,7 +410,7 @@ func (a *App) getConcepts() (Concepts, error) {
 }
 
 // getWorkstation returns the toolbox manager, or nil when none is wired.
-func (a *App) getWorkstation(j Journal) (Workstation, error) {
+func (a *app) getWorkstation(j Journal) (Workstation, error) {
 	if a.f.Workstation == nil {
 		return nil, nil
 	}
@@ -419,11 +423,11 @@ func (a *App) getWorkstation(j Journal) (Workstation, error) {
 
 // insideWorkstation reports whether this process already runs in the
 // workstation container, where a shell must never be nested.
-func (a *App) insideWorkstation() bool {
+func (a *app) insideWorkstation() bool {
 	return a.getenv("KUBEDRILL_WORKSTATION") == "1"
 }
 
-func (a *App) getJournal() (Journal, error) {
+func (a *app) getJournal() (Journal, error) {
 	if a.journal != nil {
 		return a.journal, nil
 	}
@@ -435,7 +439,7 @@ func (a *App) getJournal() (Journal, error) {
 	return j, nil
 }
 
-func (a *App) getCluster() (Cluster, error) {
+func (a *app) getCluster() (Cluster, error) {
 	if a.cluster != nil {
 		return a.cluster, nil
 	}
@@ -447,7 +451,7 @@ func (a *App) getCluster() (Cluster, error) {
 	return a.cluster, nil
 }
 
-func (a *App) getConn() (*lazyConn, error) {
+func (a *app) getConn() (*lazyConn, error) {
 	if a.conn != nil {
 		return a.conn, nil
 	}
@@ -455,17 +459,37 @@ func (a *App) getConn() (*lazyConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	a.conn = &lazyConn{cluster: cl, connect: a.f.Connect, scriptFn: a.learnerScriptKubeconfig}
+	c := &lazyConn{cluster: cl, connect: a.f.Connect}
+	if a.f.ScriptKubeconfig != nil {
+		c.scriptFn = a.learnerScriptKubeconfig
+	}
+	a.conn = c
 	return a.conn, nil
 }
 
-// scriptKubeconfig returns the kubeconfig path exported to scenario scripts.
-func (a *App) scriptKubeconfig(j Journal) (string, error) {
+// scriptKubeconfig returns the kubeconfig path exported to scenario scripts
+// and pins it as the one the cluster connection hands to script checks.
+func (a *app) scriptKubeconfig(j Journal) (string, error) {
 	conn, err := a.getConn()
 	if err != nil {
 		return "", err
 	}
-	path, name, err := conn.cluster.Kubeconfig()
+	path, err := a.pinnedKubeconfig(conn.cluster, j)
+	if err != nil {
+		return "", err
+	}
+	if a.f.ScriptKubeconfig != nil {
+		conn.setScript(path)
+	}
+	return path, nil
+}
+
+// pinnedKubeconfig writes the kubeconfig of j's scripts through
+// Factories.ScriptKubeconfig, or returns the cluster kubeconfig when that
+// factory is nil. An empty pinned path is an error, so script checks never
+// fall back to the whole cluster kubeconfig.
+func (a *app) pinnedKubeconfig(cl Cluster, j Journal) (string, error) {
+	path, name, err := cl.Kubeconfig()
 	if err != nil {
 		return "", err
 	}
@@ -474,35 +498,27 @@ func (a *App) scriptKubeconfig(j Journal) (string, error) {
 	}
 	pinned, err := a.f.ScriptKubeconfig(j.Dir(), path, name)
 	if err != nil {
-		return "", fmt.Errorf("write script kubeconfig: %w", err)
+		return "", fmt.Errorf("write script kubeconfig for context %s: %w", name, err)
 	}
-	if conn.kube == nil {
-		conn.script = pinned
+	if pinned == "" {
+		return "", fmt.Errorf("write script kubeconfig for context %s: no path returned", name)
 	}
 	return pinned, nil
 }
 
-// learnerScriptKubeconfig is the pinned kubeconfig of the learner's journal,
-// or "" when there is none or it cannot be written.
-func (a *App) learnerScriptKubeconfig() string {
-	if a.f.ScriptKubeconfig == nil {
-		return ""
-	}
+// learnerScriptKubeconfig is the pinned kubeconfig of the learner's journal.
+func (a *app) learnerScriptKubeconfig(cl Cluster) (string, error) {
 	j, err := a.getJournal()
 	if err != nil {
-		return ""
+		return "", err
 	}
-	p, err := a.scriptKubeconfig(j)
-	if err != nil {
-		return ""
-	}
-	return p
+	return a.pinnedKubeconfig(cl, j)
 }
 
 // getSession builds the learner session on the given journal. The cluster
 // connection is opened on the first call that touches it. progress, when not
 // nil, receives the Reset progress lines.
-func (a *App) getSession(j Journal, progress func(string), learner bool) (*env.Session, *lazyConn, error) {
+func (a *app) getSession(ctx context.Context, j Journal, progress func(string), learner bool) (*env.Session, *lazyConn, error) {
 	cat, err := a.getCatalog()
 	if err != nil {
 		return nil, nil, err
@@ -535,7 +551,7 @@ func (a *App) getSession(j Journal, progress func(string), learner bool) (*env.S
 		d.Healer = fm
 	}
 	if learner && a.f.Telemetry != nil {
-		d.Telemetry = a.f.Telemetry(j.Dir(), a.auditEnabled)
+		d.Telemetry = a.f.Telemetry(j.Dir(), func() bool { return a.auditEnabled(ctx) })
 	}
 	return env.New(d), conn, nil
 }
@@ -543,11 +559,11 @@ func (a *App) getSession(j Journal, progress func(string), learner bool) (*env.S
 // getFaults returns the fault manager recording its state in the cluster
 // state directory, so every journal and the smoke run share one record of
 // the faults on the one cluster, or nil when none is wired.
-func (a *App) getFaults() (Faults, error) {
+func (a *app) getFaults() (Faults, error) {
 	if a.faults != nil || a.f.Faults == nil {
 		return a.faults, nil
 	}
-	dir, err := cluster.StateDir()
+	dir, err := a.stateDir()
 	if err != nil {
 		return nil, err
 	}
@@ -555,28 +571,46 @@ func (a *App) getFaults() (Faults, error) {
 	return a.faults, nil
 }
 
+// stateDir returns the cluster state directory from Factories.StateDir, or
+// from cluster.StateDir when none is wired.
+func (a *app) stateDir() (string, error) {
+	if a.f.StateDir != nil {
+		return a.f.StateDir()
+	}
+	return cluster.StateDir()
+}
+
+// auditCache keeps the first answer to "is the audit log on" for the rest
+// of the process.
+type auditCache struct {
+	mu    sync.Mutex
+	known bool
+	on    bool
+}
+
 // auditCheckTimeout bounds the one question to the cluster about the audit
 // log.
 const auditCheckTimeout = 5 * time.Second
 
-// auditEnabled reports whether the cluster records the API audit log. The
-// cluster is asked once per process, under the command context with a 5 s
-// timeout; an error or a timeout counts as off.
-func (a *App) auditEnabled() bool {
-	on, _ := a.auditState()
+// auditEnabled reports whether the cluster records the API audit log; an
+// error or a timeout counts as off.
+func (a *app) auditEnabled(ctx context.Context) bool {
+	on, _ := a.auditState(ctx)
 	return on
 }
 
-// askAudit asks the cluster whether the audit log is on; known is false
-// when the question failed.
-func (a *App) askAudit() (on, known bool) {
+// auditState asks the cluster, under ctx with a 5 s timeout, whether the
+// audit log is on; known is false when the question failed. The first
+// answer is kept for the rest of the process; a failure is asked again.
+func (a *app) auditState(ctx context.Context) (on, known bool) {
+	a.audit.mu.Lock()
+	defer a.audit.mu.Unlock()
+	if a.audit.known {
+		return a.audit.on, true
+	}
 	cl, err := a.getCluster()
 	if err != nil {
 		return false, false
-	}
-	ctx := a.cmdCtx
-	if ctx == nil {
-		ctx = context.Background()
 	}
 	ctx, cancel := context.WithTimeout(ctx, auditCheckTimeout)
 	defer cancel()
@@ -584,13 +618,14 @@ func (a *App) askAudit() (on, known bool) {
 	if err != nil {
 		return false, false
 	}
+	a.audit.known, a.audit.on = true, on
 	return on, true
 }
 
 // hookRunner adapts Factories.Run to the env hook signature with out fixed.
 // The setup hook and the smoke solve.sh receive KUBEDRILL_BIN, the path of
 // this binary, so a hook can call kubedrill fault.
-func (a *App) hookRunner(out io.Writer) func(ctx context.Context, script string, env []string) error {
+func (a *app) hookRunner(out io.Writer) func(ctx context.Context, script string, env []string) error {
 	return func(ctx context.Context, script string, env []string) error {
 		if exe, err := a.executable(); err == nil && exe != "" {
 			env = append(append([]string(nil), env...), "KUBEDRILL_BIN="+exe)
@@ -599,49 +634,7 @@ func (a *App) hookRunner(out io.Writer) func(ctx context.Context, script string,
 	}
 }
 
-// progressToStderr prints "msg... " without a newline; the next progress
-// message or finishProgress closes the line with doneStatus. While watch
-// runs, progressSink receives the message instead, so the line lands in
-// the watch status line rather than over the screen.
-func (a *App) progressToStderr(msg string) {
-	if sink := a.progressSink; sink != nil {
-		sink(msg)
-		return
-	}
-	a.finishProgress()
-	fmt.Fprintf(a.stderr, "%s... ", msg)
-	a.progressOpen = true
-	a.progressStart = a.now()
-}
-
-// finishProgress closes an open progress line: "done" for a step under
-// 0.1 s, "done (1.2s)" otherwise.
-func (a *App) finishProgress() {
-	a.endProgress(doneStatus(a.now().Sub(a.progressStart)))
-}
-
-// progressQuiet is the step duration below which a progress line prints
-// "done" without a time.
-const progressQuiet = 100 * time.Millisecond
-
-func doneStatus(d time.Duration) string {
-	if d < progressQuiet {
-		return "done"
-	}
-	return fmt.Sprintf("done (%.1fs)", d.Seconds())
-}
-
-// endProgress closes an open progress line with status, or with a bare
-// newline when status is empty (the step did not finish).
-func (a *App) endProgress(status string) {
-	if !a.progressOpen {
-		return
-	}
-	a.progressOpen = false
-	fmt.Fprintln(a.stderr, status)
-}
-
-func (a *App) learnerSession() (*env.Session, error) {
+func (a *app) learnerSession(ctx context.Context) (*env.Session, error) {
 	if a.session != nil {
 		return a.session, nil
 	}
@@ -649,7 +642,7 @@ func (a *App) learnerSession() (*env.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	s, _, err := a.getSession(j, a.progressToStderr, true)
+	s, _, err := a.getSession(ctx, j, a.progress.Step, true)
 	if err != nil {
 		return nil, err
 	}
@@ -658,95 +651,127 @@ func (a *App) learnerSession() (*env.Session, error) {
 }
 
 // lazyConn opens the cluster connection on first use and satisfies env.Kube,
-// env.Grader and the DeleteNamespace the smoke command needs.
+// env.Grader and the DeleteNamespace the smoke command needs. It is safe for
+// concurrent use; only a successful connection is kept. When scriptFn is
+// set (a ScriptKubeconfig factory is wired), the connection is opened only
+// with a pinned script kubeconfig, never with the whole cluster one.
 type lazyConn struct {
 	cluster  Cluster
 	connect  func(kubeconfig, contextName, scriptKubeconfig string) (Kube, Grader, error)
-	script   string
-	scriptFn func() string
-	kube     Kube
-	grader   Grader
+	scriptFn func(Cluster) (string, error)
+
+	mu     sync.Mutex
+	script string
+	kube   Kube
+	grader Grader
 }
 
-func (c *lazyConn) open() error {
+// setScript records the pinned kubeconfig handed to Connect, unless the
+// connection is already open.
+func (c *lazyConn) setScript(path string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.kube == nil {
+		c.script = path
+	}
+}
+
+func (c *lazyConn) open() (Kube, Grader, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.kube != nil {
-		return nil
+		return c.kube, c.grader, nil
 	}
 	path, name, err := c.cluster.Kubeconfig()
 	if err != nil {
-		return fmt.Errorf("connect to cluster: %w", err)
+		return nil, nil, fmt.Errorf("connect to cluster: %w", err)
 	}
-	if c.script == "" && c.scriptFn != nil {
-		c.script = c.scriptFn()
+	script := c.script
+	if script == "" && c.scriptFn != nil {
+		script, err = c.scriptFn(c.cluster)
+		if err != nil {
+			return nil, nil, fmt.Errorf("connect to cluster %s: script checks need a kubeconfig pinned to that context: %w", name, err)
+		}
+		if script == "" {
+			return nil, nil, fmt.Errorf("connect to cluster %s: script checks need a kubeconfig pinned to that context, got none", name)
+		}
 	}
-	k, g, err := c.connect(path, name, c.script)
+	k, g, err := c.connect(path, name, script)
 	if err != nil {
-		return fmt.Errorf("connect to cluster %s (kubeconfig %s): %w; is the cluster up? kubedrill up", name, path, err)
+		return nil, nil, fmt.Errorf("connect to cluster %s (kubeconfig %s): %w; is the cluster up? kubedrill up", name, path, err)
 	}
-	c.kube, c.grader = k, g
-	return nil
+	c.script, c.kube, c.grader = script, k, g
+	return k, g, nil
 }
 
 func (c *lazyConn) ResetNamespace(ctx context.Context, ns string, labels map[string]string) error {
-	if err := c.open(); err != nil {
+	k, _, err := c.open()
+	if err != nil {
 		return err
 	}
-	return c.kube.ResetNamespace(ctx, ns, labels)
+	return k.ResetNamespace(ctx, ns, labels)
 }
 
 func (c *lazyConn) ApplyManifests(ctx context.Context, ns string, manifests []string) error {
-	if err := c.open(); err != nil {
+	k, _, err := c.open()
+	if err != nil {
 		return err
 	}
-	return c.kube.ApplyManifests(ctx, ns, manifests)
+	return k.ApplyManifests(ctx, ns, manifests)
 }
 
 func (c *lazyConn) DeleteNamespaces(ctx context.Context, selector, keep string) (int, error) {
-	if err := c.open(); err != nil {
+	k, _, err := c.open()
+	if err != nil {
 		return 0, err
 	}
-	return c.kube.DeleteNamespaces(ctx, selector, keep)
+	return k.DeleteNamespaces(ctx, selector, keep)
 }
 
 func (c *lazyConn) UnavailableAPIServices(ctx context.Context) ([]string, error) {
-	if err := c.open(); err != nil {
+	k, _, err := c.open()
+	if err != nil {
 		return nil, err
 	}
-	return c.kube.UnavailableAPIServices(ctx)
+	return k.UnavailableAPIServices(ctx)
 }
 
 func (c *lazyConn) ApplyCluster(ctx context.Context, manifests []string) error {
-	if err := c.open(); err != nil {
+	k, _, err := c.open()
+	if err != nil {
 		return err
 	}
-	return c.kube.ApplyCluster(ctx, manifests)
+	return k.ApplyCluster(ctx, manifests)
 }
 
 func (c *lazyConn) NamespaceLabels(ctx context.Context, ns string) (map[string]string, error) {
-	if err := c.open(); err != nil {
+	k, _, err := c.open()
+	if err != nil {
 		return nil, err
 	}
-	return c.kube.NamespaceLabels(ctx, ns)
+	return k.NamespaceLabels(ctx, ns)
 }
 
 func (c *lazyConn) DeleteNamespace(ctx context.Context, ns string) error {
-	if err := c.open(); err != nil {
+	k, _, err := c.open()
+	if err != nil {
 		return err
 	}
-	return c.kube.DeleteNamespace(ctx, ns)
+	return k.DeleteNamespace(ctx, ns)
 }
 
 func (c *lazyConn) Grade(ctx context.Context, rd *scenario.Rendered) (grader.Grade, error) {
-	if err := c.open(); err != nil {
+	_, g, err := c.open()
+	if err != nil {
 		return grader.Grade{}, err
 	}
-	return c.grader.Grade(ctx, rd)
+	return g.Grade(ctx, rd)
 }
 
 // confirm asks a yes/no question. On a terminal it reads the answer from
 // stdin; on a pipe it reads one line and accepts y or yes; without any input
 // the answer is an error naming the --yes flag.
-func (a *App) confirm(question string, yes bool) (bool, error) {
+func (a *app) confirm(question string, yes bool) (bool, error) {
 	if yes {
 		return true, nil
 	}
@@ -767,27 +792,10 @@ func (a *App) confirm(question string, yes bool) (bool, error) {
 	return ans == "y" || ans == "yes", nil
 }
 
-func (a *App) printf(format string, args ...any) {
+func (a *app) printf(format string, args ...any) {
 	fmt.Fprintf(a.stdout, format, args...)
 }
 
-func (a *App) println(args ...any) {
+func (a *app) println(args ...any) {
 	fmt.Fprintln(a.stdout, args...)
 }
-
-// style applies st to text only when color output is enabled.
-func (a *App) style(st lipgloss.Style, text string) string {
-	if !a.color {
-		return text
-	}
-	return st.Render(text)
-}
-
-var (
-	styleBold   = lipgloss.NewStyle().Bold(true)
-	stylePass   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-	styleFail   = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-	styleSkip   = lipgloss.NewStyle().Faint(true)
-	styleErr    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-	styleAccent = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-)

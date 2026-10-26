@@ -13,11 +13,13 @@ var (
 )
 
 // Split returns the documents of data, in order. A separator is a line that
-// is exactly "---" or starts with "---" followed by a space or a tab (a
-// trailing comment such as "--- # next" included), with any trailing
-// whitespace or carriage return ignored. Documents that are empty or hold
-// only blank lines and comment lines are dropped. Each document keeps its
-// lines as they were, newline terminated.
+// is exactly "---" or starts with "---" followed by a space or a tab, with
+// any trailing whitespace or carriage return ignored. Text after the
+// separator that is not a comment ("--- {kind: ConfigMap}") becomes the
+// first line of the next document; a trailing comment such as "--- # next"
+// is dropped. Documents that are empty or hold only blank lines and comment
+// lines are dropped. Each document keeps its lines as they were, newline
+// terminated.
 func Split(data []byte) [][]byte {
 	var docs [][]byte
 	var cur []byte
@@ -36,8 +38,9 @@ func Split(data []byte) [][]byte {
 		} else {
 			rest = nil
 		}
-		if isSeparator(line) {
+		if ok, content := separatorLine(line); ok {
 			flush()
+			cur = append(cur, content...)
 			continue
 		}
 		cur = append(cur, line...)
@@ -46,16 +49,22 @@ func Split(data []byte) [][]byte {
 	return docs
 }
 
-func isSeparator(line []byte) bool {
+func separatorLine(line []byte) (bool, []byte) {
 	trimmed := bytes.TrimRight(line, " \t\r\n")
 	if !bytes.HasPrefix(trimmed, separator) {
-		return false
+		return false, nil
 	}
 	if len(trimmed) == len(separator) {
-		return true
+		return true, nil
 	}
-	c := trimmed[len(separator)]
-	return c == ' ' || c == '\t'
+	if c := trimmed[len(separator)]; c != ' ' && c != '\t' {
+		return false, nil
+	}
+	content := bytes.TrimLeft(line[len(separator):], " \t")
+	if bytes.HasPrefix(content, comment) {
+		return true, nil
+	}
+	return true, content
 }
 
 func blank(doc []byte) bool {

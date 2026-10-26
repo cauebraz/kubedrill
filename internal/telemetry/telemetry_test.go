@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cauebraz/kubedrill/internal/journal"
 )
 
 const fixtureNS = "task-hello-ab12c"
@@ -192,8 +194,8 @@ func TestReadAuditClusterScoped(t *testing.T) {
 	if got := describe(events); !reflect.DeepEqual(got, want) {
 		t.Errorf("cluster-scoped events:\ngot  %q\nwant %q", got, want)
 	}
-	if s := Summarize(events, true, nil, []string{"storage.k8s.io/storageclasses/fast"}); s.Verdict != VerdictRootCause {
-		t.Errorf("verdict with a cluster-scoped fix target write: got %q, want %q", s.Verdict, VerdictRootCause)
+	if s := Summarize(events, true, nil, []string{"storage.k8s.io/storageclasses/fast"}); s.Verdict != journal.VerdictRootCause {
+		t.Errorf("verdict with a cluster-scoped fix target write: got %q, want %q", s.Verdict, journal.VerdictRootCause)
 	}
 }
 
@@ -301,7 +303,7 @@ func TestSummarizeFixtures(t *testing.T) {
 			targets: []string{"apps/deployments/hello"},
 			check: func(t *testing.T, got summary) {
 				want := summary{
-					Source: "audit+shell", Verdict: VerdictRootCause, Reads: 7, Writes: 2, ReadsBeforeFirstWrite: 5,
+					Source: "audit+shell", Verdict: journal.VerdictRootCause, Reads: 7, Writes: 2, ReadsBeforeFirstWrite: 5,
 					FirstWriteTarget: "core/pods/hello-7d9f8b6c5-x2x9q", FirstWriteAt: ptr(at("10:01:00.1")),
 					FirstKubectlAt: ptr(at("10:00:04.512345678")), CommandsTotal: 5, KubectlCommands: 4, FailedCommands: 1,
 				}
@@ -313,7 +315,7 @@ func TestSummarizeFixtures(t *testing.T) {
 			targets: []string{"apps/deployments/hello", "core/configmaps/hello"},
 			check: func(t *testing.T, got summary) {
 				want := summary{
-					Source: "audit", Verdict: VerdictSymptomOnly, Reads: 1, Writes: 2, ReadsBeforeFirstWrite: 1,
+					Source: "audit", Verdict: journal.VerdictSymptomOnly, Reads: 1, Writes: 2, ReadsBeforeFirstWrite: 1,
 					FirstWriteTarget: "core/pods/hello-7d9f8b6c5-x2x9q", FirstWriteAt: ptr(at("10:00:30.1")),
 					FirstKubectlAt: ptr(at("10:00:05.1")),
 				}
@@ -324,7 +326,7 @@ func TestSummarizeFixtures(t *testing.T) {
 			name: "core service as a fix target", file: "symptom.log", available: true,
 			targets: []string{"core/services/web"},
 			check: func(t *testing.T, got summary) {
-				if got.Verdict != VerdictRootCause {
+				if got.Verdict != journal.VerdictRootCause {
 					t.Errorf("verdict: got %q, want root-cause", got.Verdict)
 				}
 			},
@@ -333,7 +335,7 @@ func TestSummarizeFixtures(t *testing.T) {
 			name: "core group written empty in a fix target", file: "symptom.log", available: true,
 			targets: []string{"/services/web"},
 			check: func(t *testing.T, got summary) {
-				if got.Verdict != VerdictRootCause || got.FirstWriteTarget != "core/pods/hello-7d9f8b6c5-x2x9q" {
+				if got.Verdict != journal.VerdictRootCause || got.FirstWriteTarget != "core/pods/hello-7d9f8b6c5-x2x9q" {
 					t.Errorf("got verdict %q first target %q, want root-cause and core/pods/hello-7d9f8b6c5-x2x9q", got.Verdict, got.FirstWriteTarget)
 				}
 			},
@@ -343,7 +345,7 @@ func TestSummarizeFixtures(t *testing.T) {
 			targets: []string{"apps/deployments/hello"},
 			check: func(t *testing.T, got summary) {
 				want := summary{
-					Source: "shell", Verdict: VerdictUnknown, FirstKubectlAt: ptr(at("10:00:04.512345678")),
+					Source: "shell", Verdict: journal.VerdictUnknown, FirstKubectlAt: ptr(at("10:00:04.512345678")),
 					CommandsTotal: 5, KubectlCommands: 4, FailedCommands: 1,
 				}
 				want.compare(t, got)
@@ -352,14 +354,14 @@ func TestSummarizeFixtures(t *testing.T) {
 		{
 			name: "nothing at all", file: "absent.log", available: false,
 			check: func(t *testing.T, got summary) {
-				want := summary{Source: "none", Verdict: VerdictUnknown}
+				want := summary{Source: "none", Verdict: journal.VerdictUnknown}
 				want.compare(t, got)
 			},
 		},
 		{
 			name: "audit available, no requests", file: "empty.log", available: true,
 			check: func(t *testing.T, got summary) {
-				want := summary{Source: "audit", Verdict: VerdictNoWrites}
+				want := summary{Source: "audit", Verdict: journal.VerdictNoWrites}
 				want.compare(t, got)
 			},
 		},
@@ -382,7 +384,8 @@ func TestSummarizeFixtures(t *testing.T) {
 }
 
 type summary struct {
-	Source, Verdict, FirstWriteTarget              string
+	Source, FirstWriteTarget                       string
+	Verdict                                        journal.Verdict
 	Reads, Writes, ReadsBeforeFirstWrite           int
 	CommandsTotal, KubectlCommands, FailedCommands int
 	FirstWriteAt, FirstKubectlAt                   *time.Time
@@ -432,7 +435,7 @@ func TestSummarizeWriteRules(t *testing.T) {
 		events      []AuditEvent
 		wantWrites  int
 		wantReads   int
-		wantVerdict string
+		wantVerdict journal.Verdict
 	}{
 		{
 			name: "scale subresource hits the deployment",
@@ -440,14 +443,14 @@ func TestSummarizeWriteRules(t *testing.T) {
 				{Time: base, Verb: "get", Group: "apps", Resource: "deployments", Name: "hello", Code: 200},
 				{Time: base.Add(time.Second), Verb: "patch", Group: "apps", Resource: "deployments", Subresource: "scale", Name: "hello", Code: 200},
 			},
-			wantWrites: 1, wantReads: 1, wantVerdict: VerdictRootCause,
+			wantWrites: 1, wantReads: 1, wantVerdict: journal.VerdictRootCause,
 		},
 		{
 			name: "forbidden write is not a write",
 			events: []AuditEvent{
 				{Time: base, Verb: "patch", Group: "apps", Resource: "deployments", Name: "hello", Code: 403},
 			},
-			wantWrites: 0, wantReads: 1, wantVerdict: VerdictNoWrites,
+			wantWrites: 0, wantReads: 1, wantVerdict: journal.VerdictNoWrites,
 		},
 		{
 			name: "unsorted input is ordered by time",
@@ -455,7 +458,7 @@ func TestSummarizeWriteRules(t *testing.T) {
 				{Time: base.Add(time.Minute), Verb: "delete", Resource: "pods", Name: "p", Code: 200},
 				{Time: base, Verb: "list", Resource: "pods", Code: 200},
 			},
-			wantWrites: 1, wantReads: 1, wantVerdict: VerdictSymptomOnly,
+			wantWrites: 1, wantReads: 1, wantVerdict: journal.VerdictSymptomOnly,
 		},
 	}
 	for _, tc := range tests {
@@ -481,7 +484,7 @@ func TestSummarizeSetImageAlone(t *testing.T) {
 		t.Fatalf("events: got %v", got)
 	}
 	got := Summarize(events, true, nil, []string{"apps/deployments/hello"})
-	if got.Reads != 0 || got.ReadsBeforeFirstWrite != 0 || got.Writes != 1 || got.Verdict != VerdictRootCause {
+	if got.Reads != 0 || got.ReadsBeforeFirstWrite != 0 || got.Writes != 1 || got.Verdict != journal.VerdictRootCause {
 		t.Errorf("kubectl set image alone: got reads %d before-write %d writes %d verdict %q, want 0 0 1 root-cause", got.Reads, got.ReadsBeforeFirstWrite, got.Writes, got.Verdict)
 	}
 }
@@ -492,7 +495,7 @@ func TestSummarizeEventsReadCounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := Summarize(events, true, nil, []string{"apps/deployments/hello"})
-	if got.Reads != 1 || got.ReadsBeforeFirstWrite != 1 || got.Writes != 1 || got.Verdict != VerdictRootCause {
+	if got.Reads != 1 || got.ReadsBeforeFirstWrite != 1 || got.Writes != 1 || got.Verdict != journal.VerdictRootCause {
 		t.Errorf("events list then set image: got reads %d before-write %d writes %d verdict %q, want 1 1 1 root-cause", got.Reads, got.ReadsBeforeFirstWrite, got.Writes, got.Verdict)
 	}
 }

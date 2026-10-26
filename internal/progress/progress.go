@@ -101,7 +101,7 @@ func IsClean(e journal.Episode, minutes int) bool {
 	if minutes > 0 && e.EndedAt.Sub(e.StartedAt) > time.Duration(minutes)*time.Minute {
 		return false
 	}
-	if t := e.Telemetry; t != nil && t.Verdict != "" && t.Verdict != "unknown" {
+	if t := e.Telemetry; t != nil && t.Verdict != "" && t.Verdict != journal.VerdictUnknown {
 		if t.Writes > 0 && t.ReadsBeforeFirstWrite == 0 {
 			return false
 		}
@@ -331,7 +331,7 @@ func Stats(cat []ScenarioInfo, eps []journal.Episode) Summary {
 	for _, e := range finished(eps) {
 		sum.Outcomes[e.Outcome]++
 		if e.Telemetry != nil && e.Telemetry.Verdict != "" {
-			sum.Verdicts[e.Telemetry.Verdict]++
+			sum.Verdicts[string(e.Telemetry.Verdict)]++
 		}
 		solved := e.Outcome == journal.OutcomeSolved
 		if solved {

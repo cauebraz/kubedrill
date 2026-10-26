@@ -14,7 +14,7 @@ const (
 	apiServicePoll     = 2 * time.Second
 )
 
-func (a *App) rootCommand() *cobra.Command {
+func (a *app) rootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "kubedrill",
 		Short: "Local Kubernetes training: reset a scenario, fix it, get graded",
@@ -29,7 +29,6 @@ func (a *App) rootCommand() *cobra.Command {
 			return a.runDefault(cmd.Context())
 		},
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			a.cmdCtx = cmd.Context()
 			if !noExpiry[cmd.Name()] {
 				a.expireIfDue(cmd.Context())
 			}

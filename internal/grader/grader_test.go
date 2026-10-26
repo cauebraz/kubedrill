@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/cauebraz/kubedrill/internal/kube"
 	"github.com/cauebraz/kubedrill/internal/scenario"
+	"github.com/cauebraz/kubedrill/internal/scriptrun"
 )
 
 type fakeKube struct {
@@ -244,61 +246,28 @@ func TestGradeSingleChecks(t *testing.T) {
 			wantActual:   "no value at {.spec.nothing.here}",
 		},
 		{
-			name:       "exists true with path passes when the path has a value",
-			check:      scenario.Check{ID: "haspath", Resource: deployRef("hello"), Path: "{.spec.replicas}", Exists: boolp(true)},
-			wantStatus: StatusPass,
-			wantActual: "2",
+			name:        "exists with path is an error",
+			check:       scenario.Check{ID: "haspath", Resource: deployRef("hello"), Path: "{.spec.replicas}", Exists: boolp(true)},
+			wantStatus:  StatusError,
+			wantMessage: "exists applies to a resource without path; use not_empty for a path",
 		},
 		{
-			name:         "exists true with path fails when the path is empty",
-			check:        scenario.Check{ID: "haspath", Resource: deployRef("hello"), Path: "{.spec.nothing}", Exists: boolp(true)},
-			wantStatus:   StatusFail,
-			wantExpected: "a value at {.spec.nothing}",
-			wantActual:   "no value at {.spec.nothing}",
+			name:        "exists false with path is an error even when the object is missing",
+			check:       scenario.Check{ID: "nopath", Resource: deployRef("ghost"), Path: "{.spec.replicas}", Exists: boolp(false)},
+			wantStatus:  StatusError,
+			wantMessage: "exists applies to a resource without path; use not_empty for a path",
 		},
 		{
-			name:       "exists false with path passes when the path is empty",
-			check:      scenario.Check{ID: "nopath", Resource: deployRef("hello"), Path: "{.spec.nothing}", Exists: boolp(false)},
-			wantStatus: StatusPass,
-			wantActual: "no value at {.spec.nothing}",
+			name:        "exists on probe is an error",
+			check:       scenario.Check{ID: "out", Probe: &scenario.Probe{Image: "silent"}, Exists: boolp(true)},
+			wantStatus:  StatusError,
+			wantMessage: "exists applies to a resource source only",
 		},
 		{
-			name:         "exists false with path fails when the path has a value",
-			check:        scenario.Check{ID: "nopath", Resource: deployRef("hello"), Path: "{.spec.replicas}", Exists: boolp(false)},
-			wantStatus:   StatusFail,
-			wantExpected: "no value",
-			wantActual:   "2",
-		},
-		{
-			name:       "exists false with path passes when the object is missing",
-			check:      scenario.Check{ID: "nopath", Resource: deployRef("ghost"), Path: "{.spec.replicas}", Exists: boolp(false)},
-			wantStatus: StatusPass,
-		},
-		{
-			name: "exists false with selector and path looks at the path",
-			check: scenario.Check{ID: "nopath", Resource: &scenario.ResourceRef{APIVersion: "discovery.k8s.io/v1", Kind: "EndpointSlice", Selector: "kubernetes.io/service-name=hello"},
-				Path: "{.items[*].nothing}", Exists: boolp(false)},
-			wantStatus: StatusPass,
-		},
-		{
-			name:         "exists true on probe fails on empty output",
-			check:        scenario.Check{ID: "out", Probe: &scenario.Probe{Image: "silent"}, Exists: boolp(true)},
-			wantStatus:   StatusFail,
-			wantExpected: "a value",
-			wantActual:   `"" (empty)`,
-		},
-		{
-			name:       "exists false on probe passes on empty output",
-			check:      scenario.Check{ID: "out", Probe: &scenario.Probe{Image: "silent"}, Exists: boolp(false)},
-			wantStatus: StatusPass,
-			wantActual: "exit code 0",
-		},
-		{
-			name:         "exists false on probe fails with output",
-			check:        scenario.Check{ID: "out", Probe: &scenario.Probe{Image: "curl"}, Exists: boolp(false)},
-			wantStatus:   StatusFail,
-			wantExpected: "no value",
-			wantActual:   "HTTP/1.1 200 OK",
+			name:        "exists on script is an error",
+			check:       scenario.Check{ID: "out", Script: "true", Exists: boolp(false)},
+			wantStatus:  StatusError,
+			wantMessage: "exists applies to a resource source only",
 		},
 		{
 			name:         "gte passes",
@@ -786,9 +755,9 @@ func TestGradeScriptEnvAllowlist(t *testing.T) {
 			t.Errorf("%s: got %q (actual %q, message %q), want pass", res.ID, res.Status, res.Actual, res.Message)
 		}
 	}
-	for _, kv := range ScriptHostEnv() {
+	for _, kv := range scriptrun.HostEnv() {
 		if strings.HasPrefix(kv, "AWS_") {
-			t.Errorf("ScriptHostEnv: got %q, want only the allowlist", kv)
+			t.Errorf("scriptrun.HostEnv: got %q, want only the allowlist", kv)
 		}
 	}
 }
@@ -914,6 +883,77 @@ func TestGradeTruncatesActual(t *testing.T) {
 	}
 	if got, want := g.Results[0].Status, StatusFail; got != want {
 		t.Errorf("status: got %q, want %q", got, want)
+	}
+}
+
+func TestTruncateKeepsRunes(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		wantLen int
+	}{
+		{name: "short is unchanged", in: "abc", wantLen: 3},
+		{name: "ascii cut at the limit", in: strings.Repeat("x", 500), wantLen: maxTextLen},
+		{name: "two-byte runes across the cut", in: "x" + strings.Repeat("\u00e9", 300), wantLen: maxTextLen},
+		{name: "four-byte runes across the cut", in: "xy" + strings.Repeat("\U0001F600", 100), wantLen: maxTextLen - 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncate(tt.in)
+			if !utf8.ValidString(got) {
+				t.Errorf("truncate: got invalid UTF-8 %q", got)
+			}
+			if len(got) != tt.wantLen {
+				t.Errorf("truncate length: got %d, want %d", len(got), tt.wantLen)
+			}
+		})
+	}
+}
+
+func TestParsePairRejectsNonFinite(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		bound   string
+		wantErr string
+	}{
+		{name: "finite", value: "2", bound: "1"},
+		{name: "NaN bound", value: "2", bound: "NaN", wantErr: `gte: bound "NaN" is not a finite number`},
+		{name: "Inf bound", value: "2", bound: "+Inf", wantErr: `gte: bound "+Inf" is not a finite number`},
+		{name: "NaN value", value: "nan", bound: "1", wantErr: `gte: value "nan" is not a finite number`},
+		{name: "Inf value", value: "-inf", bound: "1", wantErr: `gte: value "-inf" is not a finite number`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := parsePair(tt.value, tt.bound, "gte")
+			got := ""
+			if err != nil {
+				got = err.Error()
+			}
+			if got != tt.wantErr {
+				t.Errorf("parsePair(%q, %q): got error %q, want %q", tt.value, tt.bound, got, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestGradeDefaultScriptRunnerBackgroundAndCap(t *testing.T) {
+	start := time.Now()
+	g, err := New(newFake()).Grade(context.Background(), rendered(
+		scenario.Check{ID: "bg", Script: "sleep 30 & echo ok", Equals: str("ok"), ExitCode: intp(0)},
+		scenario.Check{ID: "flood", Script: "yes | head -c 10000000; exit 3", ExitCode: intp(3)},
+	))
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("Grade: %v", err)
+	}
+	for _, res := range g.Results {
+		if res.Status != StatusPass {
+			t.Errorf("%s: got %q (expected=%q actual=%q message=%q), want pass", res.ID, res.Status, res.Expected, res.Actual, res.Message)
+		}
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("elapsed: got %v, want under 2s", elapsed)
 	}
 }
 

@@ -291,6 +291,14 @@ Solve and quit:
   debrief. When the quit races the recording of the solve, the episode just
   recorded is used.
 - Quitting before a solve prints `Next: kubedrill check | kubedrill hint`.
+- When recording the solve fails (not a namespace error), watch leaves the
+  solved screen, shows `recording the solve failed: <err>; the next passing
+  check records it` and keeps polling. Quitting with a passing grade that
+  was never recorded exits 1 with `the checks of <id> passed but the solve
+  was not recorded; kubedrill check grades and records it`, without banner
+  or debrief.
+- A hint, surrender or start that returns after `x` started another episode
+  is dropped, so it never lands on the new episode.
 
 Errors:
 
@@ -648,9 +656,19 @@ Creates the cluster when it is missing, then installs the addons.
 
 Cluster:
 
-- Prints `present` when the cluster exists.
+- Prints `present` when the cluster exists, after the same readiness wait
+  as a new cluster: an `up` started while another one is still creating
+  the cluster does not continue early. A stopped node container (for
+  example after a Docker restart) fails at once with the `docker start`
+  command that brings it back.
 - Otherwise it creates it from `cluster/profiles/<profile>.yaml` (about 2
-  minutes) and waits for the nodes.
+  minutes), then prints `waiting up to 2m0s for the nodes to be Ready...`
+  and waits. A second `up` that loses the race to create the same cluster
+  waits the same way instead of continuing early.
+- Ctrl-C cancels, but kind cannot be interrupted while it creates or
+  deletes nodes: the command stops once kind returns. A second Ctrl-C ends
+  the process at once; `kubedrill down --yes` then removes a half-created
+  cluster.
 - The API audit log is written to `<state dir>/audit/audit.log`
   (`cluster.AuditDir()`), with the policy `cluster/audit-policy.yaml`.
 - The state directory is `$XDG_STATE_HOME/kubedrill/kubedrill`, default
@@ -712,6 +730,9 @@ one.
 - A wrong argument count prints the usage.
 - Success prints `fault <action> applied to <node>; kubedrill heal undoes
   every recorded fault`.
+- A call cut short by Ctrl-C or the 30 s docker timeout keeps the record,
+  because Docker may still apply the fault: `fault <action> on <node>: <err>;
+  the fault may still apply, so its record is kept: run kubedrill heal`.
 - Repeating an active fault is `<node> is already paused` (`<node> already
   has its kubelet stopped`), exit 1.
 - An unknown node is `unknown node "x"; valid: control-plane, worker,
@@ -858,7 +879,10 @@ For each scenario and each variant seed: reset, assert the checks fail, run
   <date time>` in that message.
 - `--force`: run even when the learner has an active episode of one of the
   scenarios.
-- It deletes every namespace it created at the end.
+- It deletes every namespace it created at the end, also after Ctrl-C or a
+  failed reset: the cleanup runs detached from the cancelled command for up
+  to 30 s and also sweeps the namespaces labeled with its throwaway
+  journal.
 - `solve.sh` output is shown for failing runs, or for every run with `-v`.
 
 ### profile render
@@ -895,7 +919,7 @@ from an unversioned tree)`) and the Go version.
 | `c` | Grade now instead of waiting for the interval (`a check is already running` while one runs) |
 | `h` | Next hint, labeled like `kubedrill hint`; the last one waits for `kubedrill diagnose`. A second `h` while the first is on its way only says `a hint is already on its way` |
 | `s` twice | Surrender and print the solution (needs a diagnosis); any other key cancels |
-| `x` twice | Start the same scenario again with a new seed, in place; any other key cancels. The start's progress lines (`creating namespace <ns>...`) replace the status line instead of printing over the screen. Refused during an exam with the `reset` message |
+| `x` twice | Start the same scenario again with a new seed, in place; any other key cancels. While a hint is on its way it only says `a hint is on its way; press x again once it shows`. The start's progress lines (`creating namespace <ns>...`) replace the status line instead of printing over the screen. Refused during an exam with the `reset` message |
 | `n` | After a solve only; see below. Before a solve it only explains itself |
 | `w` | Toggle why between the first failing check and every failing check |
 | `?` | Full help: every key grouped under Checks (`c`, `w`), Assist (`h`, `s`) and Episode (`x`, `n`, `?`, `q`), each entry indented two spaces; `?` closes it |
@@ -1029,10 +1053,15 @@ Deadline:
   (N of M checks passed)`.
 - At or after means 12:15:00 for a 12:15:00 deadline; 12:14:59 is still
   inside it.
-- The exceptions are bare `kubedrill`, `doctor`, `up`, `down`, `lint`, `new`,
-  `smoke`, `version`, `help`, `fault`, `heal` and `profile render`.
+- The exceptions are `doctor`, `up`, `down`, `lint`, `new`, `smoke`,
+  `version`, `help`, `fault`, `heal` and `profile render`. Bare `kubedrill`
+  is an exception too, except on a terminal, where it finishes an expired
+  exam before it reopens the workstation.
 - The outcome stays `timed_out` when that grade passes, except within 30
   seconds after the deadline, when a pass counts as `solved` (`env.Expire`).
+- Both the deadline and the 30 seconds are judged at the moment the command
+  starts, before grading: a `submit` started before the deadline counts
+  even when its grading ends after it.
 
 ## Telemetry
 
@@ -1043,7 +1072,7 @@ the journal directory.
 | File | Written by | Holds |
 |------|------------|-------|
 | `<state dir>/audit/audit.log` | the kind API server (audit policy `cluster/audit-policy.yaml`) | the learner's API requests: reads before the first write, the first write target, the verdict |
-| `<journal dir>/shell/commands.jsonl` | the workstation shell | every command with time, exit code and duration; the kubectl lines become "your path" |
+| `<journal dir>/shell/commands.jsonl` | the workstation shell | every command with time, exit code and duration; the kubectl lines become "your path". After an episode ends it moves to `commands.jsonl.1` when it is over 10 MiB; a line over 16 MiB is skipped, and an unreadable log prints one warning instead of being dropped silently |
 | `<journal dir>/recordings/<namespace>-<unix>.cast` | asciinema in the workstation | the terminal session, played by `kubedrill replay` |
 
 The audit log:

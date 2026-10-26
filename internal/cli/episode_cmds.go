@@ -13,7 +13,9 @@ import (
 	"github.com/cauebraz/kubedrill/internal/grader"
 	"github.com/cauebraz/kubedrill/internal/journal"
 	"github.com/cauebraz/kubedrill/internal/progress"
+	"github.com/cauebraz/kubedrill/internal/render"
 	"github.com/cauebraz/kubedrill/internal/scenario"
+	"github.com/cauebraz/kubedrill/internal/tui/ticket"
 )
 
 // startOptions are the flags of kubedrill start.
@@ -25,7 +27,7 @@ type startOptions struct {
 	layout  string
 }
 
-func (a *App) startCommand() *cobra.Command {
+func (a *app) startCommand() *cobra.Command {
 	var o startOptions
 	cmd := &cobra.Command{
 		Use:   "start <ref>",
@@ -52,7 +54,7 @@ func addLayoutFlag(cmd *cobra.Command, layout *string) {
 	cmd.Flags().StringVar(layout, "layout", layoutTmux, "workstation layout: tmux (shell, ticket and kubedrill watch panes) or shell")
 }
 
-func (a *App) runStart(ctx context.Context, ref string, o startOptions) error {
+func (a *app) runStart(ctx context.Context, ref string, o startOptions) error {
 	if o.seed < 0 {
 		return fmt.Errorf("seed must be >= 1 (0 draws one), got %d", o.seed)
 	}
@@ -84,7 +86,7 @@ func (a *App) runStart(ctx context.Context, ref string, o startOptions) error {
 // confirmLeave returns the active episode start would leave, after the
 // learner agreed to leave it (yes skips the question); ok is false when
 // the learner kept it.
-func (a *App) confirmLeave(j Journal, yes bool) (prev *journal.Episode, ok bool, err error) {
+func (a *app) confirmLeave(j Journal, yes bool) (prev *journal.Episode, ok bool, err error) {
 	prev, err = j.Current()
 	if err != nil {
 		return nil, false, fmt.Errorf("read current episode: %w", err)
@@ -110,7 +112,7 @@ func (a *App) confirmLeave(j Journal, yes bool) (prev *journal.Episode, ok bool,
 // starts the episode, leaving prev when there is one. The heal lines come
 // before "leaving the episode", and a start that fails while prev is still
 // current says the episode was kept.
-func (a *App) startEpisode(ctx context.Context, j Journal, ref string, o startOptions, prev *journal.Episode) (*journal.Episode, *scenario.Rendered, error) {
+func (a *app) startEpisode(ctx context.Context, j Journal, ref string, o startOptions, prev *journal.Episode) (*journal.Episode, *scenario.Rendered, error) {
 	cl, err := a.getCluster()
 	if err != nil {
 		return nil, nil, err
@@ -122,7 +124,7 @@ func (a *App) startEpisode(ctx context.Context, j Journal, ref string, o startOp
 	if !exists {
 		return nil, nil, fmt.Errorf("cluster %s: missing; create it with: kubedrill up", cluster.Name)
 	}
-	s, err := a.learnerSession()
+	s, err := a.learnerSession(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -135,23 +137,23 @@ func (a *App) startEpisode(ctx context.Context, j Journal, ref string, o startOp
 			a.keptAfterFailedStart(j, prev)
 			return nil, nil, err
 		}
-		a.finishProgress()
+		a.progress.Finish()
 		a.printf("leaving the episode of %s (recorded as failed)\n", prev.ScenarioID)
 	}
 	ep, rd, err := s.Start(ctx, ref, env.StartOptions{Seed: o.seed, Mode: mode})
 	if err != nil {
-		a.endProgress("")
+		a.progress.End("")
 		a.keptAfterFailedStart(j, prev)
 		return nil, nil, err
 	}
-	a.finishProgress()
-	a.telemetryNotice(j)
+	a.progress.Finish()
+	a.telemetryNotice(ctx, j)
 	return ep, rd, nil
 }
 
 // keptAfterFailedStart prints that prev is still the active episode when a
 // start failed before leaving it.
-func (a *App) keptAfterFailedStart(j Journal, prev *journal.Episode) {
+func (a *app) keptAfterFailedStart(j Journal, prev *journal.Episode) {
 	if prev == nil {
 		return
 	}
@@ -162,7 +164,7 @@ func (a *App) keptAfterFailedStart(j Journal, prev *journal.Episode) {
 
 // healFaults undoes the recorded faults with one progress line per fault,
 // "healed <action> on <node>", as Start would; Start then finds none.
-func (a *App) healFaults(ctx context.Context) error {
+func (a *app) healFaults(ctx context.Context) error {
 	fm, err := a.getFaults()
 	if err != nil || fm == nil {
 		return err
@@ -178,7 +180,7 @@ func (a *App) healFaults(ctx context.Context) error {
 		return fmt.Errorf("heal injected faults: %w", err)
 	}
 	for _, f := range active {
-		a.progressToStderr(fmt.Sprintf("healed %s on %s", f.Action, f.Node))
+		a.progress.Step(fmt.Sprintf("healed %s on %s", f.Action, f.Node))
 	}
 	return nil
 }
@@ -186,7 +188,7 @@ func (a *App) healFaults(ctx context.Context) error {
 // presentEpisode prints what follows a started episode: the started line,
 // the reminder from a past debrief, the worked example offer, then the
 // ticket on the host or the workstation.
-func (a *App) presentEpisode(ctx context.Context, cat Catalog, j Journal, ep *journal.Episode, rd *scenario.Rendered, o startOptions) error {
+func (a *app) presentEpisode(ctx context.Context, cat Catalog, j Journal, ep *journal.Episode, rd *scenario.Rendered, o startOptions) error {
 	ws, err := a.workstationToOpen(ctx, j, o)
 	if err != nil {
 		return err
@@ -198,7 +200,7 @@ func (a *App) presentEpisode(ctx context.Context, cat Catalog, j Journal, ep *jo
 	}
 	past := withoutEpisode(eps, ep.ID)
 	if line := lastCheckFirst(cat, rd.Scenario, past); line != "" && ep.Mode != journal.ModeExam {
-		a.println(a.wrapLine("Last time you said you would check first: "+line, "  "))
+		a.println(a.printer().WrapLine("Last time you said you would check first: "+line, "  "))
 	}
 	a.println()
 	if ep.Mode != journal.ModeExam && a.interactive() {
@@ -211,8 +213,9 @@ func (a *App) presentEpisode(ctx context.Context, cat Catalog, j Journal, ep *jo
 		return nil
 	}
 	a.println(ticketInWorkstation)
-	a.printFundamentals(ep, rd.Scenario)
-	a.printTicketFooter(ep, rd)
+	p := a.printer()
+	writeFundamentals(p, ep, rd.Scenario)
+	writeTicketFooter(p, ep, rd, a.expectedLine(ep, rd.Scenario))
 	return a.openWorkstation(ctx, j, ws, o.layout, ep)
 }
 
@@ -231,7 +234,7 @@ const workedExampleMethod = "Observation, change and verify are yours; the metho
 // print the symptom and candidate causes of a sibling variant before the
 // ticket. An empty answer prints "worked example skipped", so an answer
 // typed ahead of the prompt and lost does not pass silently.
-func (a *App) offerWorkedExample(cat Catalog, ep *journal.Episode, rd *scenario.Rendered, past []journal.Episode) error {
+func (a *app) offerWorkedExample(cat Catalog, ep *journal.Episode, rd *scenario.Rendered, past []journal.Episode) error {
 	sc := rd.Scenario
 	first := progress.FirstExposure(sc.Meta.Concepts, scenarioInfos(cat), past)
 	if len(first) == 0 {
@@ -253,12 +256,12 @@ func (a *App) offerWorkedExample(cat Catalog, ep *journal.Episode, rd *scenario.
 	default:
 		return nil
 	}
-	a.println(a.style(styleBold, fmt.Sprintf("Worked example (variant %s, not yours)", sibling.Variant.Name)))
+	a.println(a.printer().Style(render.StyleBold, fmt.Sprintf("Worked example (variant %s, not yours)", sibling.Variant.Name)))
 	a.println()
-	a.printf("%s", a.markdown(example))
+	a.printf("%s", a.printer().Markdown(example))
 	a.println()
 	a.println(workedExampleMethod)
-	a.println(a.style(styleBold, "End of the worked example; your ticket follows."))
+	a.println(a.printer().Style(render.StyleBold, "End of the worked example; your ticket follows."))
 	a.println()
 	return nil
 }
@@ -291,8 +294,8 @@ func siblingVariant(sc *scenario.Scenario, ep *journal.Episode) *scenario.Render
 // workstationToOpen returns the workstation start will open, or nil when any
 // gate keeps the learner on the host: the flag, the environment, a missing
 // terminal, no wired workstation, or docker unavailable (a notice on stderr).
-func (a *App) workstationToOpen(ctx context.Context, j Journal, o startOptions) (Workstation, error) {
-	if o.noShell || a.getenv("KUBEDRILL_NO_SHELL") == "1" || a.insideWorkstation() || !a.isTerminal || !a.isInputTerminal {
+func (a *app) workstationToOpen(ctx context.Context, j Journal, o startOptions) (Workstation, error) {
+	if o.noShell || a.getenv("KUBEDRILL_NO_SHELL") == "1" || a.insideWorkstation() || !a.term.IsTerminal || !a.isInputTerminal {
 		return nil, nil
 	}
 	ws, err := a.getWorkstation(j)
@@ -308,64 +311,77 @@ func (a *App) workstationToOpen(ctx context.Context, j Journal, o startOptions) 
 
 // printTicket renders the instruction, the Fundamentals line, the footer
 // and the next steps.
-func (a *App) printTicket(ep *journal.Episode, rd *scenario.Rendered) {
-	a.printf("%s", a.markdown(rd.Instruction))
-	a.println()
-	a.printFundamentals(ep, rd.Scenario)
-	a.printTicketFooter(ep, rd)
-	if ep.Mode == journal.ModeExam {
-		a.println(a.wrapLine(a.examNextStepLine(), "  "))
-		return
-	}
-	a.println(a.wrapLine(a.nextStepLine(), "  "))
+func (a *app) printTicket(ep *journal.Episode, rd *scenario.Rendered) {
+	writeTicket(a.printer(), ep, rd, a.expectedLine(ep, rd.Scenario))
 }
 
-// printTicketFooter names how many checks grade the ticket, the expected
-// minutes next to the learner's median, and the exam deadline.
-func (a *App) printTicketFooter(ep *journal.Episode, rd *scenario.Rendered) {
-	sc := rd.Scenario
-	a.printf("Checked by %s: %s\n", plural(len(rd.Checks), "check"), a.style(styleBold, "kubedrill check --explain"))
+// writeTicket writes the ticket of ep through p: the instruction, the
+// fundamentals, the footer with expected as its minutes line, and the next
+// steps.
+func writeTicket(p render.Printer, ep *journal.Episode, rd *scenario.Rendered, expected string) {
+	p.Printf("%s", p.Markdown(rd.Instruction))
+	p.Println()
+	writeFundamentals(p, ep, rd.Scenario)
+	writeTicketFooter(p, ep, rd, expected)
+	if ep.Mode == journal.ModeExam {
+		p.Println(p.WrapLine(examNextStepLine(p), "  "))
+		return
+	}
+	p.Println(p.WrapLine(nextStepLine(p), "  "))
+}
+
+// expectedLine names the expected minutes of sc next to the learner's
+// median over the solves of sc other than ep.
+func (a *app) expectedLine(ep *journal.Episode, sc *scenario.Scenario) string {
 	expected := fmt.Sprintf("Expected: %d min", sc.Meta.Minutes)
 	if j, err := a.getJournal(); err == nil {
 		if eps, err := allEpisodes(j); err == nil {
 			m := progress.ScenarioMastery(episodesOf(withoutEpisode(eps, ep.ID), sc.Meta.ID), sc.Meta.Minutes)
 			if m.Solved > 0 && m.MedianSolve > 0 {
-				expected += fmt.Sprintf(" (yours: %s median over %s)", minutesCell(m.MedianSolve), plural(m.Solved, "solve"))
+				expected += fmt.Sprintf(" (yours: %s median over %s)", render.Minutes(m.MedianSolve), render.Plural(m.Solved, "solve"))
 			}
 		}
 	}
-	a.println(a.wrapLine(expected, "  "))
+	return expected
+}
+
+// writeTicketFooter names how many checks grade the ticket, the expected
+// minutes line and the exam deadline.
+func writeTicketFooter(p render.Printer, ep *journal.Episode, rd *scenario.Rendered, expected string) {
+	sc := rd.Scenario
+	p.Printf("Checked by %s: %s\n", render.Plural(len(rd.Checks), "check"), p.Style(render.StyleBold, "kubedrill check --explain"))
+	p.Println(p.WrapLine(expected, "  "))
 	if ep.Mode == journal.ModeExam && ep.Deadline != nil {
-		a.println(a.wrapLine(fmt.Sprintf("Exam deadline: %s (%d min time box); no hints, no solution, no watch", ep.Deadline.Local().Format("15:04:05"), sc.Meta.Minutes), "  "))
+		p.Println(p.WrapLine(fmt.Sprintf("Exam deadline: %s (%d min time box); no hints, no solution, no watch", ep.Deadline.Local().Format("15:04:05"), sc.Meta.Minutes), "  "))
 	}
 }
 
-// printFundamentals points at the concept pages of sc when it lists any,
+// writeFundamentals points at the concept pages of sc when it lists any,
 // outside exam mode, where learn is refused.
-func (a *App) printFundamentals(ep *journal.Episode, sc *scenario.Scenario) {
+func writeFundamentals(p render.Printer, ep *journal.Episode, sc *scenario.Scenario) {
 	if len(sc.Meta.Concepts) == 0 || ep.Mode == journal.ModeExam {
 		return
 	}
-	a.println(a.wrapLine(fmt.Sprintf("Fundamentals: %s (%s)", a.style(styleBold, "kubedrill learn"), conceptsLine(sc.Meta.Concepts)), "  "))
+	p.Println(p.WrapLine(fmt.Sprintf("Fundamentals: %s (%s)", p.Style(render.StyleBold, "kubedrill learn"), conceptsLine(sc.Meta.Concepts)), "  "))
 }
 
-func (a *App) nextStepLine() string {
-	return "Next: " + a.style(styleBold, "kubedrill watch") + " (live checks) | " +
-		a.style(styleBold, "kubedrill check") + " (grade once) | " +
-		a.style(styleBold, "kubedrill hint") + " | " +
-		a.style(styleBold, `kubedrill diagnose "<cause>"`)
+func nextStepLine(p render.Printer) string {
+	return "Next: " + p.Style(render.StyleBold, "kubedrill watch") + " (live checks) | " +
+		p.Style(render.StyleBold, "kubedrill check") + " (grade once) | " +
+		p.Style(render.StyleBold, "kubedrill hint") + " | " +
+		p.Style(render.StyleBold, `kubedrill diagnose "<cause>"`)
 }
 
-func (a *App) examNextStepLine() string {
-	return "Next: " + a.style(styleBold, "kubedrill submit") + " (grade once, ends the exam) | " +
-		a.style(styleBold, "kubedrill check --explain") + " (what is graded)"
+func examNextStepLine(p render.Printer) string {
+	return "Next: " + p.Style(render.StyleBold, "kubedrill submit") + " (grade once, ends the exam) | " +
+		p.Style(render.StyleBold, "kubedrill check --explain") + " (what is graded)"
 }
 
-func (a *App) solvedNextLine(id string) string {
-	return "Next: " + a.style(styleBold, "kubedrill solution "+id) + " (compare with the reference) | " + a.style(styleBold, "kubedrill list")
+func solvedNextLine(p render.Printer, id string) string {
+	return "Next: " + p.Style(render.StyleBold, "kubedrill solution "+id) + " (compare with the reference) | " + p.Style(render.StyleBold, "kubedrill list")
 }
 
-func (a *App) ticketCommand() *cobra.Command {
+func (a *app) ticketCommand() *cobra.Command {
 	var follow bool
 	cmd := &cobra.Command{
 		Use:   "ticket",
@@ -375,21 +391,21 @@ func (a *App) ticketCommand() *cobra.Command {
 			"follows resets and new starts; the workstation opens it above the shell.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if follow && (!a.isTerminal || !a.isInputTerminal) {
+			if follow && (!a.term.IsTerminal || !a.isInputTerminal) {
 				return fmt.Errorf("ticket --follow needs a terminal on stdin and stdout; use kubedrill ticket in scripts and pipes")
 			}
-			s, err := a.learnerSession()
+			s, err := a.learnerSession(cmd.Context())
 			if err != nil {
 				return err
 			}
 			if follow {
-				return a.runTicketFollow(cmd.Context(), s, defaultTicketInterval)
+				return a.runTicketFollow(cmd.Context(), s, ticket.DefaultInterval)
 			}
 			ep, rd, err := s.Current()
 			if err != nil {
 				return err
 			}
-			a.printf("%s (seed %d), namespace %s, elapsed %s\n\n", ep.ScenarioID, ep.Seed, rd.Namespace, fmtDuration(ep.DurationAt(a.now())))
+			a.printf("%s (seed %d), namespace %s, elapsed %s\n\n", ep.ScenarioID, ep.Seed, rd.Namespace, render.Duration(ep.DurationAt(a.now())))
 			a.printTicket(ep, rd)
 			return nil
 		},
@@ -398,15 +414,15 @@ func (a *App) ticketCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *App) namespaceCommand() *cobra.Command {
+func (a *app) namespaceCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "namespace",
 		Short: "Print the namespace of the active episode",
 		Long: "namespace prints the Kubernetes namespace the active episode runs in, for\n" +
 			"shell prompts and scripts (the workstation uses it); exit 1 without an episode.",
 		Args: cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			s, err := a.learnerSession()
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			s, err := a.learnerSession(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -420,7 +436,7 @@ func (a *App) namespaceCommand() *cobra.Command {
 	}
 }
 
-func (a *App) checkCommand() *cobra.Command {
+func (a *app) checkCommand() *cobra.Command {
 	var explain bool
 	cmd := &cobra.Command{
 		Use:   "check",
@@ -431,7 +447,7 @@ func (a *App) checkCommand() *cobra.Command {
 			"debrief. --explain lists every check and what it asserts without grading.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, err := a.learnerSession()
+			s, err := a.learnerSession(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -458,7 +474,7 @@ func (a *App) checkCommand() *cobra.Command {
 				a.println("Next: fix what the failing checks name, then kubedrill check again | kubedrill hint")
 				return ErrChecksFailed
 			}
-			_, err = a.afterSolve(cmd.Context(), ep)
+			_, err = a.afterSolve(cmd.Context(), a.printer(), ep)
 			return err
 		},
 	}
@@ -470,7 +486,7 @@ func (a *App) checkCommand() *cobra.Command {
 // meanwhile (a submit, a reset or a solve in another pane): the grade, then
 // the outcome that process recorded. It fails with ErrChecksFailed when a
 // check did not pass.
-func (a *App) endedElsewhere(g grader.Grade, ep *journal.Episode) error {
+func (a *app) endedElsewhere(g grader.Grade, ep *journal.Episode) error {
 	a.writeGrade(a.stdout, g, false)
 	a.printf("the episode of %s already ended as %s in another terminal; kubedrill debrief shows it\n", ep.ScenarioID, ep.Outcome)
 	if !g.Passed {
@@ -479,7 +495,7 @@ func (a *App) endedElsewhere(g grader.Grade, ep *journal.Episode) error {
 	return nil
 }
 
-func (a *App) hintCommand() *cobra.Command {
+func (a *app) hintCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "hint",
 		Short: "Show the next hint",
@@ -487,8 +503,8 @@ func (a *App) hintCommand() *cobra.Command {
 			"journal; a solve with hints does not count toward mastery. The last hint waits\n" +
 			"for kubedrill diagnose. Once every hint is shown it says so and exits 0.",
 		Args: cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			s, err := a.learnerSession()
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			s, err := a.learnerSession(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -513,14 +529,14 @@ func (a *App) hintCommand() *cobra.Command {
 			if n := len(cur.HintReveals); n > 0 && a.now().Sub(cur.HintReveals[n-1]) < hintNudgeWindow {
 				fmt.Fprintln(a.stderr, hintNudge)
 			}
-			a.println(a.style(styleAccent, hintLabel(index, total)))
-			a.printf("%s", a.markdown(hint))
+			a.println(a.printer().Style(render.StyleAccent, hintLabel(index, total)))
+			a.printf("%s", a.printer().Markdown(hint))
 			return nil
 		},
 	}
 }
 
-func (a *App) solutionCommand() *cobra.Command {
+func (a *app) solutionCommand() *cobra.Command {
 	var yes bool
 	var approach string
 	cmd := &cobra.Command{
@@ -545,8 +561,8 @@ func (a *App) solutionCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *App) runSolution(ctx context.Context, ref string, yes bool, approach string) error {
-	s, err := a.learnerSession()
+func (a *app) runSolution(ctx context.Context, ref string, yes bool, approach string) error {
+	s, err := a.learnerSession(ctx)
 	if err != nil {
 		return err
 	}
@@ -569,10 +585,11 @@ func (a *App) runSolution(ctx context.Context, ref string, yes bool, approach st
 		return a.surrender(ctx, s, current, yes)
 	}
 	if ref == "" {
-		last, err := lastEndedEpisode(j)
+		eps, err := allEpisodes(j)
 		if err != nil {
 			return err
 		}
+		last := latestEnded(eps)
 		if last == nil {
 			return fmt.Errorf("%w; kubedrill solution <id> shows the walkthrough of a finished scenario", env.ErrNoActiveEpisode)
 		}
@@ -585,7 +602,7 @@ func (a *App) runSolution(ctx context.Context, ref string, yes bool, approach st
 // episode of it, after a confirmation when it was never solved or
 // abandoned: one approach, or the walkthrough (with your path after a
 // solve) and the approaches.
-func (a *App) finishedSolution(s *env.Session, cat Catalog, j Journal, ref string, yes bool, approach string) error {
+func (a *app) finishedSolution(s *env.Session, cat Catalog, j Journal, ref string, yes bool, approach string) error {
 	sc, err := cat.Find(ref)
 	if err != nil {
 		return err
@@ -614,7 +631,7 @@ func (a *App) finishedSolution(s *env.Session, cat Catalog, j Journal, ref strin
 		return a.printApproach(rd, approach)
 	}
 	if last == nil || last.Outcome != journal.OutcomeSolved {
-		a.printf("%s", a.markdown(rd.Solution))
+		a.printf("%s", a.printer().Markdown(rd.Solution))
 	} else {
 		if err := a.printSolvedSolution(s, cat, sc, rd, last, eps); err != nil {
 			return err
@@ -655,7 +672,7 @@ func latestEpisode(eps []journal.Episode) *journal.Episode {
 
 // surrender ends the active practice episode after a diagnosis and a
 // confirmation, then prints the walkthrough.
-func (a *App) surrender(ctx context.Context, s *env.Session, current *journal.Episode, yes bool) error {
+func (a *app) surrender(ctx context.Context, s *env.Session, current *journal.Episode, yes bool) error {
 	if current.Mode == journal.ModeExam {
 		return examRefusal("solution")
 	}
@@ -678,7 +695,7 @@ func (a *App) surrender(ctx context.Context, s *env.Session, current *journal.Ep
 		return err
 	}
 	a.printf("episode of %s recorded as abandoned\n\n", current.ScenarioID)
-	a.printf("%s", a.markdown(sol))
+	a.printf("%s", a.printer().Markdown(sol))
 	return nil
 }
 
@@ -745,14 +762,14 @@ func splitSection(md, heading string) (before, section, after string, ok bool) {
 // this one, was solved earlier), a
 // terminal first asks which principle made the splitting observation
 // necessary and stores the answer, then reveals the section.
-func (a *App) printSolvedSolution(s *env.Session, cat Catalog, sc *scenario.Scenario, rd *scenario.Rendered, ep *journal.Episode, eps []journal.Episode) error {
+func (a *app) printSolvedSolution(s *env.Session, cat Catalog, sc *scenario.Scenario, rd *scenario.Rendered, ep *journal.Episode, eps []journal.Episode) error {
 	before, section, after, ok := splitSection(rd.Solution, splitHeading)
 	if !ok || !a.interactive() || !laterExposure(cat, sc, ep, eps) {
-		a.printf("%s", a.markdown(rd.Solution))
+		a.printf("%s", a.printer().Markdown(rd.Solution))
 		return nil
 	}
-	a.printf("%s", a.markdown(before))
-	a.printf("%s", a.markdown(splitHeading+"\n"))
+	a.printf("%s", a.printer().Markdown(before))
+	a.printf("%s", a.printer().Markdown(splitHeading+"\n"))
 	if ep.Debrief != nil && ep.Debrief.Principle != "" {
 		a.printf("Your principle: %s\n", ep.Debrief.Principle)
 	} else if principle := a.ask("Which principle made this observation necessary? (one line)"); principle != "" {
@@ -767,7 +784,7 @@ func (a *App) printSolvedSolution(s *env.Session, cat Catalog, sc *scenario.Scen
 		a.println("principle recorded")
 	}
 	a.println()
-	a.printf("%s", a.markdown(section+after))
+	a.printf("%s", a.printer().Markdown(section+after))
 	return nil
 }
 
@@ -797,20 +814,20 @@ func referenceCommands(md string) []string {
 
 // printPath prints the learner's kubectl commands next to the reference
 // commands of the walkthrough.
-func (a *App) printPath(ep *journal.Episode, solution string) {
+func (a *app) printPath(ep *journal.Episode, solution string) {
 	a.println()
-	a.println(a.style(styleBold, "Your path vs the reference"))
+	a.println(a.printer().Style(render.StyleBold, "Your path vs the reference"))
 	var mine []string
 	source := "none"
 	if t := ep.Telemetry; t != nil {
 		mine = t.Commands
-		source = orDash(t.Source)
+		source = render.OrDash(t.Source)
 	}
 	if len(mine) == 0 {
 		a.printf("Your path: no kubectl commands recorded (telemetry: %s)\n", source)
-		a.println(a.wrapLine("  commands typed outside the workstation are not logged; kubedrill shell records them", "  "))
+		a.println(a.printer().WrapLine("  commands typed outside the workstation are not logged; kubedrill shell records them", "  "))
 	} else {
-		a.printf("Your path (%s, from the shell log):\n", plural(len(mine), "kubectl command"))
+		a.printf("Your path (%s, from the shell log):\n", render.Plural(len(mine), "kubectl command"))
 		for i, c := range mine {
 			a.printf("%4d. %s\n", i+1, c)
 		}
@@ -827,12 +844,12 @@ func (a *App) printPath(ep *journal.Episode, solution string) {
 
 // printApproaches lists each approach of the rendered scenario with its
 // rendered snippet, so the namespace in it is the episode's.
-func (a *App) printApproaches(rd *scenario.Rendered) {
+func (a *app) printApproaches(rd *scenario.Rendered) {
 	if len(rd.Approaches) == 0 {
 		return
 	}
 	a.println()
-	a.printf("%s (%s prints one)\n", a.style(styleBold, "Approaches"), a.style(styleBold, "kubedrill solution --approach <name>"))
+	a.printf("%s (%s prints one)\n", a.printer().Style(render.StyleBold, "Approaches"), a.printer().Style(render.StyleBold, "kubedrill solution --approach <name>"))
 	for _, ap := range rd.Approaches {
 		a.printf("  %s\n", ap.Name)
 		for _, l := range strings.Split(strings.TrimRight(ap.Snippet, "\n"), "\n") {
@@ -842,17 +859,17 @@ func (a *App) printApproaches(rd *scenario.Rendered) {
 }
 
 // printApproach prints one rendered approach: its snippet, then its content.
-func (a *App) printApproach(rd *scenario.Rendered, name string) error {
+func (a *app) printApproach(rd *scenario.Rendered, name string) error {
 	id := rd.Scenario.Meta.ID
 	names := make([]string, 0, len(rd.Approaches))
 	for _, ap := range rd.Approaches {
 		if ap.Name == name {
-			a.printf("%s\n\n", a.style(styleBold, fmt.Sprintf("Approach %s (%s)", ap.Name, id)))
+			a.printf("%s\n\n", a.printer().Style(render.StyleBold, fmt.Sprintf("Approach %s (%s)", ap.Name, id)))
 			for _, l := range strings.Split(strings.TrimRight(ap.Snippet, "\n"), "\n") {
 				a.printf("    %s\n", l)
 			}
 			a.println()
-			a.printf("%s", a.markdown(ap.Body))
+			a.printf("%s", a.printer().Markdown(ap.Body))
 			return nil
 		}
 		names = append(names, ap.Name)
@@ -861,26 +878,6 @@ func (a *App) printApproach(rd *scenario.Rendered, name string) error {
 		return fmt.Errorf("scenario %s has no approaches", id)
 	}
 	return fmt.Errorf("approach %q not found for %s; valid: %s", name, id, strings.Join(names, ", "))
-}
-
-// lastEndedEpisode returns the most recently started episode with an end
-// time, or nil.
-func lastEndedEpisode(j Journal) (*journal.Episode, error) {
-	eps, err := j.Episodes("")
-	if err != nil {
-		return nil, fmt.Errorf("read episodes: %w", err)
-	}
-	var last *journal.Episode
-	for i := range eps {
-		e := &eps[i]
-		if e.EndedAt == nil {
-			continue
-		}
-		if last == nil || e.StartedAt.After(last.StartedAt) {
-			last = e
-		}
-	}
-	return last, nil
 }
 
 func sameScenario(cat Catalog, ref, id string) bool {
@@ -892,18 +889,18 @@ func sameScenario(cat Catalog, ref, id string) bool {
 var errResetInExam = refusal{msg: "reset is not available in exam mode; kubedrill submit ends the exam", cause: env.ErrExamMode}
 
 // examRunning reports whether ep is an exam episode before its deadline.
-func (a *App) examRunning(ep *journal.Episode) bool {
+func (a *app) examRunning(ep *journal.Episode) bool {
 	return ep != nil && ep.Mode == journal.ModeExam && (ep.Deadline == nil || a.now().Before(*ep.Deadline))
 }
 
-func (a *App) resetCommand() *cobra.Command {
+func (a *app) resetCommand() *cobra.Command {
 	var sameSeed bool
 	cmd := &cobra.Command{
 		Use:   "reset",
 		Short: "Redeploy the active scenario with a new seed",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, err := a.learnerSession()
+			s, err := a.learnerSession(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -922,13 +919,13 @@ func (a *App) resetCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			a.finishProgress()
+			a.progress.Finish()
 			line := fmt.Sprintf("reset %s: seed %d, namespace %s (hints reset to 0)", ep.ScenarioID, ep.Seed, rd.Namespace)
 			if sameSeed {
 				line += " (same seed)"
 			}
 			a.println(line)
-			a.println(a.nextStepLine())
+			a.println(nextStepLine(a.printer()))
 			return nil
 		},
 	}
@@ -936,7 +933,7 @@ func (a *App) resetCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *App) diagnoseCommand() *cobra.Command {
+func (a *app) diagnoseCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   `diagnose "<text>"`,
 		Short: "Record what you think is wrong before the last hint or the solution",
@@ -944,8 +941,8 @@ func (a *App) diagnoseCommand() *cobra.Command {
 			"suspect. The last hint and the solution wait for it; after the episode the\n" +
 			"debrief puts it next to the reference root cause.",
 		Args: usageArgs(1, "usage: "+diagnoseUsage),
-		RunE: func(_ *cobra.Command, args []string) error {
-			s, err := a.learnerSession()
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := a.learnerSession(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -967,7 +964,7 @@ func (a *App) diagnoseCommand() *cobra.Command {
 // errSubmitPractice refuses submit on a practice episode.
 var errSubmitPractice = refusal{msg: "submit grades exam episodes (kubedrill start <id> --exam); a practice episode is graded with kubedrill check", cause: env.ErrNotExam}
 
-func (a *App) submitCommand() *cobra.Command {
+func (a *app) submitCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "submit",
 		Short: "Exam mode: grade once and end the exam",
@@ -975,7 +972,7 @@ func (a *App) submitCommand() *cobra.Command {
 			"solved when every check passes, failed otherwise. Exit 2 when a check fails.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, err := a.learnerSession()
+			s, err := a.learnerSession(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -994,12 +991,12 @@ func (a *App) submitCommand() *cobra.Command {
 			if ep == nil {
 				ep = cur
 			}
-			a.printf("exam submitted: %s in %s\n", ep.Outcome, minutesCell(ep.DurationAt(a.now())))
+			a.printf("exam submitted: %s in %s\n", ep.Outcome, render.Minutes(ep.DurationAt(a.now())))
 			if !g.Passed {
 				a.println("Next: kubedrill debrief | kubedrill solution " + ep.ScenarioID + " (the reference)")
 				return ErrChecksFailed
 			}
-			_, err = a.afterSolve(cmd.Context(), ep)
+			_, err = a.afterSolve(cmd.Context(), a.printer(), ep)
 			return err
 		},
 	}

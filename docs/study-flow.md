@@ -340,7 +340,8 @@ minutes, and the ticket footer shows it.
   `kubectx` and `kubens` are off the `PATH`, as in the real exam.
 - If the deadline passes, the next kubedrill command grades one last time and
   records `timed_out`. A pass within 30 seconds of the deadline still counts
-  as `solved`.
+  as `solved`. Time is taken when the command starts, so a `submit` you
+  started in time counts even if grading finishes late.
 
 `kubedrill exam CKA` (or `CKAD`, `CKS`) shows your coverage per exam domain.
 Details are in [cli.md](cli.md#exam-mode).

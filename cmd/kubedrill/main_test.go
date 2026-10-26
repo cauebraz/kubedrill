@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -49,6 +51,8 @@ func TestWorkstationClusterRefusesLifecycle(t *testing.T) {
 		{name: "Doctor", call: func() error { _, err := w.Doctor(ctx); return err }, want: "kubedrill doctor runs on the host, not inside the workstation"},
 		{name: "WriteInternalKubeconfig", call: func() error { return w.WriteInternalKubeconfig(ctx, "/tmp/x") }, want: "kubedrill shell runs on the host, not inside the workstation"},
 		{name: "Created", call: func() error { _, err := w.Created(ctx); return err }, want: "the cluster creation time runs on the host, not inside the workstation"},
+		{name: "RenderProfile", call: func() error { _, err := w.RenderProfile("base", cluster.ProfileData{}); return err }, want: "rendering a cluster profile runs on the host, not inside the workstation"},
+		{name: "AuditPolicyStale", call: func() error { _, err := w.AuditPolicyStale(ctx); return err }, want: "the audit policy check runs on the host, not inside the workstation"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -57,6 +61,74 @@ func TestWorkstationClusterRefusesLifecycle(t *testing.T) {
 				t.Errorf("%s: got %v, want %q", tc.name, err, tc.want)
 			}
 		})
+	}
+}
+
+type fakeAddons struct{}
+
+func (fakeAddons) Addons() []string     { return []string{"gateway", "metrics-server"} }
+func (fakeAddons) BaseAddons() []string { return []string{"metrics-server"} }
+
+func TestWorkstationClusterKubeconfigAndAddons(t *testing.T) {
+	w := &workstationCluster{addons: fakeAddons{}, kubeconfig: "/home/learner/.kube/config"}
+	path, name, err := w.Kubeconfig()
+	if err != nil || path != "/home/learner/.kube/config" || name != "" {
+		t.Errorf("Kubeconfig: got (%q, %q, %v), want the mounted kubeconfig and an empty context", path, name, err)
+	}
+	if _, _, err := (&workstationCluster{}).Kubeconfig(); err == nil {
+		t.Errorf("Kubeconfig without KUBECONFIG: got nil error, want one")
+	}
+	if got := w.Addons(); strings.Join(got, ",") != "gateway,metrics-server" {
+		t.Errorf("Addons: got %v, want the repository addons", got)
+	}
+	if got := w.BaseAddons(); strings.Join(got, ",") != "metrics-server" {
+		t.Errorf("BaseAddons: got %v, want the base addons", got)
+	}
+	if got := (&workstationCluster{}).Addons(); got != nil {
+		t.Errorf("Addons without a lister: got %v, want nil", got)
+	}
+}
+
+const signalHelperEnv = "KUBEDRILL_TEST_SIGNAL_HELPER"
+
+func TestInterruptContextSecondSignalKills(t *testing.T) {
+	if os.Getenv(signalHelperEnv) == "1" {
+		ctx, stop := interruptContext(context.Background())
+		defer stop()
+		if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
+			os.Exit(3)
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(5 * time.Second):
+			os.Exit(4)
+		}
+		for i := 0; i < 200; i++ {
+			_ = syscall.Kill(os.Getpid(), syscall.SIGINT)
+			time.Sleep(10 * time.Millisecond)
+		}
+		os.Exit(0)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run", "^TestInterruptContextSecondSignalKills$")
+	cmd.Env = append(os.Environ(), signalHelperEnv+"=1")
+	err := cmd.Run()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("helper: got %v, want it killed by the second SIGINT", err)
+	}
+	ws, ok := exitErr.Sys().(syscall.WaitStatus)
+	if !ok || !ws.Signaled() || ws.Signal() != syscall.SIGINT {
+		t.Errorf("helper exit: got %v, want killed by SIGINT after the context was canceled", exitErr)
+	}
+}
+
+func TestInterruptContextStopReleases(t *testing.T) {
+	ctx, stop := interruptContext(context.Background())
+	stop()
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+		t.Errorf("context after stop: got not done, want done")
 	}
 }
 
@@ -83,7 +155,7 @@ func TestWorkstationClusterExists(t *testing.T) {
 
 func TestFactoriesReadWorkstationThroughGetenv(t *testing.T) {
 	env := map[string]string{workstationEnv: "1", "KUBECONFIG": "/tmp/kubeconfig"}
-	f := factories(io.Discard, func(k string) string { return env[k] }, time.Now)
+	f := factories(io.Discard, func(k string) string { return env[k] }, time.Now, resolveStateDir())
 	if _, ok := f.Cluster(t.TempDir()).(*workstationCluster); !ok {
 		t.Errorf("Cluster inside the workstation: got %T, want *workstationCluster", f.Cluster(t.TempDir()))
 	}
@@ -96,7 +168,7 @@ func TestFactoriesReadWorkstationThroughGetenv(t *testing.T) {
 		t.Errorf("Faults inside the workstation: got %T, want nil (node containers are not reachable)", fm)
 	}
 
-	f = factories(io.Discard, func(string) string { return "" }, time.Now)
+	f = factories(io.Discard, func(string) string { return "" }, time.Now, resolveStateDir())
 	if _, ok := f.Cluster(t.TempDir()).(*workstationCluster); ok {
 		t.Errorf("Cluster on the host: got *workstationCluster, want the kind manager")
 	}
@@ -151,7 +223,7 @@ func TestEpisodeTelemetry(t *testing.T) {
 		audit         bool
 		inWorkstation bool
 		wantSource    string
-		wantVerdict   string
+		wantVerdict   journal.Verdict
 		wantTarget    string
 	}{
 		{name: "audit on", audit: true, wantSource: "audit+shell", wantVerdict: "root-cause", wantTarget: "apps/deployments/hello"},
@@ -162,7 +234,7 @@ func TestEpisodeTelemetry(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			writeJournalFiles(t, dir, start)
-			got := episodeTelemetry(dir, filepath.Join(dir, "audit", "audit.log"), ep, rd, func() bool { return tc.audit }, tc.inWorkstation, end.Add(time.Hour))
+			got := episodeTelemetry(io.Discard, dir, filepath.Join(dir, "audit", "audit.log"), ep, rd, func() bool { return tc.audit }, tc.inWorkstation, end.Add(time.Hour))
 			if got.Source != tc.wantSource || got.Verdict != tc.wantVerdict || got.FirstWriteTarget != tc.wantTarget {
 				t.Errorf("telemetry: got source %q verdict %q target %q, want %q %q %q", got.Source, got.Verdict, got.FirstWriteTarget, tc.wantSource, tc.wantVerdict, tc.wantTarget)
 			}
@@ -184,7 +256,7 @@ func TestEpisodeTelemetryWithoutFiles(t *testing.T) {
 	start := time.Date(2026, 10, 25, 10, 0, 0, 0, time.UTC)
 	ep := journal.Episode{Namespace: "task-hello-ab12c", StartedAt: start}
 	dir := t.TempDir()
-	got := episodeTelemetry(dir, filepath.Join(dir, "audit.log"), ep, nil, func() bool { return false }, false, start.Add(time.Minute))
+	got := episodeTelemetry(io.Discard, dir, filepath.Join(dir, "audit.log"), ep, nil, func() bool { return false }, false, start.Add(time.Minute))
 	if got.Source != "none" || got.Verdict != "unknown" || len(got.Recordings) != 0 {
 		t.Errorf("no files: got %+v, want source none, verdict unknown, no recordings", got)
 	}
@@ -195,7 +267,7 @@ func TestEpisodeTelemetryAuditOnButMissing(t *testing.T) {
 	end := start.Add(2 * time.Minute)
 	ep := journal.Episode{Namespace: "task-hello-ab12c", StartedAt: start, EndedAt: &end}
 	dir := t.TempDir()
-	got := episodeTelemetry(dir, filepath.Join(dir, "missing", "audit.log"), ep, nil, func() bool { return true }, false, end)
+	got := episodeTelemetry(io.Discard, dir, filepath.Join(dir, "missing", "audit.log"), ep, nil, func() bool { return true }, false, end)
 	if got.Source != "none" || got.Verdict != "unknown" {
 		t.Errorf("audit on, log missing: got source %q verdict %q, want none and unknown (not no-writes)", got.Source, got.Verdict)
 	}
@@ -218,7 +290,7 @@ func TestTelemetryReadsClusterAuditLog(t *testing.T) {
 	rd := &scenario.Rendered{Scenario: sc, Namespace: "task-hello-ab12c"}
 	ep := journal.Episode{Namespace: "task-hello-ab12c", StartedAt: start}
 	clock := start.Add(2 * time.Minute)
-	f := factories(io.Discard, func(string) string { return "" }, func() time.Time { return clock })
+	f := factories(io.Discard, func(string) string { return "" }, func() time.Time { return clock }, resolveStateDir())
 	got := f.Telemetry(journalDir, func() bool { return true })(ep, rd)
 	if got.Verdict != "root-cause" || got.Source != "audit+shell" {
 		t.Errorf("telemetry from the cluster audit log: got source %q verdict %q, want audit+shell root-cause", got.Source, got.Verdict)
@@ -234,7 +306,7 @@ func TestTelemetryReadsClusterAuditLog(t *testing.T) {
 			return envLog
 		}
 		return ""
-	}, func() time.Time { return start.Add(time.Hour) })
+	}, func() time.Time { return start.Add(time.Hour) }, resolveStateDir())
 	if got := f.Telemetry(journalDir, func() bool { return true })(ep, rd); got.Verdict != "unknown" {
 		t.Errorf("KUBEDRILL_AUDIT_LOG pointing at a missing file: got verdict %q, want unknown", got.Verdict)
 	}
@@ -256,7 +328,7 @@ func TestConnectScriptChecksUsePinnedKubeconfigAndWrapper(t *testing.T) {
 	if err := os.WriteFile(kc, []byte(unreachableKubeconfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	f := factories(io.Discard, func(string) string { return "" }, time.Now)
+	f := factories(io.Discard, func(string) string { return "" }, time.Now, resolveStateDir())
 	_, g, err := f.Connect(kc, "kind-kubedrill", "/pinned/kubeconfig")
 	if err != nil {
 		t.Fatal(err)
@@ -273,7 +345,7 @@ func TestConnectScriptChecksUsePinnedKubeconfigAndWrapper(t *testing.T) {
 }
 
 func TestScriptKubeconfigNeedsTheKindContext(t *testing.T) {
-	f := factories(io.Discard, func(string) string { return "" }, time.Now)
+	f := factories(io.Discard, func(string) string { return "" }, time.Now, resolveStateDir())
 	dir := t.TempDir()
 	learner := filepath.Join(dir, "config")
 	other := "apiVersion: v1\nkind: Config\ncontexts:\n- name: prod\n  context:\n    cluster: prod\n    user: prod\nclusters:\n- name: prod\n  cluster:\n    server: https://prod.example:6443\nusers:\n- name: prod\n  user:\n    token: secret\ncurrent-context: prod\n"

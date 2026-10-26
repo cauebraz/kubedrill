@@ -10,9 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
-	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/cauebraz/kubedrill/internal/cluster"
@@ -20,6 +18,7 @@ import (
 	"github.com/cauebraz/kubedrill/internal/faults"
 	"github.com/cauebraz/kubedrill/internal/grader"
 	"github.com/cauebraz/kubedrill/internal/journal"
+	"github.com/cauebraz/kubedrill/internal/render"
 	"github.com/cauebraz/kubedrill/internal/scenario"
 )
 
@@ -82,18 +81,6 @@ func TestSmokeGuardLegacyEpisodeWithoutNamespace(t *testing.T) {
 		t.Fatalf("exit: got %d, want 1", code)
 	}
 	mustContain(t, errOut, "an active episode of 001-hello-down runs since "+start.Local().Format("2006-01-02 15:04")+"; setup hooks may change cluster-wide state")
-}
-
-func TestWatchRecordedNamespaceErrorIsFatal(t *testing.T) {
-	m := newTestModel(&fakeWatcher{observe: passGrade()})
-	next, _ := m.Update(pollMsg{grade: passGrade()})
-	m = next.(watchModel)
-	err := fmt.Errorf("namespace task-hello-abcde is missing; run: kubedrill reset: %w", env.ErrNamespaceMissing)
-	next, cmd := m.Update(recordedMsg{err: err})
-	m = next.(watchModel)
-	if !errors.Is(m.fatal, env.ErrNamespaceMissing) || !isQuit(cmd) {
-		t.Errorf("recorded namespace error: fatal %v, quit %v; want fatal and quit", m.fatal, isQuit(cmd))
-	}
 }
 
 func TestStartKeepsEpisodeAfterFailedStart(t *testing.T) {
@@ -185,103 +172,10 @@ func TestFaultUnknownNodeFromManager(t *testing.T) {
 	}
 }
 
-type ctxWatcher struct {
-	fakeWatcher
-	gradeErr error
-}
-
-func (w *ctxWatcher) Grade(ctx context.Context) (grader.Grade, *journal.Episode, error) {
-	w.gradeErr = ctx.Err()
-	return w.fakeWatcher.Grade(ctx)
-}
-
-func TestWatchRecordSurvivesCancelAndIgnoresKeys(t *testing.T) {
-	w := &ctxWatcher{fakeWatcher: fakeWatcher{observe: passGrade()}}
-	m := newTestModel(w)
-	ctx, cancel := context.WithCancel(context.Background())
-	m.ctx = ctx
-	next, cmd := m.Update(pollMsg{grade: passGrade()})
-	m = next.(watchModel)
-	if !m.recording {
-		t.Fatal("recording not set after a passing poll")
-	}
-	for _, k := range []string{"q", "n", "x"} {
-		next, kcmd := m.Update(key(k))
-		if isQuit(kcmd) || next.(watchModel).notice != "recording the solve..." {
-			t.Errorf("key %s while recording: quit %v notice %q", k, isQuit(kcmd), next.(watchModel).notice)
-		}
-	}
-	if _, kcmd := m.Update(key("ctrl+c")); !isQuit(kcmd) {
-		t.Errorf("ctrl+c while recording: got no quit")
-	}
-	cancel()
-	msg := runCmd(t, cmd)
-	if w.gradeErr != nil {
-		t.Errorf("record ran with a cancelled context: %v", w.gradeErr)
-	}
-	next, _ = m.Update(msg)
-	m = next.(watchModel)
-	if m.recording || m.solvedEp == nil {
-		t.Fatalf("after record: recording %v solvedEp %v", m.recording, m.solvedEp)
-	}
-	if _, kcmd := m.Update(key("q")); !isQuit(kcmd) {
-		t.Errorf("q after the record: got no quit")
-	}
-}
-
-func TestWatchHintInFlight(t *testing.T) {
-	w := &fakeWatcher{observe: failGrade(), hints: []string{"one", "two"}}
-	m := newTestModel(w)
-	next, cmd := m.Update(key("h"))
-	m = next.(watchModel)
-	if cmd == nil || !m.hinting {
-		t.Fatal("first h: want a hint command and the in-flight flag")
-	}
-	next, again := m.Update(key("h"))
-	if again != nil || next.(watchModel).notice != "a hint is already on its way" {
-		t.Errorf("second h: cmd %v notice %q", again, next.(watchModel).notice)
-	}
-	next, _ = m.Update(runCmd(t, cmd))
-	m = next.(watchModel)
-	if m.hinting || w.hintIndex != 1 {
-		t.Errorf("after the hint: hinting %v, revealed %d", m.hinting, w.hintIndex)
-	}
-}
-
-func TestWatchResetProgressGoesToStatusLine(t *testing.T) {
-	m := newTestModel(&fakeWatcher{observe: failGrade()})
-	next, _ := m.Update(key("x"))
-	next, _ = next.(watchModel).Update(key("x"))
-	m = next.(watchModel)
-	next, _ = m.Update(progressMsg("creating namespace task-hello-zzzzz"))
-	mustContain(t, next.(watchModel).View().Content, "creating namespace task-hello-zzzzz...")
-
-	var errb strings.Builder
-	a := newApp(Options{Stdout: &errb, Stderr: &errb, Getenv: func(string) string { return "" }})
-	var got []string
-	a.progressSink = func(msg string) { got = append(got, msg) }
-	a.progressToStderr("applying setup")
-	a.finishProgress()
-	if errb.Len() != 0 || strings.Join(got, ",") != "applying setup" {
-		t.Errorf("sink: stderr %q, sink %v", errb.String(), got)
-	}
-}
-
 func spoilerGrade() grader.Grade {
 	return grader.Grade{Results: []grader.Result{
 		{ID: "image", Description: "image is pullable", Status: grader.StatusFail, Expected: "nginx:1.27", Actual: "nginx:1.2x", Spoiler: true},
 	}}
-}
-
-func TestWatchHidesSpoilerUntilHintOrDiagnosis(t *testing.T) {
-	m := newTestModel(&fakeWatcher{observe: spoilerGrade()})
-	m.width = 120
-	next, _ := m.Update(pollMsg{grade: spoilerGrade()})
-	view := next.(watchModel).View().Content
-	mustContain(t, view, "actual: "+spoilerHidden)
-	mustNotContain(t, view, "nginx:1.2x")
-	next, _ = m.Update(pollMsg{grade: spoilerGrade(), reveal: true})
-	mustContain(t, next.(watchModel).View().Content, "actual: nginx:1.2x")
 }
 
 func TestCheckHidesSpoilerUntilDiagnosis(t *testing.T) {
@@ -291,36 +185,13 @@ func TestCheckHidesSpoilerUntilDiagnosis(t *testing.T) {
 		t.Fatalf("start: %s", errOut)
 	}
 	_, out, _ := f.run(t, "", "check")
-	mustContain(t, out, "expected: nginx:1.27  actual: "+spoilerHidden)
+	mustContain(t, out, "expected: nginx:1.27  actual: "+render.SpoilerHidden)
 	mustNotContain(t, out, "nginx:1.2x")
 	if code, _, errOut := f.run(t, "", "diagnose", "the image tag is wrong"); code != 0 {
 		t.Fatalf("diagnose: %s", errOut)
 	}
 	_, out, _ = f.run(t, "", "check")
 	mustContain(t, out, "expected: nginx:1.27  actual: nginx:1.2x")
-}
-
-func TestTruncateCountsVisibleColumns(t *testing.T) {
-	s := "\x1b[1mh\u00e9llo w\u00f6rld\x1b[0m"
-	got := truncate(s, 8)
-	if !utf8.ValidString(got) || lipgloss.Width(got) != 8 || !strings.HasSuffix(got, "\x1b[0m...") || !strings.HasPrefix(stripANSI(got), "h\u00e9llo") {
-		t.Errorf("truncate: got %q (width %d)", got, lipgloss.Width(got))
-	}
-	if got := truncate(s, 20); got != s {
-		t.Errorf("fitting text changed: %q", got)
-	}
-	if got := truncate("abcdef", 3); got != "abc" {
-		t.Errorf("width 3: got %q", got)
-	}
-}
-
-func TestResultLinesSplitLongPair(t *testing.T) {
-	r := grader.Result{ID: "x", Status: grader.StatusFail, Expected: strings.Repeat("e", 40), Actual: strings.Repeat("a", 40)}
-	got := strings.Join(resultLinesAt(r, "[fail]", false, false, 78), "\n")
-	want := "[fail] x\n" + detailIndent + "expected: " + strings.Repeat("e", 40) + "\n" + detailIndent + "actual: " + strings.Repeat("a", 40)
-	if got != want {
-		t.Errorf("got\n%s\nwant\n%s", got, want)
-	}
 }
 
 func TestExplainErrors(t *testing.T) {
@@ -488,7 +359,7 @@ func TestMarkdownWithoutColorWrapsOnTerminal(t *testing.T) {
 		}
 		return ""
 	}})
-	out := a.markdown("- " + strings.Repeat("word ", 20) + "\n\n```\n" + strings.Repeat("x", 60) + "\n```\n")
+	out := a.printer().Markdown("- " + strings.Repeat("word ", 20) + "\n\n```\n" + strings.Repeat("x", 60) + "\n```\n")
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 	if len(lines) < 3 || !strings.HasPrefix(lines[1], "  word") {
 		t.Fatalf("no hanging indent:\n%s", out)
@@ -499,7 +370,7 @@ func TestMarkdownWithoutColorWrapsOnTerminal(t *testing.T) {
 		}
 	}
 	pipe := newApp(Options{Getenv: func(string) string { return "" }})
-	if got := pipe.markdown("- " + strings.Repeat("word ", 20)); strings.Count(got, "\n") != 1 {
+	if got := pipe.printer().Markdown("- " + strings.Repeat("word ", 20)); strings.Count(got, "\n") != 1 {
 		t.Errorf("pipe output wrapped: %q", got)
 	}
 }
@@ -535,14 +406,37 @@ func TestReasonSentenceSingleAttempt(t *testing.T) {
 	}
 }
 
-func TestWatchNarrowPaneWrapsCheckLines(t *testing.T) {
-	g := grader.Grade{Results: []grader.Result{{ID: "a", Description: "deployment hello has two ready replicas behind the service", Status: grader.StatusFail, Expected: "2", Actual: "0"}}}
-	m := newTestModel(&fakeWatcher{observe: g})
-	next, _ := m.Update(tea.WindowSizeMsg{Width: 40})
-	next, _ = next.(watchModel).Update(pollMsg{grade: g})
-	view := next.(watchModel).View().Content
-	mustContain(t, view, "[fail] deployment hello has two ready\n"+detailIndent+"replicas behind the service\n")
-	mustNotContain(t, view, "service...")
-}
-
 var _ clusterCreated = (*cluster.Manager)(nil)
+
+func TestFaultsUseTheInjectedStateDir(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", filepath.Join(t.TempDir(), "elsewhere"))
+	cause := errors.New("no home")
+	tests := []struct {
+		name    string
+		dir     string
+		err     error
+		wantDir string
+	}{
+		{"resolved directory", "/state/kubedrill", nil, "/state/kubedrill"},
+		{"resolution error", "", cause, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var got string
+			a := newApp(Options{Getenv: func(string) string { return "" }, Factories: Factories{
+				StateDir: func() (string, error) { return tc.dir, tc.err },
+				Faults: func(dir string) Faults {
+					got = dir
+					return &fakeFaults{dir: dir}
+				},
+			}})
+			_, err := a.getFaults()
+			if !errors.Is(err, tc.err) {
+				t.Fatalf("getFaults: got %v, want %v", err, tc.err)
+			}
+			if got != tc.wantDir {
+				t.Errorf("Faults dir: got %q, want %q", got, tc.wantDir)
+			}
+		})
+	}
+}

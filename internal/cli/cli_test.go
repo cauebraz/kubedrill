@@ -20,6 +20,7 @@ import (
 	"github.com/cauebraz/kubedrill/internal/faults"
 	"github.com/cauebraz/kubedrill/internal/grader"
 	"github.com/cauebraz/kubedrill/internal/journal"
+	"github.com/cauebraz/kubedrill/internal/render"
 	"github.com/cauebraz/kubedrill/internal/scenario"
 )
 
@@ -192,14 +193,18 @@ func (j *memJournal) Episodes(id string) ([]journal.Episode, error) {
 	return out, nil
 }
 
-func (j *memJournal) UpdateEnded(e journal.Episode) error {
+func (j *memJournal) ModifyEnded(id string, fn func(*journal.Episode) error) (*journal.Episode, error) {
 	for i := range j.episodes {
-		if j.episodes[i].ID == e.ID && j.episodes[i].EndedAt != nil {
+		if j.episodes[i].ID == id && j.episodes[i].EndedAt != nil {
+			e := j.episodes[i]
+			if err := fn(&e); err != nil {
+				return nil, err
+			}
 			j.episodes[i] = e
-			return nil
+			return &e, nil
 		}
 	}
-	return journal.ErrUnknownEpisode
+	return nil, journal.ErrUnknownEpisode
 }
 
 func (j *memJournal) JournalID() string { return "0123abcd" }
@@ -992,8 +997,8 @@ func TestSmoke(t *testing.T) {
 		t.Errorf("script kubeconfig not pinned: %v", f.pinned)
 	}
 	mustContain(t, errOut, "running scenario scripts from "+f.root)
-	if last := f.kube.calls[len(f.kube.calls)-1]; last != "delete task-hello-abcde" {
-		t.Errorf("last kube call: got %s, want delete task-hello-abcde", last)
+	if last := f.kube.calls[len(f.kube.calls)-2]; last != "delete task-hello-abcde" {
+		t.Errorf("last namespace delete: got %s, want delete task-hello-abcde", last)
 	}
 	if len(f.journal.episodes) != 0 || f.journal.current != nil {
 		t.Errorf("learner journal touched by smoke: %+v", f.journal.episodes)
@@ -1094,32 +1099,6 @@ func TestVersionLine(t *testing.T) {
 	}
 	if got := versionLine(func() (*debug.BuildInfo, bool) { return nil, false }); got != "kubedrill (no build info)" {
 		t.Errorf("no build info: got %q", got)
-	}
-}
-
-func TestFmtDuration(t *testing.T) {
-	tests := []struct {
-		d    time.Duration
-		want string
-	}{
-		{12 * time.Second, "12s"},
-		{4*time.Minute + 3*time.Second, "4m03s"},
-		{time.Hour + 2*time.Minute, "1h02m"},
-		{-time.Second, "0s"},
-	}
-	for _, tc := range tests {
-		if got := fmtDuration(tc.d); got != tc.want {
-			t.Errorf("fmtDuration(%s): got %q, want %q", tc.d, got, tc.want)
-		}
-	}
-}
-
-func TestResultLines(t *testing.T) {
-	r := grader.Result{ID: "probe", Description: "", Status: grader.StatusError, Message: "pod did not start"}
-	got := resultLines(r, "[err ]", true, false)
-	want := []string{"[err ] probe", "       pod did not start"}
-	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Errorf("got %v, want %v", got, want)
 	}
 }
 
@@ -1227,10 +1206,10 @@ func TestSmokeDeletesEveryNamespaceAtTheEnd(t *testing.T) {
 		t.Fatalf("smoke exit %d: %s", code, errOut)
 	}
 	n := len(f.kube.calls)
-	if n < 2 || f.kube.calls[n-2] != "delete task-dns-abcde" || f.kube.calls[n-1] != "delete task-hello-abcde" {
+	if n < 3 || f.kube.calls[n-3] != "delete task-dns-abcde" || f.kube.calls[n-2] != "delete task-hello-abcde" || f.kube.calls[n-1] != "gc app.kubernetes.io/managed-by=kubedrill,kubedrill.io/journal=0123abcd keep " {
 		t.Errorf("last kube calls: %v", f.kube.calls)
 	}
-	for _, c := range f.kube.calls[:n-2] {
+	for _, c := range f.kube.calls[:n-3] {
 		if strings.HasPrefix(c, "delete") {
 			t.Errorf("namespace deleted before the end: %v", f.kube.calls)
 		}
@@ -1505,26 +1484,6 @@ func TestProgressLineClosedOnError(t *testing.T) {
 	}
 }
 
-func TestRenderWidth(t *testing.T) {
-	tests := []struct {
-		columns string
-		tty     int
-		want    int
-	}{
-		{"", 0, 80}, {"abc", 0, 80}, {"39", 0, 40}, {"40", 0, 40}, {"100", 0, 100}, {"120", 0, 120}, {"121", 0, 120}, {" 72 ", 0, 72},
-		{"", 77, 77}, {"", 30, 40}, {"", 200, 120}, {"90", 77, 90}, {"0", 77, 77},
-	}
-	for _, tc := range tests {
-		got := renderWidth(func(string) string { return tc.columns }, func() int { return tc.tty })
-		if got != tc.want {
-			t.Errorf("COLUMNS=%q tty %d: got %d, want %d", tc.columns, tc.tty, got, tc.want)
-		}
-	}
-	if got := renderWidth(func(string) string { return "" }, nil); got != 80 {
-		t.Errorf("no COLUMNS, no tty: got %d, want 80", got)
-	}
-}
-
 func TestMarkdownWrapsToColumns(t *testing.T) {
 	long := strings.Repeat("word ", 30)
 	for _, tc := range []struct {
@@ -1537,7 +1496,7 @@ func TestMarkdownWrapsToColumns(t *testing.T) {
 			}
 			return ""
 		}})
-		out := stripANSI(a.markdown(long))
+		out := render.StripANSI(a.printer().Markdown(long))
 		for _, line := range strings.Split(out, "\n") {
 			if len(line) > tc.max {
 				t.Errorf("COLUMNS=%q: line of %d columns: %q", tc.columns, len(line), line)
@@ -1550,7 +1509,7 @@ func TestMarkdownWrapsToColumns(t *testing.T) {
 func TestMarkdownRendersASCII(t *testing.T) {
 	a := newApp(Options{Stdout: io.Discard, Stderr: io.Discard, IsTerminal: true, Getenv: func(string) string { return "" }})
 	md := "# Ticket\n\nRun `kubectl get pods -n hello` first.\n\n> The app returns 503.\n\n- one item\n- another item\n\n## Done when\n\n```\nkubectl rollout status deploy/hello\n```\n"
-	out := a.markdown(md)
+	out := a.printer().Markdown(md)
 	for _, r := range out {
 		if r > 0x7F {
 			t.Errorf("non-ASCII rune %U in rendered output:\n%q", r, out)
@@ -1560,7 +1519,7 @@ func TestMarkdownRendersASCII(t *testing.T) {
 	if strings.Contains(out, "\u00a0") {
 		t.Errorf("rendered output contains a non-breaking space:\n%q", out)
 	}
-	plain := stripANSI(out)
+	plain := render.StripANSI(out)
 	mustContain(t, plain, "# Ticket", "## Done when", "| The app returns 503.", "- one item", "- another item", "kubectl get pods -n hello", "kubectl rollout status deploy/hello")
 	if !strings.Contains(out, "\x1b[") {
 		t.Errorf("rendered output lost its colors:\n%q", out)

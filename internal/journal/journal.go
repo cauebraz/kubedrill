@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/cauebraz/kubedrill/internal/atomicfile"
@@ -114,10 +113,26 @@ type Debrief struct {
 	Principle       string    `json:"principle,omitempty"`
 }
 
+// Verdict classifies the first writes of an episode against the scenario's
+// fix targets. Its string values are what episodes.jsonl stores.
+type Verdict string
+
+// Verdicts of a Telemetry summary.
+const (
+	// VerdictRootCause means a write hit one of the scenario's fix targets.
+	VerdictRootCause Verdict = "root-cause"
+	// VerdictSymptomOnly means writes succeeded but none hit a fix target.
+	VerdictSymptomOnly Verdict = "symptom-only"
+	// VerdictNoWrites means no write succeeded.
+	VerdictNoWrites Verdict = "no-writes"
+	// VerdictUnknown means the audit log was not available.
+	VerdictUnknown Verdict = "unknown"
+)
+
 // Telemetry summarises what the learner did during an episode, from the API
 // audit log and the workstation shell log. Source names which of the two
-// were available; Verdict is "root-cause", "symptom-only", "no-writes" or
-// "unknown" (no audit log). FirstWriteTarget is group/resource/name with the
+// were available; Verdict is one of the Verdict constants, VerdictUnknown
+// without an audit log. FirstWriteTarget is group/resource/name with the
 // core group written "core".
 type Telemetry struct {
 	Source                string     `json:"source"`
@@ -130,7 +145,7 @@ type Telemetry struct {
 	CommandsTotal         int        `json:"commands_total"`
 	KubectlCommands       int        `json:"kubectl_commands"`
 	FailedCommands        int        `json:"failed_commands"`
-	Verdict               string     `json:"verdict"`
+	Verdict               Verdict    `json:"verdict"`
 	Recordings            []string   `json:"recordings,omitempty"`
 	Commands              []string   `json:"commands,omitempty"`
 }
@@ -175,9 +190,10 @@ func (e Episode) DurationAt(now time.Time) time.Duration {
 
 // Store reads and writes the journal. The zero value is not usable; use Open.
 type Store struct {
-	dir string
-	id  string
-	now func() time.Time
+	dir     string
+	id      string
+	now     func() time.Time
+	lockCfg lockConfig
 
 	mu       sync.Mutex
 	problems []string
@@ -198,7 +214,7 @@ func Open(dir string) (*Store, error) {
 	if err := atomicfile.MkdirPrivate(dir); err != nil {
 		return nil, fmt.Errorf("open journal %s: %w", dir, err)
 	}
-	s := &Store{dir: dir, now: time.Now}
+	s := &Store{dir: dir, now: time.Now, lockCfg: defaultLockConfig()}
 	id, err := s.loadID()
 	if err != nil {
 		return nil, fmt.Errorf("open journal %s: %w", dir, err)
@@ -247,30 +263,6 @@ func (s *Store) readID() (string, error) {
 	return id, nil
 }
 
-// lock takes an exclusive flock on <dir>/.lock, held across the
-// read-modify-write of current.json and episodes.jsonl so another kubedrill
-// process (the workstation, a second terminal) never interleaves with it.
-func (s *Store) lock() (func(), error) {
-	f, err := os.OpenFile(s.path(lockFile), os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, fmt.Errorf("lock journal: %w", err)
-	}
-	for {
-		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
-		if !errors.Is(err, syscall.EINTR) {
-			break
-		}
-	}
-	if err != nil {
-		f.Close()
-		return nil, fmt.Errorf("lock journal: %w", err)
-	}
-	return func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-		f.Close()
-	}, nil
-}
-
 // Dir returns the directory holding the journal files.
 func (s *Store) Dir() string {
 	return s.dir
@@ -298,8 +290,16 @@ func defaultDir() (string, error) {
 
 // Current returns the active episode, or nil when none is active. It reads
 // current.json without the lock: the file is only ever replaced by a
-// rename, so it is always whole.
+// rename, so it is always whole. An episode in current.json whose ID is
+// already in episodes.jsonl (a finish interrupted between the append and
+// the removal of current.json) is finished, not active, and reads as none.
 func (s *Store) Current() (*Episode, error) {
+	return s.current(false)
+}
+
+// current reads current.json. With heal set, which needs the lock, a
+// current.json naming an already finished episode is removed.
+func (s *Store) current(heal bool) (*Episode, error) {
 	data, err := os.ReadFile(s.path(currentFile))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -311,8 +311,57 @@ func (s *Store) Current() (*Episode, error) {
 	if err := json.Unmarshal(data, &e); err != nil {
 		return nil, fmt.Errorf("decode %s: %w", s.path(currentFile), err)
 	}
+	finished, err := s.isFinished(e.ID)
+	if err != nil {
+		return nil, fmt.Errorf("read current episode: %w", err)
+	}
+	if finished {
+		if heal {
+			if err := os.Remove(s.path(currentFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return nil, fmt.Errorf("remove stale current episode %s: %w", e.ID, err)
+			}
+		}
+		return nil, nil
+	}
 	normalize(&e)
 	return &e, nil
+}
+
+// isFinished reports whether episodes.jsonl has a line with the given ID.
+func (s *Store) isFinished(id string) (bool, error) {
+	if id == "" {
+		return false, nil
+	}
+	path := s.path(episodesFile)
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read %s: %w", path, err)
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	for sc.Scan() {
+		if lineID(sc.Bytes()) == id {
+			return true, nil
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return false, fmt.Errorf("read %s: %w", path, err)
+	}
+	return false, nil
+}
+
+func lineID(line []byte) string {
+	var probe struct {
+		ID string `json:"id"`
+	}
+	if json.Unmarshal(bytes.TrimSpace(line), &probe) != nil {
+		return ""
+	}
+	return probe.ID
 }
 
 // Start records a new active episode and makes it current. An existing
@@ -326,7 +375,7 @@ func (s *Store) Start(e Episode) error {
 		return fmt.Errorf("start episode: %w", err)
 	}
 	defer unlock()
-	cur, err := s.Current()
+	cur, err := s.current(true)
 	if err != nil {
 		return fmt.Errorf("start episode: %w", err)
 	}
@@ -407,7 +456,7 @@ func (s *Store) modify(id string, fn func(*Episode) error) (*Episode, error) {
 		return nil, err
 	}
 	defer unlock()
-	cur, err := s.Current()
+	cur, err := s.current(true)
 	if err != nil {
 		return nil, err
 	}
@@ -447,7 +496,7 @@ func (s *Store) Finish(outcome Outcome) (*Episode, error) {
 		return nil, fmt.Errorf("finish episode: %w", err)
 	}
 	defer unlock()
-	cur, err := s.Current()
+	cur, err := s.current(true)
 	if err != nil {
 		return nil, fmt.Errorf("finish episode: %w", err)
 	}
@@ -491,7 +540,7 @@ func (s *Store) Episodes(scenarioID string) ([]Episode, error) {
 	all, err := s.readEpisodes()
 	if err == nil {
 		var cur *Episode
-		if cur, err = s.Current(); err == nil && cur != nil {
+		if cur, err = s.current(true); err == nil && cur != nil {
 			all = append(all, *cur)
 		}
 	}
@@ -512,43 +561,76 @@ func (s *Store) Episodes(scenarioID string) ([]Episode, error) {
 }
 
 // UpdateEnded rewrites a finished episode in episodes.jsonl, matched by ID,
-// for example to attach a debrief after a solve. The file is replaced
-// atomically; lines that do not decode are kept as they are. When the ID
-// appears more than once, the last line is rewritten.
+// for example to attach a debrief after a solve. It replaces the whole
+// record with e; ModifyEnded changes it in place under the lock instead.
 func (s *Store) UpdateEnded(e Episode) error {
 	if e.Outcome == OutcomeActive || e.EndedAt == nil {
 		return fmt.Errorf("update ended episode %s: outcome %q is not finished", e.ID, e.Outcome)
 	}
+	if _, err := s.ModifyEnded(e.ID, func(cur *Episode) error {
+		*cur = e
+		return nil
+	}); err != nil {
+		return fmt.Errorf("update ended episode %s: %w", e.ID, err)
+	}
+	return nil
+}
+
+// ModifyEnded reads the finished episode id from episodes.jsonl under the
+// journal lock, applies fn to it and writes the result back, so a
+// read-modify-write of an ended episode (a debrief, the diagnosis verdict)
+// never loses a change made meanwhile by another process. The file is
+// replaced atomically; lines that do not decode are kept as they are. When
+// the ID appears more than once, the first line is the record (as Episodes
+// reads it) and is the one rewritten. ErrUnknownEpisode is returned when no
+// line has the ID. When fn returns an error nothing is written and that
+// error is returned as is. fn must not change the ID and must leave the
+// episode finished (an outcome other than active and EndedAt set). The
+// returned episode is what was written.
+func (s *Store) ModifyEnded(id string, fn func(*Episode) error) (*Episode, error) {
 	unlock, err := s.lock()
 	if err != nil {
-		return fmt.Errorf("update ended episode %s: %w", e.ID, err)
+		return nil, fmt.Errorf("modify ended episode %s: %w", id, err)
 	}
 	defer unlock()
 	path := s.path(episodesFile)
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("update ended episode %s: %w", e.ID, ErrUnknownEpisode)
+		return nil, fmt.Errorf("modify ended episode %s: %w", id, ErrUnknownEpisode)
 	}
 	if err != nil {
-		return fmt.Errorf("update ended episode %s: read %s: %w", e.ID, path, err)
+		return nil, fmt.Errorf("modify ended episode %s: read %s: %w", id, path, err)
 	}
 	lines := bytes.Split(data, []byte{'\n'})
 	match := -1
 	for i, line := range lines {
-		var probe struct {
-			ID string `json:"id"`
-		}
-		if json.Unmarshal(bytes.TrimSpace(line), &probe) == nil && probe.ID == e.ID {
+		if lineID(line) == id {
 			match = i
+			break
 		}
 	}
 	if match < 0 {
-		return fmt.Errorf("update ended episode %s: %w", e.ID, ErrUnknownEpisode)
+		return nil, fmt.Errorf("modify ended episode %s: %w", id, ErrUnknownEpisode)
 	}
+	var e Episode
+	if err := json.Unmarshal(bytes.TrimSpace(lines[match]), &e); err != nil {
+		return nil, fmt.Errorf("modify ended episode %s: decode %s line %d: %w", id, path, match+1, err)
+	}
+	normalize(&e)
+	if err := fn(&e); err != nil {
+		return nil, err
+	}
+	if e.ID != id {
+		return nil, fmt.Errorf("modify ended episode %s: the change renamed it to %s", id, e.ID)
+	}
+	if e.Outcome == "" || e.Outcome == OutcomeActive || e.EndedAt == nil {
+		return nil, fmt.Errorf("modify ended episode %s: outcome %q is not finished", id, e.Outcome)
+	}
+	normalize(&e)
 	toUTC(&e)
 	enc, err := json.Marshal(e)
 	if err != nil {
-		return fmt.Errorf("update ended episode %s: encode: %w", e.ID, err)
+		return nil, fmt.Errorf("modify ended episode %s: encode: %w", id, err)
 	}
 	lines[match] = enc
 	out := bytes.Join(lines, []byte{'\n'})
@@ -556,9 +638,9 @@ func (s *Store) UpdateEnded(e Episode) error {
 		out = append(out, '\n')
 	}
 	if err := atomicfile.Write(path, out, 0o600); err != nil {
-		return fmt.Errorf("update ended episode %s: %w", e.ID, err)
+		return nil, fmt.Errorf("modify ended episode %s: %w", id, err)
 	}
-	return nil
+	return &e, nil
 }
 
 // JournalID identifies this journal: the 16 hex digits persisted in
@@ -652,6 +734,10 @@ func (s *Store) appendEpisode(e Episode) error {
 		f.Close()
 		return fmt.Errorf("append to %s: %w", path, err)
 	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return fmt.Errorf("sync %s: %w", path, err)
+	}
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("close %s: %w", path, err)
 	}
@@ -673,6 +759,9 @@ func lacksTrailingNewline(f *os.File) (bool, error) {
 	return last[0] != '\n', nil
 }
 
+// readEpisodes decodes episodes.jsonl. An ID that appears on more than one
+// line (a finish interrupted before current.json was removed, then the same
+// episode appended again as failed) is read from its first line only.
 func (s *Store) readEpisodes() ([]Episode, error) {
 	path := s.path(episodesFile)
 	f, err := os.Open(path)
@@ -685,6 +774,7 @@ func (s *Store) readEpisodes() ([]Episode, error) {
 	defer f.Close()
 	var out []Episode
 	var problems []string
+	seen := make(map[string]bool)
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	for n := 1; sc.Scan(); n++ {
@@ -696,6 +786,12 @@ func (s *Store) readEpisodes() ([]Episode, error) {
 		if err := json.Unmarshal(line, &e); err != nil {
 			problems = append(problems, fmt.Sprintf("%s line %d: %v", path, n, err))
 			continue
+		}
+		if e.ID != "" {
+			if seen[e.ID] {
+				continue
+			}
+			seen[e.ID] = true
 		}
 		normalize(&e)
 		out = append(out, e)

@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/cauebraz/kubedrill/internal/concepts"
-	"github.com/cauebraz/kubedrill/internal/grader"
+	"github.com/cauebraz/kubedrill/internal/render"
 )
 
 type memConcepts struct {
@@ -92,36 +92,13 @@ func TestConceptsTable(t *testing.T) {
 		t.Errorf("stdout:\n got %q\nwant %q", out, want)
 	}
 	for _, l := range strings.Split(out, "\n") {
-		if len(l) > markdownWidth {
-			t.Errorf("line wider than %d: %q", markdownWidth, l)
+		if len(l) > render.DefaultWidth {
+			t.Errorf("line wider than %d: %q", render.DefaultWidth, l)
 		}
 	}
 	f.concepts.all = nil
 	_, out, _ = f.run(t, "", "concepts")
 	mustContain(t, out, "no concept pages found")
-}
-
-func TestWhyLines(t *testing.T) {
-	r := grader.Result{ID: "x", Status: grader.StatusError, Message: "boom", Why: strings.Repeat("word ", 30)}
-	got := resultLines(r, "[err ]", true, false)
-	if len(got) < 4 {
-		t.Fatalf("lines: got %v, want tag, message and at least two why lines", got)
-	}
-	if !strings.HasPrefix(got[2], "       why: word") || !strings.HasPrefix(got[3], "            word") {
-		t.Errorf("why lines: %q", got[2:])
-	}
-	for _, l := range got {
-		if len(l) > whyWidth {
-			t.Errorf("line wider than %d: %q", whyWidth, l)
-		}
-	}
-	skipped := grader.Result{ID: "s", Status: grader.StatusSkipped, Message: "dependency failed", Why: "not shown"}
-	if lines := resultLines(skipped, "[skip]", true, false); strings.Contains(strings.Join(lines, "|"), "why:") {
-		t.Errorf("skipped check printed why: %v", lines)
-	}
-	if lines := resultLines(r, "[err ]", false, false); strings.Contains(strings.Join(lines, "|"), "why:") {
-		t.Errorf("why printed with withWhy=false: %v", lines)
-	}
 }
 
 func TestLearnActiveWithoutConcepts(t *testing.T) {
@@ -150,44 +127,6 @@ func TestLearnActiveMissingLibraryPage(t *testing.T) {
 	}
 }
 
-func TestStatusTagDefault(t *testing.T) {
-	tests := []struct {
-		status grader.Status
-		want   string
-	}{
-		{status: grader.StatusPass, want: "[pass]"},
-		{status: grader.StatusFail, want: "[fail]"},
-		{status: grader.StatusSkipped, want: "[skip]"},
-		{status: grader.StatusError, want: "[err ]"},
-		{status: grader.Status("weird"), want: "[err ]"},
-		{status: grader.Status(""), want: "[err ]"},
-	}
-	for _, tc := range tests {
-		if got := statusTag(tc.status); got != tc.want {
-			t.Errorf("statusTag(%q): got %q, want %q", tc.status, got, tc.want)
-		}
-		if len(tc.want) != 6 {
-			t.Errorf("tag %q: got %d columns, want 6", tc.want, len(tc.want))
-		}
-	}
-}
-
-func TestPluralOne(t *testing.T) {
-	tests := []struct {
-		n    int
-		want string
-	}{
-		{n: 0, want: "0 hints"},
-		{n: 1, want: "1 hint"},
-		{n: 2, want: "2 hints"},
-	}
-	for _, tc := range tests {
-		if got := plural(tc.n, "hint"); got != tc.want {
-			t.Errorf("plural(%d, hint): got %q, want %q", tc.n, got, tc.want)
-		}
-	}
-}
-
 func TestConceptsSummaryWrapped(t *testing.T) {
 	long := strings.TrimSpace(strings.Repeat("kubelet reports container state ", 12))
 	var out strings.Builder
@@ -210,38 +149,12 @@ func TestConceptsSummaryWrapped(t *testing.T) {
 		if len(l) > conceptsSummaryWidth {
 			t.Errorf("summary line %q: got %d columns, want <= %d", l, len(l), conceptsSummaryWidth)
 		}
-		if len(l) > markdownWidth {
-			t.Errorf("summary line %q: got %d columns, want <= %d", l, len(l), markdownWidth)
+		if len(l) > render.DefaultWidth {
+			t.Errorf("summary line %q: got %d columns, want <= %d", l, len(l), render.DefaultWidth)
 		}
 		words = append(words, strings.Fields(l)...)
 	}
 	if got := strings.Join(words, " "); got != long {
 		t.Errorf("wrapped summary text:\n got %q\nwant %q", got, long)
-	}
-}
-
-func TestCheckWhyWidthExact(t *testing.T) {
-	first := strings.Repeat("aaaaaaaaaa ", 5) + "bbbbbbbbbbb"
-	if len(first) != whyWidth-len(detailIndent)-len("why: ") {
-		t.Fatalf("test setup: first line text is %d columns, want %d", len(first), whyWidth-len(detailIndent)-len("why: "))
-	}
-	r := grader.Result{ID: "x", Status: grader.StatusFail, Expected: "2", Actual: "0", Why: first + " cc dd"}
-	got := resultLines(r, "[fail]", true, false)
-	want := []string{
-		"[fail] x",
-		"       expected: 2  actual: 0",
-		"       why: " + first,
-		"            cc dd",
-	}
-	if strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Errorf("resultLines:\n got %q\nwant %q", got, want)
-	}
-	if len(got[2]) != whyWidth {
-		t.Errorf("first why line: got %d columns, want exactly %d", len(got[2]), whyWidth)
-	}
-	one := strings.Repeat("aaaaaaaaaa ", 5) + "bbbbbbbbbbbb"
-	lines := whyLines(one, whyWidth)
-	if len(lines) != 2 || lines[0] != detailIndent+"why: "+strings.TrimSpace(strings.Repeat("aaaaaaaaaa ", 5)) || lines[1] != detailIndent+"     bbbbbbbbbbbb" {
-		t.Errorf("whyLines one over the width: got %q, want the last word on a second line", lines)
 	}
 }

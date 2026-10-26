@@ -5,7 +5,11 @@
 // (cluster.StateDir), so Heal can undo them from another process and from
 // any journal; <stateDir>/faults.lock serializes the processes: a process
 // that finds it held polls every 100 ms until it is free or its context
-// ends.
+// ends. Every docker call goes through one helper bounded by dockerTimeout,
+// 30 seconds: pause, unpause, systemctl and tc finish in under a second on
+// a healthy daemon, so the bound only catches a hung daemon, and it is
+// shorter than the 60 seconds the cluster package allows for creating and
+// removing containers.
 package faults
 
 import (
@@ -144,8 +148,12 @@ func combinedOutput(ctx context.Context, name string, args ...string) ([]byte, e
 // node outside cluster.NodeNames returns ErrUnknownNode. netem is read only
 // for Netem. Each docker call is bounded to 30 seconds; waiting for the
 // state lock ends with ctx. An injected fault is recorded before the docker
-// call, so a process killed mid-call still leaves a record Heal undoes, and
-// the record is dropped again when the call fails.
+// call, so a process killed mid-call still leaves a record Heal undoes. The
+// record is dropped again only when the call definitely did not apply the
+// fault: docker exited non-zero while its context was still live, or the
+// docker binary is missing. A call cut short by ctx or the 30 second bound
+// keeps the record, because the daemon may still complete the request;
+// every undo tolerates a fault that is not there, so Heal clears it.
 func (m *Manager) Apply(ctx context.Context, action Action, node string, netem NetemOptions) error {
 	if err := m.validate(action, node, netem); err != nil {
 		return fmt.Errorf("fault %s on %s: %w", action, node, err)
@@ -176,6 +184,9 @@ func (m *Manager) Apply(ctx context.Context, action Action, node string, netem N
 	}
 	if err := m.exec(ctx, action, node, netem, false); err != nil {
 		if action != undo {
+			if !notApplied(err) {
+				return fmt.Errorf("fault %s on %s: %w; the fault may still apply, so its record is kept: run kubedrill heal", action, node, err)
+			}
 			if saveErr := m.save(before); saveErr != nil {
 				err = errors.Join(err, fmt.Errorf("drop intent record: %w", saveErr))
 			}
@@ -361,16 +372,37 @@ func (m *Manager) exec(ctx context.Context, action Action, node string, netem Ne
 		return nil
 	}
 	msg := strings.TrimSpace(string(out))
-	if alreadyUndone(action, msg) && (healing || action == Unpause || action == ClearNetem) {
+	var exitErr *exec.ExitError
+	definite := (errors.As(err, &exitErr) && dctx.Err() == nil) || errors.Is(err, exec.ErrNotFound)
+	if !definite {
+		if ctxErr := dctx.Err(); ctxErr != nil && !errors.Is(err, ctxErr) {
+			err = fmt.Errorf("%w (%w)", err, ctxErr)
+		}
+		err = &outcomeUnknownError{err: err}
+	}
+	if definite && alreadyUndone(action, msg) && (healing || action == Unpause || action == ClearNetem) {
 		return nil
 	}
-	if action == Netem && netemMissing(msg) {
+	if definite && action == Netem && netemMissing(msg) {
 		return fmt.Errorf("%w: %s", ErrNetemUnavailable, msg)
 	}
 	if msg != "" {
 		return fmt.Errorf("docker %s: %s: %w", strings.Join(args, " "), msg, err)
 	}
 	return fmt.Errorf("docker %s: %w", strings.Join(args, " "), err)
+}
+
+// outcomeUnknownError marks a docker call that may have reached the daemon
+// although it reported a failure.
+type outcomeUnknownError struct{ err error }
+
+func (e *outcomeUnknownError) Error() string { return e.err.Error() }
+
+func (e *outcomeUnknownError) Unwrap() error { return e.err }
+
+func notApplied(err error) bool {
+	var unknown *outcomeUnknownError
+	return !errors.As(err, &unknown)
 }
 
 func netemArgs(o NetemOptions) []string {

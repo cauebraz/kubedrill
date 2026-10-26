@@ -256,3 +256,30 @@ func TestParseDuplicateSection(t *testing.T) {
 		t.Errorf("errors lack %q:\n%s", want, got)
 	}
 }
+
+func TestParseIgnoresHeadingsInCodeFences(t *testing.T) {
+	tests := []struct {
+		name  string
+		block string
+	}{
+		{name: "backtick fence with a comment", block: "```bash\n# list the pods\nkubectl get pods\n```\n"},
+		{name: "tilde fence with a comment", block: "~~~\n# list the pods\n~~~\n"},
+		{name: "fence holding a section heading", block: "````markdown\n## Go deeper\n```\n# nested\n```\n````\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			doc := strings.Replace(validDoc, "## The mechanism\n\nText.\n", "## The mechanism\n\nText.\n\n"+tt.block, 1)
+			c, errs := parse(doc)
+			if len(errs) != 0 {
+				t.Fatalf("parse: got errors %v, want none", errs)
+			}
+			if got, want := c.Title, "Pod lifecycle"; got != want {
+				t.Errorf("Title: got %q, want %q", got, want)
+			}
+		})
+	}
+	unclosed := strings.Replace(validDoc, "## The mechanism\n", "```\n## The mechanism\n", 1)
+	if _, errs := parse(unclosed); len(errs) == 0 {
+		t.Errorf("parse with an unclosed fence hiding every section: got no errors, want missing sections")
+	}
+}

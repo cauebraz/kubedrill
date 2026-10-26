@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -35,7 +36,7 @@ func (f *fakeDocker) run(_ context.Context, name string, args ...string) ([]byte
 	return nil, nil
 }
 
-var errExit = errors.New("exit status 1")
+var errExit error = &exec.ExitError{}
 
 func newManager(t *testing.T, fd *fakeDocker) (*Manager, string) {
 	t.Helper()
@@ -405,5 +406,80 @@ func TestActionsListsEveryAction(t *testing.T) {
 	want := []Action{Pause, Unpause, StopKubelet, StartKubelet, Netem, ClearNetem}
 	if !slices.Equal(got, want) {
 		t.Errorf("Actions: got %v, want %v", got, want)
+	}
+}
+
+func TestApplyKeepsIntentWhenOutcomeUnknown(t *testing.T) {
+	tests := []struct {
+		name     string
+		run      func(ctx context.Context, cancel context.CancelFunc) ([]byte, error)
+		wantKept bool
+		wantIs   error
+	}{
+		{name: "docker exits non-zero", run: func(context.Context, context.CancelFunc) ([]byte, error) {
+			return []byte("Error response from daemon: boom"), errExit
+		}, wantIs: errExit},
+		{name: "docker killed by cancel", run: func(ctx context.Context, cancel context.CancelFunc) ([]byte, error) {
+			cancel()
+			<-ctx.Done()
+			return nil, errExit
+		}, wantKept: true, wantIs: errExit},
+		{name: "runner returns the context error", run: func(ctx context.Context, cancel context.CancelFunc) ([]byte, error) {
+			cancel()
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}, wantKept: true, wantIs: context.Canceled},
+		{name: "docker not started", run: func(context.Context, context.CancelFunc) ([]byte, error) {
+			return nil, errors.New("fork/exec docker: resource temporarily unavailable")
+		}, wantKept: true},
+		{name: "docker binary missing", run: func(context.Context, context.CancelFunc) ([]byte, error) {
+			return nil, &exec.Error{Name: "docker", Err: exec.ErrNotFound}
+		}, wantIs: exec.ErrNotFound},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			healing := false
+			var healCalls []call
+			runner := func(rctx context.Context, name string, args ...string) ([]byte, error) {
+				if healing {
+					healCalls = append(healCalls, append(call{name}, args...))
+					return []byte("Error response from daemon: Container abc is not paused"), errExit
+				}
+				return tc.run(rctx, cancel)
+			}
+			m := New("kubedrill", t.TempDir(), WithRunner(runner))
+			err := m.Apply(ctx, Pause, "worker", NetemOptions{})
+			if err == nil {
+				t.Fatal("Apply: got nil error, want the docker failure")
+			}
+			if tc.wantIs != nil && !errors.Is(err, tc.wantIs) {
+				t.Errorf("Apply error %v does not wrap %v", err, tc.wantIs)
+			}
+			active, aerr := m.Active(context.Background())
+			if aerr != nil {
+				t.Fatal(aerr)
+			}
+			if got := len(active) == 1; got != tc.wantKept {
+				t.Fatalf("intent record kept: got %v (%v), want %v", got, active, tc.wantKept)
+			}
+			if tc.wantKept && !strings.Contains(err.Error(), "kubedrill heal") {
+				t.Errorf("Apply error: got %q, want it to name the heal command", err)
+			}
+			if !tc.wantKept {
+				return
+			}
+			healing = true
+			if err := m.Heal(context.Background()); err != nil {
+				t.Fatalf("Heal of a fault that was never applied: got %v, want nil", err)
+			}
+			if want := []call{{"docker", "unpause", "kubedrill-worker"}}; !reflect.DeepEqual(healCalls, want) {
+				t.Errorf("heal calls: got %v, want %v", healCalls, want)
+			}
+			if active, _ := m.Active(context.Background()); len(active) != 0 {
+				t.Errorf("Active after Heal: got %v, want none", active)
+			}
+		})
 	}
 }

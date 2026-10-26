@@ -1138,3 +1138,36 @@ func TestWhyLengthBounds(t *testing.T) {
 		})
 	}
 }
+
+func TestVariantForMatchesRender(t *testing.T) {
+	s, err := Load(realScenario)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		seed int64
+		want string
+	}{
+		{1, "typo-tag"},
+		{2, "wrong-repo"},
+		{3, "private-registry"},
+		{4, "typo-tag"},
+		{1_000_000, s.Variants[(1_000_000-1)%int64(len(s.Variants))].Name},
+	}
+	for _, tc := range tests {
+		if got := s.VariantFor(tc.seed).Name; got != tc.want {
+			t.Errorf("VariantFor(%d) = %q, want %q", tc.seed, got, tc.want)
+		}
+		r, err := s.Render(tc.seed)
+		if err != nil {
+			t.Fatalf("Render(%d): %v", tc.seed, err)
+		}
+		if got := r.Variant.Name; got != tc.want {
+			t.Errorf("Render(%d).Variant = %q, want %q", tc.seed, got, tc.want)
+		}
+	}
+	empty := &Scenario{}
+	if got, want := empty.VariantFor(3).Name, "default"; got != want {
+		t.Errorf("VariantFor without variants = %q, want %q", got, want)
+	}
+}

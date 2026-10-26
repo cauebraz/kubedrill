@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -74,8 +73,27 @@ var hardening = []string{
 
 // dockerLaunchCodes are the exit codes the docker client reserves for its own
 // failures (daemon error, command not runnable, command not found); any other
-// code belongs to the process inside the container.
-var dockerLaunchCodes = []int{125, 126, 127}
+// code belongs to the process inside the container. 126 and 127 are also what
+// bash returns after a command that is not runnable or not found, so
+// sessionResult tells them apart by the stderr tail.
+var dockerLaunchCodes = []int{dockerDaemonCode, 126, 127}
+
+const dockerDaemonCode = 125
+
+// dockerMarkers are the substrings, lowercased, of the messages the docker
+// client and the OCI runtime print when they cannot start the command.
+var dockerMarkers = []string{"docker", "daemon", "oci runtime", "exec failed", "exec:"}
+
+// namesDocker reports whether msg is a docker client or runtime message.
+func namesDocker(msg string) bool {
+	lower := strings.ToLower(msg)
+	for _, s := range dockerMarkers {
+		if strings.Contains(lower, s) {
+			return true
+		}
+	}
+	return false
+}
 
 // ValidLayout reports whether s is LayoutTmux or LayoutShell.
 func ValidLayout(s string) bool {
@@ -109,9 +127,10 @@ func WithAuditDir(dir string) Option {
 }
 
 // WithStateDir sets the cluster state directory (cluster.StateDir) that
-// holds the linux kubedrill binary under bin/; the default is
-// cluster.StateDir(). It lies outside the journal directory, which the
-// container mounts read-write at /data.
+// holds the linux kubedrill binary under bin/. It is required: there is
+// no default, and Shell and the binary build fail without it. It lies
+// outside the journal directory, which the container mounts read-write at
+// /data.
 func WithStateDir(dir string) Option {
 	return func(m *Manager) {
 		m.stateDir = dir
@@ -225,34 +244,45 @@ func (m *Manager) docker(ctx context.Context, args ...string) *exec.Cmd {
 
 // probe runs a non-interactive docker query bounded to ten seconds, so a
 // hung daemon fails the step instead of freezing it, and returns its
-// standard output.
+// standard output. A failure names the query and carries the last bytes of
+// its standard error (a permission error on the docker socket, for
+// example).
 func (m *Manager) probe(ctx context.Context, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 	cmd := m.docker(ctx, args...)
 	var out bytes.Buffer
+	tail := &tailWriter{limit: stderrTail}
 	cmd.Stdout = &out
-	cmd.Stderr = io.Discard
+	cmd.Stderr = tail
 	cmd.WaitDelay = time.Second
 	err := cmd.Run()
-	if err != nil && ctx.Err() != nil {
-		return out.String(), fmt.Errorf("docker %s: %w", strings.Join(args, " "), ctx.Err())
+	if err == nil {
+		return out.String(), nil
 	}
-	return out.String(), err
+	op := "docker " + strings.Join(args, " ")
+	if ctx.Err() != nil {
+		return out.String(), fmt.Errorf("%s: %w", op, ctx.Err())
+	}
+	if msg := strings.TrimSpace(tail.String()); msg != "" {
+		return out.String(), fmt.Errorf("%s: %s: %w", op, msg, err)
+	}
+	return out.String(), fmt.Errorf("%s: %w", op, err)
 }
 
 // EnsureImage returns the image tag, building the image from
 // <root>/workstation when `docker image inspect` does not find it. It
-// announces "rebuilding workstation image <tag> (sources changed)" when an
-// older kubedrill-workstation tag exists and the first-time line otherwise,
-// builds with --progress quiet, and ends with one "workstation image <tag>
-// built in <elapsed>" line; on failure the build output is included in the
-// error. After a successful build the older kubedrill-workstation tags are
-// removed (never the current one, never a tag created within the last seven
-// days; untagged images and tags that are not 12 hex digits, such as "dev",
-// are skipped) and the count is printed as "removed <n> older workstation
-// image(s)". The docker queries are bounded to ten seconds each; the build
-// is not.
+// announces "rebuilding workstation image <tag> (sources changed)" when any
+// other kubedrill-workstation tag with the ImageTag shape exists, whatever
+// its age, and the first-time line otherwise, builds with --progress quiet,
+// and ends with one "workstation image <tag> built in <elapsed>" line; on
+// failure the build output is included in the error. After a successful
+// build the older kubedrill-workstation tags are removed (never the current
+// one, never a tag created within the last seven days; untagged images and
+// tags that are not 12 hex digits, such as "dev", are skipped) and the count
+// is printed as "removed <n> older workstation image(s)". The docker queries
+// are bounded to ten seconds each; the build is bounded only by ctx, and
+// canceling ctx kills the build's whole process group.
 func (m *Manager) EnsureImage(ctx context.Context) (string, error) {
 	tag, err := m.ImageTag()
 	if err != nil {
@@ -261,8 +291,7 @@ func (m *Manager) EnsureImage(ctx context.Context) (string, error) {
 	if _, err := m.probe(ctx, "image", "inspect", tag); err == nil {
 		return tag, nil
 	}
-	older := m.olderImages(ctx, tag)
-	if len(older) > 0 {
+	if len(m.otherImages(ctx, tag)) > 0 {
 		fmt.Fprintf(m.out, "rebuilding workstation image %s (sources changed)...\n", tag)
 	} else {
 		fmt.Fprintf(m.out, "building workstation image %s (first time only, a few minutes)...\n", tag)
@@ -272,6 +301,7 @@ func (m *Manager) EnsureImage(ctx context.Context) (string, error) {
 	tail := &tailWriter{limit: stderrTail}
 	build.Stdout = io.Discard
 	build.Stderr = tail
+	killGroupOnCancel(build)
 	if err := build.Run(); err != nil {
 		if msg := strings.TrimSpace(tail.String()); msg != "" {
 			return "", fmt.Errorf("build workstation image %s: %s: %w", tag, msg, err)
@@ -280,7 +310,7 @@ func (m *Manager) EnsureImage(ctx context.Context) (string, error) {
 	}
 	fmt.Fprintf(m.out, "workstation image %s built in %s\n", tag, m.now().Sub(start).Round(time.Second))
 	removed := 0
-	for _, old := range m.olderImages(ctx, tag) {
+	for _, old := range m.prunable(m.otherImages(ctx, tag)) {
 		if _, err := m.probe(ctx, "image", "rm", old); err == nil {
 			removed++
 		}
@@ -291,30 +321,54 @@ func (m *Manager) EnsureImage(ctx context.Context) (string, error) {
 	return tag, nil
 }
 
-// olderImages lists the kubedrill-workstation images whose tag has the
-// ImageTag shape, differs from tag and was created more than seven days ago
-// (an image whose creation time is missing or unreadable is kept), as
-// repo:tag.
-func (m *Manager) olderImages(ctx context.Context, tag string) []string {
+// killGroupOnCancel runs cmd in its own process group, kills the whole group
+// when its context ends, and stops waiting for its output pipes waitDelay
+// later, so a grandchild that keeps a pipe open cannot hold Run.
+func killGroupOnCancel(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = waitDelay
+}
+
+// workstationImage is one kubedrill-workstation tag other than the current
+// one; dated is false when its creation time is missing or unreadable.
+type workstationImage struct {
+	ref     string
+	created time.Time
+	dated   bool
+}
+
+// otherImages lists the kubedrill-workstation images whose tag has the
+// ImageTag shape and differs from tag.
+func (m *Manager) otherImages(ctx context.Context, tag string) []workstationImage {
 	out, err := m.probe(ctx, "image", "ls", imageRepo, "--format", "{{.Tag}}\t{{.CreatedAt}}")
 	if err != nil {
 		return nil
 	}
 	current := strings.TrimPrefix(tag, imageRepo+":")
-	cutoff := m.now().Add(-keepImages)
-	var older []string
+	var others []workstationImage
 	for _, line := range strings.Split(out, "\n") {
 		t, createdAt, _ := strings.Cut(strings.TrimSpace(line), "\t")
 		if t == current || !isImageTag(t) {
 			continue
 		}
 		created, err := time.Parse(createdAtLayout, strings.TrimSpace(createdAt))
-		if err != nil || !created.Before(cutoff) {
-			continue
-		}
-		older = append(older, imageRepo+":"+t)
+		others = append(others, workstationImage{ref: imageRepo + ":" + t, created: created, dated: err == nil})
 	}
-	return older
+	return others
+}
+
+// prunable returns the images created more than seven days ago; an image
+// without a readable creation time is kept.
+func (m *Manager) prunable(images []workstationImage) []string {
+	cutoff := m.now().Add(-keepImages)
+	var refs []string
+	for _, img := range images {
+		if img.dated && img.created.Before(cutoff) {
+			refs = append(refs, img.ref)
+		}
+	}
+	return refs
 }
 
 // isImageTag reports whether t has the shape ImageTag produces (12 lowercase
@@ -336,20 +390,15 @@ func isImageTag(t string) bool {
 // architecture into <stateDir>/bin (outside the journal directory) and
 // returns the path. The file name ends with the first 8 hex digits of a
 // sha256 over the repository root so two checkouts keep separate binaries.
-// It rebuilds when the binary is missing or older than go.mod, go.sum or the
-// newest non-test .go file under cmd/ and internal/ (testdata directories
-// excluded). The go build is bounded to ten minutes on top of ctx.
+// It runs go build every time and lets the go build cache decide what is
+// stale, so an added, changed or deleted source file always reaches the
+// binary; a build with nothing to do returns in a fraction of a second and
+// leaves the file untouched. The go build is bounded to ten minutes on top
+// of ctx.
 func (m *Manager) EnsureBinary(ctx context.Context) (string, error) {
 	out, err := m.binaryPath()
 	if err != nil {
 		return "", fmt.Errorf("build linux kubedrill: %w", err)
-	}
-	newest, err := newestSource(m.root)
-	if err != nil {
-		return "", fmt.Errorf("build linux kubedrill: %w", err)
-	}
-	if info, err := os.Stat(out); err == nil && !info.ModTime().Before(newest) {
-		return out, nil
 	}
 	if err := atomicfile.MkdirPrivate(filepath.Dir(out)); err != nil {
 		return "", fmt.Errorf("build linux kubedrill: %w", err)
@@ -380,57 +429,17 @@ func (m *Manager) binaryPath() (string, error) {
 	return filepath.Join(state, "bin", "kubedrill-linux-"+m.goarch+"-"+hex.EncodeToString(sum[:])[:8]), nil
 }
 
-func (m *Manager) state() (string, error) {
-	if m.stateDir != "" {
-		return m.stateDir, nil
-	}
-	return cluster.StateDir()
-}
+// errNoStateDir is the error of an operation that needs the cluster state
+// directory on a Manager built without WithStateDir.
+var errNoStateDir = errors.New("workstation: cluster state directory not set; build the manager with WithStateDir")
 
-func newestSource(root string) (time.Time, error) {
-	var newest time.Time
-	note := func(info fs.FileInfo) {
-		if info.ModTime().After(newest) {
-			newest = info.ModTime()
-		}
+// state is the cluster state directory set by WithStateDir; there is no
+// default, so the composition root resolves it once for every package.
+func (m *Manager) state() (string, error) {
+	if m.stateDir == "" {
+		return "", errNoStateDir
 	}
-	for _, name := range []string{"go.mod", "go.sum"} {
-		info, err := os.Stat(filepath.Join(root, name))
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				continue
-			}
-			return time.Time{}, fmt.Errorf("stat %s: %w", name, err)
-		}
-		note(info)
-	}
-	for _, sub := range []string{"cmd", "internal"} {
-		dir := filepath.Join(root, sub)
-		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() {
-				if d.Name() == "testdata" {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
-				return nil
-			}
-			info, err := d.Info()
-			if err != nil {
-				return err
-			}
-			note(info)
-			return nil
-		})
-		if err != nil {
-			return time.Time{}, fmt.Errorf("walk %s: %w", dir, err)
-		}
-	}
-	return newest, nil
+	return m.stateDir, nil
 }
 
 // hostPath resolves a bind-mount source: symlinks evaluated, absolute, and
@@ -455,6 +464,37 @@ func hostPath(path string) (string, error) {
 func within(dir, path string) bool {
 	rel, err := filepath.Rel(dir, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// checkJournalOverlap refuses a session whose journal directory data, which
+// the container mounts read-write, contains the kubeconfig, the binary
+// directory, the repository root or the cluster state directory, or lies
+// inside the repository root or the state directory: the container could
+// otherwise rewrite code or files the host later builds or trusts. All
+// paths are resolved with hostPath.
+func (m *Manager) checkJournalOverlap(data, kubeconfig, binDir string) error {
+	for _, p := range []string{kubeconfig, binDir} {
+		if within(data, p) {
+			return fmt.Errorf("%s is inside the journal directory %s, which the container mounts read-write; keep it in the cluster state directory (cluster.InternalKubeconfigPath, WithStateDir)", p, data)
+		}
+	}
+	state, err := m.state()
+	if err != nil {
+		return err
+	}
+	if state, err = hostPath(state); err != nil {
+		return err
+	}
+	root, err := hostPath(m.root)
+	if err != nil {
+		return err
+	}
+	for _, d := range []struct{ name, path string }{{"repository", root}, {"cluster state directory", state}} {
+		if within(data, d.path) || within(d.path, data) {
+			return fmt.Errorf("the journal directory %s and the %s %s overlap; the container mounts the journal read-write and could change files the host builds or trusts, so set KUBEDRILL_DATA to a directory outside both", data, d.name, d.path)
+		}
+	}
+	return nil
 }
 
 func bindMount(source, target string, readonly bool) []string {
@@ -490,8 +530,12 @@ func (m *Manager) attach(cmd *exec.Cmd) *tailWriter {
 
 // sessionResult turns the exit of an interactive docker command into the
 // caller's error: a process exit inside the container is a normal end of
-// session, a docker client code (125, 126, 127) is reported with docker's
-// message, and anything else is returned as is.
+// session, 125 is docker's own failure, and 126 or 127 are docker's only
+// when the stderr tail carries a docker message. Every session runs with a
+// TTY, so the container's output reaches the client's stdout and its
+// stderr holds only client messages; a bash that ends with 126 or 127
+// because the learner's last command was not runnable or not found is a
+// normal end of session. Anything else is returned as is.
 func sessionResult(op string, err error, tail *tailWriter) error {
 	if err == nil {
 		return nil
@@ -505,6 +549,9 @@ func sessionResult(op string, err error, tail *tailWriter) error {
 		return nil
 	}
 	msg := strings.TrimSpace(tail.String())
+	if code != dockerDaemonCode && !namesDocker(msg) {
+		return nil
+	}
 	if msg == "" {
 		return fmt.Errorf("%s: docker exited with status %d: %w", op, code, err)
 	}
@@ -555,10 +602,8 @@ func (m *Manager) Shell(ctx context.Context, o ShellOptions) error {
 			return fmt.Errorf("start workstation: %w", err)
 		}
 	}
-	for _, p := range []string{sources[2], sources[3]} {
-		if within(sources[1], p) {
-			return fmt.Errorf("start workstation: %s is inside the journal directory %s, which the container mounts read-write; keep it in the cluster state directory (cluster.InternalKubeconfigPath, WithStateDir)", p, sources[1])
-		}
+	if err := m.checkJournalOverlap(sources[1], sources[2], sources[3]); err != nil {
+		return fmt.Errorf("start workstation: %w", err)
 	}
 	binarySource := filepath.Join(sources[3], filepath.Base(binary))
 	args := []string{"run", "--rm", "-it",

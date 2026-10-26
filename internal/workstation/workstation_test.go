@@ -220,69 +220,35 @@ func TestShellAuditMountAndDataDirs(t *testing.T) {
 
 func TestEnsureBinary(t *testing.T) {
 	root := writeRepo(t)
-	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
-	old := base.Add(-time.Minute)
-	mainGo := filepath.Join(root, "cmd", "kubedrill", "main.go")
-	cliGo := filepath.Join(root, "internal", "cli", "main.go")
-	testGo := filepath.Join(root, "internal", "cli", "main_test.go")
-	testdataGo := filepath.Join(root, "internal", "cli", "testdata", "fixture.go")
-	goMod := filepath.Join(root, "go.mod")
-	goSum := filepath.Join(root, "go.sum")
-	if err := os.MkdirAll(filepath.Dir(testdataGo), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for _, f := range []string{testGo, testdataGo, goMod, goSum} {
-		if err := os.WriteFile(f, []byte("x\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, f := range []string{mainGo, cliGo, goMod, goSum} {
-		if err := os.Chtimes(f, old, old); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, f := range []string{testGo, testdataGo} {
-		if err := os.Chtimes(f, base.Add(24*time.Hour), base.Add(24*time.Hour)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.Chtimes(cliGo, base, base); err != nil {
-		t.Fatal(err)
-	}
+	future := time.Now().Add(24 * time.Hour)
 	tests := []struct {
-		name      string
-		binary    *time.Time
-		touch     string
-		wantBuild bool
+		name   string
+		binary bool
+		remove string
 	}{
-		{name: "missing binary", wantBuild: true},
-		{name: "stale binary", binary: ptr(base.Add(-time.Hour)), wantBuild: true},
-		{name: "fresh binary", binary: ptr(base.Add(time.Hour)), wantBuild: false},
-		{name: "test files and testdata are ignored", binary: ptr(base.Add(time.Minute)), wantBuild: false},
-		{name: "go.mod newer than binary", binary: ptr(base.Add(time.Hour)), touch: goMod, wantBuild: true},
-		{name: "go.sum newer than binary", binary: ptr(base.Add(time.Hour)), touch: goSum, wantBuild: true},
+		{name: "missing binary"},
+		{name: "binary newer than every source", binary: true},
+		{name: "binary newer than every source after a source file was deleted", binary: true, remove: filepath.Join("internal", "cli", "main.go")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.touch != "" {
-				newer := base.Add(2 * time.Hour)
-				if err := os.Chtimes(tt.touch, newer, newer); err != nil {
+			if tt.remove != "" {
+				if err := os.Remove(filepath.Join(root, tt.remove)); err != nil {
 					t.Fatal(err)
 				}
-				t.Cleanup(func() { _ = os.Chtimes(tt.touch, old, old) })
 			}
 			data := t.TempDir()
 			fr := &fakeRunner{}
 			m := New(root, t.TempDir(), WithStateDir(data), WithRunner(fr.run), WithOutput(&bytes.Buffer{}))
 			want := wantBinary(data, root, m.goarch)
-			if tt.binary != nil {
+			if tt.binary {
 				if err := os.MkdirAll(filepath.Dir(want), 0o755); err != nil {
 					t.Fatal(err)
 				}
 				if err := os.WriteFile(want, []byte("bin"), 0o755); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.Chtimes(want, *tt.binary, *tt.binary); err != nil {
+				if err := os.Chtimes(want, future, future); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -293,20 +259,17 @@ func TestEnsureBinary(t *testing.T) {
 			if got != want {
 				t.Errorf("EnsureBinary path: got %q, want %q", got, want)
 			}
-			built := len(fr.calls) == 1
-			if built != tt.wantBuild {
-				t.Fatalf("build decision: got %v calls %v, want build %v", len(fr.calls), fr.joined(), tt.wantBuild)
+			if len(fr.calls) != 1 {
+				t.Fatalf("go build calls: got %v, want exactly one (the build cache decides what is stale)", fr.joined())
 			}
-			if built {
-				c := fr.calls[0]
-				wantArgs := "build -buildvcs=false -trimpath -o " + want + " ./cmd/kubedrill"
-				if c.name != "go" || strings.Join(c.args, " ") != wantArgs {
-					t.Errorf("go build argv: got %s %v, want go %s", c.name, c.args, wantArgs)
-				}
-				for _, e := range []string{"GOOS=linux", "GOARCH=" + m.goarch, "CGO_ENABLED=0"} {
-					if !slices.Contains(c.cmd.Env, e) {
-						t.Errorf("go build env lacks %s", e)
-					}
+			c := fr.calls[0]
+			wantArgs := "build -buildvcs=false -trimpath -o " + want + " ./cmd/kubedrill"
+			if c.name != "go" || strings.Join(c.args, " ") != wantArgs {
+				t.Errorf("go build argv: got %s %v, want go %s", c.name, c.args, wantArgs)
+			}
+			for _, e := range []string{"GOOS=linux", "GOARCH=" + m.goarch, "CGO_ENABLED=0"} {
+				if !slices.Contains(c.cmd.Env, e) {
+					t.Errorf("go build env lacks %s", e)
 				}
 			}
 		})
@@ -322,6 +285,25 @@ func TestEnsureBinary(t *testing.T) {
 			t.Errorf("binaryPath: got %q, want kubedrill-linux-<arch>-<8 hex>", filepath.Base(a))
 		}
 	})
+}
+
+func TestStateDirRequired(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	data := t.TempDir()
+	m := New(writeRepo(t), data)
+	for _, tc := range []struct {
+		name string
+		run  func() error
+	}{
+		{"binaryPath", func() error { _, err := m.binaryPath(); return err }},
+		{"checkJournalOverlap", func() error {
+			return m.checkJournalOverlap(data, filepath.Join(t.TempDir(), "kubeconfig"), filepath.Join(t.TempDir(), "bin"))
+		}},
+	} {
+		if err := tc.run(); !errors.Is(err, errNoStateDir) {
+			t.Errorf("%s without WithStateDir: got %v, want %v", tc.name, err, errNoStateDir)
+		}
+	}
 }
 
 func ptr(t time.Time) *time.Time { return &t }
@@ -492,7 +474,10 @@ func TestShellExitCodes(t *testing.T) {
 		{name: "shell exit 1 is a normal end of session", script: "exit 1"},
 		{name: "shell exit 130 is a normal end of session", script: "exit 130"},
 		{name: "docker 125 daemon error", script: "echo 'docker: Error response from daemon: boom.' >&2; exit 125", wantErr: "start workstation: docker exited with status 125: docker: Error response from daemon: boom.: exit status 125"},
-		{name: "docker 126 not runnable", script: "exit 126", wantErr: "start workstation: docker exited with status 126: exit status 126"},
+		{name: "shell exit 126 without a docker message is a normal end of session", script: "exit 126"},
+		{name: "shell exit 127 without a docker message is a normal end of session", script: "exit 127"},
+		{name: "shell exit 127 after an unrelated warning is a normal end of session", script: "echo 'WARNING: terminal size unknown' >&2; exit 127"},
+		{name: "docker 126 not runnable", script: "echo 'docker: Error response from daemon: permission denied: unknown.' >&2; exit 126", wantErr: "start workstation: docker exited with status 126: docker: Error response from daemon: permission denied: unknown.: exit status 126"},
 		{name: "docker 127 not found", script: "echo 'exec: \"x\": not found' >&2; exit 127", wantErr: "start workstation: docker exited with status 127: exec: \"x\": not found: exit status 127"},
 	}
 	for _, tt := range tests {
@@ -587,7 +572,16 @@ func TestNodeShell(t *testing.T) {
 	})
 
 	t.Run("exit codes", func(t *testing.T) {
-		for script, wantErr := range map[string]bool{"exit 0": false, "exit 1": false, "exit 130": false, "exit 125": true, "exit 126": true, "exit 127": true} {
+		for script, wantErr := range map[string]bool{
+			"exit 0":   false,
+			"exit 1":   false,
+			"exit 130": false,
+			"exit 125": true,
+			"exit 126": false,
+			"exit 127": false,
+			"echo 'OCI runtime exec failed: exec failed: unable to start container process: exec: \"bash\": executable file not found in $PATH: unknown' >&2; exit 126": true,
+			"echo 'Error response from daemon: container abc is not running' >&2; exit 127":                                                                             true,
+		} {
 			fr := &fakeRunner{scripts: map[string]string{"docker inspect -f {{.State.Running}}": "echo true", "docker exec": script}}
 			m := New(root, t.TempDir(), WithRunner(fr.run))
 			m.stdin, m.stdout, m.stderr = strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}
@@ -863,6 +857,66 @@ func TestShellRefusesFilesInsideTheJournal(t *testing.T) {
 	m2.stateDir = data2
 	if err := m2.Shell(context.Background(), ShellOptions{Kubeconfig: kubeconfig}); err == nil || !strings.Contains(err.Error(), "inside the journal directory") {
 		t.Errorf("Shell with the binary in the journal: got %v, want a refusal", err)
+	}
+}
+
+func TestShellRefusesJournalOverlap(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, m *Manager, root string)
+		want  string
+	}{
+		{
+			name: "journal inside the repository",
+			setup: func(t *testing.T, m *Manager, root string) {
+				m.dataDir = filepath.Join(root, ".data")
+			},
+			want: "and the repository",
+		},
+		{
+			name: "repository inside the journal",
+			setup: func(t *testing.T, m *Manager, root string) {
+				moved := filepath.Join(m.dataDir, "checkout")
+				if err := os.Rename(root, moved); err != nil {
+					t.Fatal(err)
+				}
+				m.root = moved
+			},
+			want: "and the repository",
+		},
+		{
+			name: "journal inside the cluster state directory",
+			setup: func(t *testing.T, m *Manager, root string) {
+				m.dataDir = filepath.Join(m.stateDir, "journal")
+			},
+			want: "and the cluster state directory",
+		},
+		{
+			name: "cluster state directory inside the journal",
+			setup: func(t *testing.T, m *Manager, root string) {
+				m.stateDir = filepath.Join(m.dataDir, "state")
+				if err := os.MkdirAll(m.stateDir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: "inside the journal directory",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, fr, root, _, kubeconfig := shellHarness(t, nil)
+			tt.setup(t, m, root)
+			if err := os.MkdirAll(m.dataDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			err := m.Shell(context.Background(), ShellOptions{Kubeconfig: kubeconfig})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("Shell: got %v, want a refusal containing %q", err, tt.want)
+			}
+			if _, ok := dockerRun(fr); ok {
+				t.Errorf("docker run called although the journal overlaps: %v", fr.joined())
+			}
+		})
 	}
 }
 

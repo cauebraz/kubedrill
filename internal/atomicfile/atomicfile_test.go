@@ -130,3 +130,23 @@ func TestMkdirPrivate(t *testing.T) {
 		t.Errorf("MkdirPrivate on a file: got nil error")
 	}
 }
+
+func TestSyncDir(t *testing.T) {
+	dir := t.TempDir()
+	tests := []struct {
+		name    string
+		dir     string
+		wantErr bool
+	}{
+		{name: "existing directory", dir: dir},
+		{name: "missing directory", dir: filepath.Join(dir, "missing"), wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := syncDir(tc.dir)
+			if got := err != nil; got != tc.wantErr {
+				t.Errorf("syncDir(%s): got %v, want error %v", tc.dir, err, tc.wantErr)
+			}
+		})
+	}
+}

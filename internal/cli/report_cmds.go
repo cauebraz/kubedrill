@@ -14,10 +14,11 @@ import (
 	"github.com/cauebraz/kubedrill/internal/curriculum"
 	"github.com/cauebraz/kubedrill/internal/journal"
 	"github.com/cauebraz/kubedrill/internal/progress"
+	"github.com/cauebraz/kubedrill/internal/render"
 	"github.com/cauebraz/kubedrill/internal/scenario"
 )
 
-func (a *App) listCommand() *cobra.Command {
+func (a *app) listCommand() *cobra.Command {
 	var level string
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -40,7 +41,7 @@ func sortedScenarios(cat Catalog) []*scenario.Scenario {
 // listLegend explains the list columns and what a clean solve is.
 const listLegend = "MIN: expected minutes; YOURS: your median solve; LAST4: clean solves among your last attempts (up to 4); clean = solved with 0 hints within MIN"
 
-func (a *App) runList(level string, recommend bool) error {
+func (a *app) runList(level string, recommend bool) error {
 	cat, err := a.getCatalog()
 	if err != nil {
 		return err
@@ -64,21 +65,21 @@ func (a *App) runList(level string, recommend bool) error {
 		}
 		m := progress.ScenarioMastery(episodesOf(eps, sc.Meta.ID), sc.Meta.Minutes)
 		active := current != nil && current.ScenarioID == sc.Meta.ID
-		rows = append(rows, []string{sc.Meta.ID, sc.Meta.Title, sc.Meta.Level, string(sc.Meta.Type), strconv.Itoa(sc.Meta.Minutes), minutesCell(m.MedianSolve), lastCell(m), statusOf(m, active)})
+		rows = append(rows, []string{sc.Meta.ID, sc.Meta.Title, sc.Meta.Level, string(sc.Meta.Type), strconv.Itoa(sc.Meta.Minutes), render.Minutes(m.MedianSolve), lastCell(m), statusOf(m, active)})
 	}
 	if len(rows) == 0 {
 		a.println("no scenarios found")
 		return nil
 	}
 	header := []string{"ID", "TITLE", "LEVEL", "TYPE", "MIN", "YOURS", "LAST4", "STATUS"}
-	if a.isTerminal {
-		header, rows = fitListTable(header, rows, a.width())
+	if a.term.IsTerminal {
+		header, rows = fitListTable(header, rows, a.term.Width())
 	}
 	table(a.stdout, header, rows)
 	if !recommend {
 		return nil
 	}
-	a.println(a.wrapLine(listLegend, "  "))
+	a.println(a.printer().WrapLine(listLegend, "  "))
 	a.println()
 	if current != nil {
 		next := "kubedrill watch"
@@ -131,12 +132,12 @@ func fitListTable(header []string, rows [][]string, width int) ([]string, [][]st
 	}
 	room := max(width-others, listTitleMin)
 	for _, r := range out {
-		r[titleCol] = truncate(r[titleCol], room)
+		r[titleCol] = render.Truncate(r[titleCol], room)
 	}
 	return header, out
 }
 
-func (a *App) statusCommand() *cobra.Command {
+func (a *app) statusCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Cluster, active episode and progress",
@@ -167,7 +168,7 @@ func (a *App) statusCommand() *cobra.Command {
 			if cur == nil {
 				a.println("episode: none; start one with: kubedrill start <id>")
 			} else {
-				a.printf("episode: %s (seed %d, %s), elapsed %s, %s\n", cur.ScenarioID, cur.Seed, orDash(string(cur.Mode)), fmtDuration(cur.DurationAt(a.now())), plural(cur.HintsUsed, "hint"))
+				a.printf("episode: %s (seed %d, %s), elapsed %s, %s\n", cur.ScenarioID, cur.Seed, render.OrDash(string(cur.Mode)), render.Duration(cur.DurationAt(a.now())), render.Plural(cur.HintsUsed, "hint"))
 			}
 			cat, err := a.getCatalog()
 			if err != nil {
@@ -196,21 +197,17 @@ func (a *App) statusCommand() *cobra.Command {
 }
 
 // solvedSet returns the ids with at least one solved episode.
-func solvedSet(j Journal) (map[string]bool, error) {
-	eps, err := j.Episodes("")
-	if err != nil {
-		return nil, fmt.Errorf("read episodes: %w", err)
-	}
+func solvedSet(eps []journal.Episode) map[string]bool {
 	set := map[string]bool{}
 	for _, e := range eps {
 		if e.Outcome == journal.OutcomeSolved {
 			set[e.ScenarioID] = true
 		}
 	}
-	return set, nil
+	return set
 }
 
-func (a *App) journalCommand() *cobra.Command {
+func (a *app) journalCommand() *cobra.Command {
 	var ref string
 	var last int
 	cmd := &cobra.Command{
@@ -226,7 +223,7 @@ func (a *App) journalCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *App) runJournal(ref string, last int) error {
+func (a *app) runJournal(ref string, last int) error {
 	if last < 0 {
 		return fmt.Errorf("--last must be >= 0, got %d", last)
 	}
@@ -278,7 +275,7 @@ func (a *App) runJournal(ref string, last int) error {
 			modeCell(e),
 			variant,
 			string(e.Outcome),
-			minutesCell(e.DurationAt(a.now())),
+			render.Minutes(e.DurationAt(a.now())),
 			strconv.Itoa(e.HintsUsed),
 		})
 	}
@@ -301,13 +298,13 @@ func modeCell(e journal.Episode) string {
 	return "practice"
 }
 
-func (a *App) warnJournalProblems(j Journal) {
+func (a *app) warnJournalProblems(j Journal) {
 	for _, p := range j.Problems() {
 		fmt.Fprintf(a.stderr, "warning: journal: %s\n", p)
 	}
 }
 
-func (a *App) loadCurriculum() (*curriculum.Curriculum, error) {
+func (a *app) loadCurriculum() (*curriculum.Curriculum, error) {
 	root, err := a.repoRoot()
 	if err != nil {
 		return nil, err
@@ -315,7 +312,7 @@ func (a *App) loadCurriculum() (*curriculum.Curriculum, error) {
 	return a.f.Curriculum(curriculum.DefaultPath(root))
 }
 
-func (a *App) pathCommand() *cobra.Command {
+func (a *app) pathCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "path",
 		Short: "Print the learning ladder with progress per module",
@@ -330,16 +327,12 @@ func (a *App) pathCommand() *cobra.Command {
 	}
 }
 
-func (a *App) runPath() error {
+func (a *app) runPath() error {
 	c, err := a.loadCurriculum()
 	if err != nil {
 		return err
 	}
 	j, err := a.getJournal()
-	if err != nil {
-		return err
-	}
-	solved, err := solvedSet(j)
 	if err != nil {
 		return err
 	}
@@ -351,6 +344,7 @@ func (a *App) runPath() error {
 	if err != nil {
 		return err
 	}
+	solved := solvedSet(eps)
 	mastery := progress.ConceptMastery(scenarioInfos(cat), eps)
 	for i, lv := range c.Levels {
 		if i > 0 {
@@ -381,10 +375,10 @@ const pathConceptsIndent = "          "
 
 // printLevel prints one level of the ladder: its header, the capstone and
 // each module with its counts and the state of its concepts.
-func (a *App) printLevel(lv curriculum.Level, solved map[string]bool, mastery map[string]progress.Mastery) {
-	a.printf("%s  %s  (%d h)\n", a.style(styleBold, lv.ID), lv.Title, lv.Hours)
+func (a *app) printLevel(lv curriculum.Level, solved map[string]bool, mastery map[string]progress.Mastery) {
+	a.printf("%s  %s  (%d h)\n", a.printer().Style(render.StyleBold, lv.ID), lv.Title, lv.Hours)
 	if lv.Capstone != "" {
-		a.println(a.wrapLine("    capstone: "+lv.Capstone, "              "))
+		a.println(a.printer().WrapLine("    capstone: "+lv.Capstone, "              "))
 	}
 	for _, m := range lv.Modules {
 		existing, done := 0, 0
@@ -397,7 +391,7 @@ func (a *App) printLevel(lv curriculum.Level, solved map[string]bool, mastery ma
 				done++
 			}
 		}
-		a.println(a.wrapLine(fmt.Sprintf("    %-5s %s: %d planned, %d existing, %d solved", m.ID, m.Title, len(m.Scenarios), existing, done), pathConceptsIndent))
+		a.println(a.printer().WrapLine(fmt.Sprintf("    %-5s %s: %d planned, %d existing, %d solved", m.ID, m.Title, len(m.Scenarios), existing, done), pathConceptsIndent))
 		if len(m.Concepts) == 0 {
 			continue
 		}
@@ -405,11 +399,11 @@ func (a *App) printLevel(lv curriculum.Level, solved map[string]bool, mastery ma
 		for _, id := range m.Concepts {
 			states = append(states, conceptState(id, mastery[id]))
 		}
-		a.println(a.wrapLine(pathConceptsIndent+"concepts: "+strings.Join(states, ", "), pathConceptsIndent+"          "))
+		a.println(a.printer().WrapLine(pathConceptsIndent+"concepts: "+strings.Join(states, ", "), pathConceptsIndent+"          "))
 	}
 }
 
-func (a *App) examCommand() *cobra.Command {
+func (a *app) examCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "exam <CKA|CKAD|CKS>",
 		Short: "Coverage of one certification by domain",
@@ -427,11 +421,11 @@ func (a *App) examCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			solved, err := solvedSet(j)
+			eps, err := allEpisodes(j)
 			if err != nil {
 				return err
 			}
-			cov, err := c.ExamCoverage(id, solved)
+			cov, err := c.ExamCoverage(id, solvedSet(eps))
 			if err != nil {
 				return err
 			}
@@ -462,7 +456,7 @@ func examIDs(c *curriculum.Curriculum) []string {
 	return ids
 }
 
-func (a *App) statsCommand() *cobra.Command {
+func (a *app) statsCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "stats",
 		Short: "Solves by level, median time, hints per solve, outcomes, verdicts and concepts",
@@ -494,15 +488,15 @@ func solvedVerdicts(eps []journal.Episode) map[string]int {
 	out := map[string]int{}
 	for _, e := range eps {
 		if e.Outcome == journal.OutcomeSolved && e.Telemetry != nil && e.Telemetry.Verdict != "" {
-			out[e.Telemetry.Verdict]++
+			out[string(e.Telemetry.Verdict)]++
 		}
 	}
 	return out
 }
 
 // writeStats prints the summary; verdicts counts solved episodes only.
-func (a *App) writeStats(s progress.Summary, verdicts map[string]int) {
-	a.println(a.style(styleBold, "Solves by level"))
+func (a *app) writeStats(s progress.Summary, verdicts map[string]int) {
+	a.println(a.printer().Style(render.StyleBold, "Solves by level"))
 	levels := sortedMapKeys(s.ByLevel)
 	rows := make([][]string, 0, len(levels))
 	for _, l := range levels {
@@ -511,10 +505,10 @@ func (a *App) writeStats(s progress.Summary, verdicts map[string]int) {
 	}
 	table(a.stdout, []string{"LEVEL", "ATTEMPTS", "SOLVED"}, rows)
 	a.println()
-	a.printf("median solve: %s\n", minutesCell(s.MedianSolve))
+	a.printf("median solve: %s\n", render.Minutes(s.MedianSolve))
 	a.printf("hints per solve: %.1f\n", s.HintsPerSolve)
 	a.println()
-	a.println(a.style(styleBold, "Outcomes"))
+	a.println(a.printer().Style(render.StyleBold, "Outcomes"))
 	outcomes := make([]string, 0, len(s.Outcomes))
 	for o := range s.Outcomes {
 		outcomes = append(outcomes, string(o))
@@ -526,21 +520,21 @@ func (a *App) writeStats(s progress.Summary, verdicts map[string]int) {
 	}
 	table(a.stdout, []string{"OUTCOME", "EPISODES"}, rows)
 	a.println()
-	a.println(a.style(styleBold, "Verdicts"))
+	a.println(a.printer().Style(render.StyleBold, "Verdicts"))
 	rows = rows[:0]
 	for _, v := range sortedMapKeys(verdicts) {
 		rows = append(rows, []string{v, strconv.Itoa(verdicts[v])})
 	}
 	table(a.stdout, []string{"VERDICT", "SOLVES"}, rows)
 	a.println()
-	a.println(a.style(styleBold, "Concepts"))
+	a.println(a.printer().Style(render.StyleBold, "Concepts"))
 	rows = rows[:0]
 	for _, c := range sortedMapKeys(s.Concepts) {
 		m := s.Concepts[c]
 		rows = append(rows, []string{c, strconv.Itoa(m.Attempts), strconv.Itoa(m.Solved), lastCell(m), strconv.Itoa(m.Sessions), yesNo(m.Mastered)})
 	}
 	table(a.stdout, []string{"CONCEPT", "ATTEMPTS", "SOLVED", "LAST4", "SESSIONS", "MASTERED"}, rows)
-	a.println(a.wrapLine(statsLegend, "  "))
+	a.println(a.printer().WrapLine(statsLegend, "  "))
 }
 
 func sortedMapKeys[V any](m map[string]V) []string {

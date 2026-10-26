@@ -19,21 +19,9 @@ func TestLayoutAccessors(t *testing.T) {
 	}
 }
 
-// TestStartRemovesCurrentWhenWriteFails covers the write failure after the
-// previous episode was appended as failed. The only failure a test can
-// provoke without a seam is EACCES on the journal directory (mode 0500):
-// appending to the existing episodes.jsonl still works (the file itself is
-// writable), the temporary file for current.json cannot be created, and the
-// cleanup removal of current.json fails with EACCES too, so Start reports
-// both failures and current.json keeps naming the episode that was just
-// appended as failed. That is the documented limitation of the EACCES case;
-// with any other write failure the removal succeeds and no episode is both
-// current and finished.
-func TestStartRemovesCurrentWhenWriteFails(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root ignores directory modes")
-	}
+func TestStartInUnwritableDirChangesNothing(t *testing.T) {
 	s := openTest(t)
+	requireEnforcedModes(t, s.Dir())
 	if err := s.Start(Episode{ID: "a", ScenarioID: "s"}); err != nil {
 		t.Fatal(err)
 	}
@@ -52,20 +40,11 @@ func TestStartRemovesCurrentWhenWriteFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("Start with an unwritable journal directory: got nil error")
 	}
-	if !errors.Is(err, os.ErrPermission) {
-		t.Errorf("error %v does not wrap the permission error", err)
-	}
-	for _, want := range []string{"start episode c", "write " + s.path(currentFile), "remove current"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error %q lacks %q", err, want)
-		}
+	if !errors.Is(err, os.ErrPermission) || !strings.Contains(err.Error(), "lock journal") {
+		t.Errorf("Start error: got %v, want a lock journal permission error", err)
 	}
 	if err := os.Chmod(s.Dir(), 0o700); err != nil {
 		t.Fatal(err)
-	}
-	cur, err := s.Current()
-	if err != nil || cur == nil || cur.ID != "b" {
-		t.Errorf("current after the failed Start: got (%+v, %v), want b still current (EACCES case)", cur, err)
 	}
 	eps, err := s.Episodes("")
 	if err != nil {
@@ -75,8 +54,8 @@ func TestStartRemovesCurrentWhenWriteFails(t *testing.T) {
 	for _, e := range eps {
 		ids = append(ids, e.ID+":"+string(e.Outcome))
 	}
-	if got := strings.Join(ids, ","); got != "a:solved,b:failed,b:active" {
-		t.Errorf("episodes after the failed Start: got %s, want a solved, b appended as failed and b still active", got)
+	if got, want := strings.Join(ids, ","), "a:solved,b:active"; got != want {
+		t.Errorf("episodes after the failed Start: got %s, want %s", got, want)
 	}
 }
 

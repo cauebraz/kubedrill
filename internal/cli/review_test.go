@@ -18,6 +18,7 @@ import (
 	"github.com/cauebraz/kubedrill/internal/faults"
 	"github.com/cauebraz/kubedrill/internal/grader"
 	"github.com/cauebraz/kubedrill/internal/journal"
+	"github.com/cauebraz/kubedrill/internal/render"
 	"github.com/cauebraz/kubedrill/internal/scenario"
 )
 
@@ -62,27 +63,6 @@ func TestExamRefusesResetAndAsksToLeaveTheExam(t *testing.T) {
 	mustContain(t, out, "Leave the exam of 001-hello-down? It will be recorded as failed. [y/N]", "kept the episode active")
 }
 
-func TestWatchResetKeyRefusedInExam(t *testing.T) {
-	w := &fakeWatcher{observe: failGrade()}
-	m := newTestModel(w)
-	m.examActive = func() bool { return true }
-	next, _ := m.Update(key("x"))
-	m = next.(watchModel)
-	if m.confirmReset {
-		t.Error("x armed the reset during an exam")
-	}
-	mustContain(t, m.View().Content, "reset is not available in exam mode; kubedrill submit ends the exam")
-	m.examActive = func() bool { return false }
-	next, _ = m.Update(key("x"))
-	m = next.(watchModel)
-	m.examActive = func() bool { return true }
-	next, cmd := m.Update(key("x"))
-	m = next.(watchModel)
-	if cmd != nil || len(w.starts) != 0 || m.starting {
-		t.Errorf("second x during an exam started %v", w.starts)
-	}
-}
-
 func TestPrincipleAskedAfterAnotherVariantOfTheSameScenario(t *testing.T) {
 	f := newFixture(t)
 	terminal(f)
@@ -110,60 +90,10 @@ func TestPrincipleAskedAfterAnotherVariantOfTheSameScenario(t *testing.T) {
 	mustNotContain(t, out, "Which principle made this observation necessary?")
 }
 
-func TestMarkdownWrapsAt60WithoutBreakingCode(t *testing.T) {
-	f := newFixture(t)
-	f.stdoutTTY = true
-	f.env = map[string]string{"COLUMNS": "60"}
-	a := newApp(Options{Stdout: &strings.Builder{}, IsTerminal: true, Getenv: func(k string) string { return f.env[k] }})
-	md := "Run `kubectl -n task-hello-abcde get pods -o wide --show-labels` before you change anything in the deployment.\n\n" +
-		"```\nkubectl -n task-hello-abcde set image deploy/hello app=nginx:1.27 --dry-run=server -o yaml\n```\n\n" +
-		"> A quoted line that is long enough to wrap around the sixty column limit for sure, yes indeed it is.\n\n" +
-		"- A list item that is long enough to wrap around the sixty column limit for sure, yes indeed.\n" +
-		"- short\n\n" +
-		"1. A numbered item that is long enough to wrap around the sixty column limit for sure.\n"
-	plain := stripANSI(a.markdown(md))
-	lines := strings.Split(plain, "\n")
-	find := func(sub string) int {
-		for i, l := range lines {
-			if strings.Contains(l, sub) {
-				return i
-			}
-		}
-		t.Fatalf("rendered output lacks %q:\n%s", sub, plain)
-		return -1
-	}
-	mustContain(t, plain, "kubectl -n task-hello-abcde get pods -o wide --show-labels", "kubectl -n task-hello-abcde set image deploy/hello app=nginx:1.27 --dry-run=server -o yaml")
-	if strings.ContainsRune(plain, codeSpace) {
-		t.Errorf("rendered output keeps the code space placeholder:\n%q", plain)
-	}
-	q := find("| A quoted line")
-	if !strings.HasPrefix(strings.TrimLeft(lines[q+1], " "), "| ") {
-		t.Errorf("quote continuation lost the bar: %q", lines[q+1])
-	}
-	li := find("- A list item")
-	marker := strings.Index(lines[li], "- A list")
-	if cont := lines[li+1]; len(cont)-len(strings.TrimLeft(cont, " ")) != marker+2 {
-		t.Errorf("list continuation %q: want a hanging indent of %d", cont, marker+2)
-	}
-	num := find("1. A numbered")
-	nmarker := strings.Index(lines[num], "1. A")
-	if cont := lines[num+1]; len(cont)-len(strings.TrimLeft(cont, " ")) != nmarker+3 {
-		t.Errorf("numbered continuation %q: want a hanging indent of %d", cont, nmarker+3)
-	}
-	for _, l := range lines {
-		if strings.Contains(l, "kubectl") {
-			continue
-		}
-		if w := len([]rune(strings.TrimRight(l, " "))); w > 60 {
-			t.Errorf("line of %d columns over 60: %q", w, l)
-		}
-	}
-}
-
 func TestMarkdownFixedStyleWithNoTermQuery(t *testing.T) {
 	render := func(env map[string]string) string {
 		a := newApp(Options{Stdout: &strings.Builder{}, IsTerminal: true, Getenv: func(k string) string { return env[k] }})
-		return a.markdown("# Title\n\nText with `code`.\n")
+		return a.printer().Markdown("# Title\n\nText with `code`.\n")
 	}
 	with := render(map[string]string{"KUBEDRILL_NO_TERM_QUERY": "1"})
 	without := render(map[string]string{})
@@ -223,21 +153,6 @@ func TestSolutionAfterExamOrFailureAsks(t *testing.T) {
 	mustContain(t, out, "## Symptom")
 }
 
-func TestWatchTruncatesLongActual(t *testing.T) {
-	g := grader.Grade{Results: []grader.Result{{ID: "a", Description: "first", Status: grader.StatusFail, Expected: "1", Actual: strings.Repeat("x", 200)}}}
-	m := newTestModel(&fakeWatcher{observe: g})
-	m.width = 60
-	next, _ := m.Update(pollMsg{grade: g})
-	m = next.(watchModel)
-	for _, l := range strings.Split(m.View().Content, "\n") {
-		if strings.Contains(l, "actual: ") {
-			if len(l) != 60 || !strings.HasSuffix(l, "...") {
-				t.Errorf("actual line: got %q (%d columns), want 60 ending in ...", l, len(l))
-			}
-		}
-	}
-}
-
 func TestLastEndedOfFallsBackToTheRecordedSolve(t *testing.T) {
 	f := newFixture(t)
 	start := time.Date(2026, 10, 25, 9, 0, 0, 0, time.UTC)
@@ -273,22 +188,6 @@ func TestStartPrintsLeaveLineBeforeProgress(t *testing.T) {
 	progress := strings.Index(out, "creating namespace task-dns-fghij... done")
 	if code != 0 || leave < 0 || progress < 0 || leave > progress {
 		t.Errorf("leave line at %d, progress at %d, exit %d:\n%s", leave, progress, code, out)
-	}
-}
-
-func TestDoneStatus(t *testing.T) {
-	for _, tc := range []struct {
-		d    time.Duration
-		want string
-	}{
-		{0, "done"},
-		{99 * time.Millisecond, "done"},
-		{100 * time.Millisecond, "done (0.1s)"},
-		{1234 * time.Millisecond, "done (1.2s)"},
-	} {
-		if got := doneStatus(tc.d); got != tc.want {
-			t.Errorf("doneStatus(%s): got %q, want %q", tc.d, got, tc.want)
-		}
 	}
 }
 
@@ -545,10 +444,10 @@ func TestRunWatchNextRunsDebriefBeforeStarting(t *testing.T) {
 	if debrief < 0 || start < 0 || debrief > start || len(fw.starts) != 1 {
 		t.Fatalf("debrief at %d, start at %d, starts %v:\n%s", debrief, start, fw.starts, got)
 	}
-	if a.paneWidth != 50 {
-		t.Errorf("pane width after watch: got %d, want 50", a.paneWidth)
+	if got := a.printer().Width; got != render.DefaultWidth {
+		t.Errorf("width after watch: got %d, want the run's width %d (the pane width must not outlive the debrief)", got, render.DefaultWidth)
 	}
-	for _, l := range strings.Split(stripANSI(got[debrief:start]), "\n") {
+	for _, l := range strings.Split(render.StripANSI(got[debrief:start]), "\n") {
 		if lipgloss.Width(l) > 50 {
 			t.Errorf("debrief line of %d columns after a 50 column pane: %q", lipgloss.Width(l), l)
 		}

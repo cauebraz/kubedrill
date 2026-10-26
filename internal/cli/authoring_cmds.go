@@ -15,7 +15,7 @@ import (
 	"github.com/cauebraz/kubedrill/internal/curriculum"
 )
 
-func (a *App) lintCommand() *cobra.Command {
+func (a *app) lintCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "lint",
 		Short: "Validate every scenario directory, curriculum.yaml and the concept pages",
@@ -78,7 +78,7 @@ func missingConcepts(wanted, library []string) []error {
 	return errs
 }
 
-func (a *App) newCommand() *cobra.Command {
+func (a *app) newCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "new <level> <id>",
 		Short: "Scaffold a scenario directory, for example: new L0 001-my-slug",
@@ -102,7 +102,7 @@ func (a *App) newCommand() *cobra.Command {
 	}
 }
 
-func (a *App) versionCommand() *cobra.Command {
+func (a *app) versionCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print build information",
@@ -152,7 +152,7 @@ func versionLine(read func() (*debug.BuildInfo, bool)) string {
 	return strings.Join(parts, " ")
 }
 
-func (a *App) profileCommand() *cobra.Command {
+func (a *app) profileCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "profile",
 		Short: "Kind profile tools for authors and CI",
@@ -162,7 +162,7 @@ func (a *App) profileCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *App) profileRenderCommand() *cobra.Command {
+func (a *app) profileRenderCommand() *cobra.Command {
 	var profile, out string
 	cmd := &cobra.Command{
 		Use:   "render --out <file>",
@@ -196,7 +196,7 @@ func (a *App) profileRenderCommand() *cobra.Command {
 // renderProfile renders profile with the ProfileData of ensureCluster
 // through the cluster manager, the same code path Ensure uses, so profile
 // render never drifts from it.
-func (a *App) renderProfile(profile string) ([]byte, error) {
+func (a *app) renderProfile(profile string) ([]byte, error) {
 	if profile == "" || profile != filepath.Base(profile) || strings.HasPrefix(profile, ".") {
 		return nil, fmt.Errorf("profile %q: want a file name under cluster/profiles without .yaml", profile)
 	}

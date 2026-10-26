@@ -24,12 +24,17 @@ type fakeProvider struct {
 	listErr       error
 	createErr     error
 	deleteErr     error
+	onCreate      func()
+	onDelete      func()
 }
 
 func (f *fakeProvider) List() ([]string, error) { return f.clusters, f.listErr }
 
 func (f *fakeProvider) Create(name string, _ ...kindcluster.CreateOption) error {
 	f.created = append(f.created, name)
+	if f.onCreate != nil {
+		f.onCreate()
+	}
 	if f.createErr != nil {
 		return f.createErr
 	}
@@ -39,6 +44,9 @@ func (f *fakeProvider) Create(name string, _ ...kindcluster.CreateOption) error 
 
 func (f *fakeProvider) Delete(name, _ string) error {
 	f.deleted = append(f.deleted, name)
+	if f.onDelete != nil {
+		f.onDelete()
+	}
 	return f.deleteErr
 }
 
@@ -113,7 +121,7 @@ func TestProfiles(t *testing.T) {
 func TestEnsureMissingProfile(t *testing.T) {
 	dir := t.TempDir()
 	writeProfile(t, dir, "base.yaml")
-	m := New(dir)
+	m := New(dir, WithStateDir(testStateDir(t)))
 	m.provider = &fakeProvider{}
 	m.run = (&fakeDocker{}).run
 
@@ -135,7 +143,7 @@ func TestEnsureCreatesOnce(t *testing.T) {
 	t.Setenv("KUBECONFIG", kubeconfig)
 
 	fp := &fakeProvider{}
-	m := New(dir)
+	m := New(dir, WithStateDir(testStateDir(t)))
 	m.provider = fp
 	m.run = dockerFor(fp, nil).run
 
@@ -173,7 +181,7 @@ func TestEnsureCreatesOnce(t *testing.T) {
 
 func TestExistsAndDelete(t *testing.T) {
 	fp := &fakeProvider{clusters: []string{"other"}}
-	m := New(t.TempDir())
+	m := New(t.TempDir(), WithStateDir(testStateDir(t)))
 	m.provider = fp
 	var nodes string
 	var psErr error
@@ -339,7 +347,7 @@ func TestDoctor(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			m := New(t.TempDir())
+			m := New(t.TempDir(), WithStateDir(testStateDir(t)))
 			m.lookPath = tc.lookPath
 			m.run = tc.run
 			tools, err := m.Doctor(context.Background())
@@ -420,14 +428,14 @@ func TestNewOptions(t *testing.T) {
 	if m.out != &out {
 		t.Error("WithOutput: manager writes elsewhere")
 	}
-	d := New(t.TempDir())
+	d := New(t.TempDir(), WithStateDir(testStateDir(t)))
 	if d.out != os.Stderr || d.getenv == nil {
 		t.Error("New without options: want os.Stderr and os.Getenv defaults")
 	}
 }
 
 func TestDoctorBoundsProbes(t *testing.T) {
-	m := New(t.TempDir())
+	m := New(t.TempDir(), WithStateDir(testStateDir(t)))
 	m.lookPath = func(f string) (string, error) { return "/usr/local/bin/" + f, nil }
 	m.run = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		deadline, ok := ctx.Deadline()
@@ -449,7 +457,7 @@ func TestDoctorBoundsProbes(t *testing.T) {
 func TestProfilePathRejectsSeparators(t *testing.T) {
 	dir := t.TempDir()
 	writeProfile(t, dir, "base.yaml")
-	m := New(dir)
+	m := New(dir, WithStateDir(testStateDir(t)))
 	m.provider = &fakeProvider{}
 	m.run = (&fakeDocker{}).run
 	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "kubeconfig"))
@@ -533,7 +541,7 @@ func TestEnsurePropagatesProviderErrors(t *testing.T) {
 			kubeconfig := filepath.Join(dir, "kubeconfig")
 			t.Setenv("KUBECONFIG", kubeconfig)
 			fp := &fakeProvider{}
-			m := New(dir)
+			m := New(dir, WithStateDir(testStateDir(t)))
 			m.provider = fp
 			m.run = dockerFor(fp, nil).run
 			if tc.arrange != nil {
@@ -559,7 +567,7 @@ func TestEnsurePropagatesProviderErrors(t *testing.T) {
 func TestWriteInternalKubeconfig(t *testing.T) {
 	dir := t.TempDir()
 	writeProfile(t, dir, "base.yaml")
-	m := New(dir)
+	m := New(dir, WithStateDir(testStateDir(t)))
 	m.provider = &fakeProvider{kubeconfig: "apiVersion: v1\nkind: Config\nclusters:\n- name: kind-kubedrill\n  cluster:\n    server: https://kubedrill-control-plane:6443\n"}
 	m.run = (&fakeDocker{}).run
 
@@ -608,7 +616,7 @@ func TestWriteInternalKubeconfigErrors(t *testing.T) {
 	writeProfile(t, dir, "base.yaml")
 	t.Run("provider error", func(t *testing.T) {
 		boom := errors.New("boom")
-		m := New(dir)
+		m := New(dir, WithStateDir(testStateDir(t)))
 		m.provider = &fakeProvider{kubeconfigErr: boom}
 		m.run = (&fakeDocker{}).run
 		dst := filepath.Join(dir, "provider", "kubeconfig")
@@ -628,7 +636,7 @@ func TestWriteInternalKubeconfigErrors(t *testing.T) {
 		if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		m := New(dir)
+		m := New(dir, WithStateDir(testStateDir(t)))
 		m.provider = &fakeProvider{kubeconfig: "apiVersion: v1\n"}
 		m.run = (&fakeDocker{}).run
 		dst := filepath.Join(blocker, "kubeconfig")
@@ -669,7 +677,7 @@ func TestWriterLoggerErrorfAndEnabled(t *testing.T) {
 }
 
 func TestCreated(t *testing.T) {
-	m := New(t.TempDir())
+	m := New(t.TempDir(), WithStateDir(testStateDir(t)))
 	fd := &fakeDocker{respond: func([]string) ([]byte, error) { return []byte("2026-10-20T08:15:30.123456789Z\n"), nil }}
 	m.run = fd.run
 	got, err := m.Created(context.Background())
@@ -691,7 +699,7 @@ func TestCreated(t *testing.T) {
 
 func TestDeleteRemovesAddonContainers(t *testing.T) {
 	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "kubeconfig"))
-	m := New(t.TempDir())
+	m := New(t.TempDir(), WithStateDir(testStateDir(t)))
 	m.provider = &fakeProvider{}
 	fd := &fakeDocker{respond: func(args []string) ([]byte, error) {
 		if args[0] == "ps" {
@@ -722,7 +730,7 @@ func TestEnsureTreatsConcurrentCreateAsExisting(t *testing.T) {
 	writeProfile(t, dir, "base.yaml")
 	t.Setenv("KUBECONFIG", filepath.Join(dir, "kubeconfig"))
 	fp := &fakeProvider{createErr: errors.New(`node(s) already exist for a cluster with the name "kubedrill"`)}
-	m := New(dir)
+	m := New(dir, WithStateDir(testStateDir(t)))
 	m.provider = fp
 	fd := dockerFor(fp, nil)
 	m.run = fd.run
@@ -751,10 +759,247 @@ func TestEnsureIgnoresChmodFailure(t *testing.T) {
 	dir := t.TempDir()
 	writeProfile(t, dir, "base.yaml")
 	t.Setenv("KUBECONFIG", filepath.Join(dir, "kubeconfig"))
-	m := New(dir)
+	m := New(dir, WithStateDir(testStateDir(t)))
 	m.provider = &fakeProvider{}
 	m.run = dockerFor(&fakeProvider{}, func([]string) ([]byte, error) { return nil, errors.New("exec failed") }).run
 	if err := m.Ensure(context.Background(), "base", testData(t)); err != nil {
 		t.Errorf("Ensure with a failing chmod: got %v, want nil (best effort)", err)
+	}
+}
+
+func countNodeQueries(calls []dockerCall) int {
+	n := 0
+	for _, c := range calls {
+		if isNodesQuery(c[1:]) {
+			n++
+		}
+	}
+	return n
+}
+
+func TestEnsureHonorsContext(t *testing.T) {
+	tests := []struct {
+		name        string
+		createErr   error
+		cancelOn    string
+		nodes       func(ctx context.Context) ([]byte, error)
+		wantPrefix  string
+		wantQueries int
+		wantRecord  bool
+	}{
+		{name: "cancel while kind creates", cancelOn: "create", wantPrefix: "ensure cluster kubedrill: context canceled", wantRecord: true},
+		{name: "cancel during a lost create race", createErr: errors.New(`node(s) already exist for a cluster with the name "kubedrill"`), cancelOn: "create", wantPrefix: "ensure cluster kubedrill: context canceled"},
+		{name: "cancel during the readiness wait", cancelOn: "nodes", nodes: func(ctx context.Context) ([]byte, error) {
+			return []byte("kubedrill-control-plane=False\n"), nil
+		}, wantPrefix: "ensure cluster kubedrill: wait for nodes: context canceled", wantQueries: 1, wantRecord: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeProfile(t, dir, "base.yaml")
+			t.Setenv("KUBECONFIG", filepath.Join(dir, "kubeconfig"))
+			state := t.TempDir()
+			t.Setenv("XDG_STATE_HOME", state)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			fp := &fakeProvider{createErr: tc.createErr}
+			if tc.cancelOn == "create" {
+				fp.onCreate = cancel
+			}
+			m := New(dir, WithStateDir(testStateDir(t)))
+			m.provider = fp
+			fd := dockerFor(fp, nil)
+			if tc.nodes != nil {
+				fd.nodes = func(qctx context.Context) ([]byte, error) {
+					if tc.cancelOn == "nodes" {
+						cancel()
+					}
+					return tc.nodes(qctx)
+				}
+			}
+			m.run = fd.run
+			m.readyPoll = time.Millisecond
+			err := m.Ensure(ctx, "base", testData(t))
+			if err == nil || !strings.HasPrefix(err.Error(), tc.wantPrefix) {
+				t.Fatalf("Ensure: got %v, want prefix %q", err, tc.wantPrefix)
+			}
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("Ensure error %v does not wrap context.Canceled", err)
+			}
+			if got := countNodeQueries(fd.calls); got != tc.wantQueries {
+				t.Errorf("readiness queries: got %d, want %d", got, tc.wantQueries)
+			}
+			_, statErr := os.Stat(filepath.Join(state, "kubedrill", Name, auditPolicyHashName))
+			if got := statErr == nil; got != tc.wantRecord {
+				t.Errorf("audit policy hash recorded: got %v, want %v (a created cluster is recorded even when cancelled)", got, tc.wantRecord)
+			}
+		})
+	}
+}
+
+func TestEnsureWaitsForNodesAfterLosingTheCreateRace(t *testing.T) {
+	dir := t.TempDir()
+	writeProfile(t, dir, "base.yaml")
+	t.Setenv("KUBECONFIG", filepath.Join(dir, "kubeconfig"))
+	tests := []struct {
+		name      string
+		answers   []string
+		answerErr error
+		timeout   time.Duration
+		wantErr   string
+		wantMin   int
+	}{
+		{name: "nodes join over time", answers: []string{"", "kubedrill-control-plane=True\n", "kubedrill-control-plane=True\nkubedrill-worker=True\nkubedrill-worker2=True\n"}, timeout: time.Minute, wantMin: 3},
+		{name: "a node never becomes ready", answers: []string{"kubedrill-control-plane=True\nkubedrill-worker=True\nkubedrill-worker2=False\n"}, timeout: 50 * time.Millisecond, wantErr: "ensure cluster kubedrill: wait for nodes: not ready after 50ms: kubedrill-worker2=False", wantMin: 1},
+		{name: "the control plane never answers", answerErr: exitErrorWith(t, "Error response from daemon: No such container: kubedrill-control-plane"), timeout: 50 * time.Millisecond, wantErr: "ensure cluster kubedrill: wait for nodes: not ready after 50ms: docker exec kubedrill-control-plane: Error response from daemon: No such container", wantMin: 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fp := &fakeProvider{createErr: errors.New(`node(s) already exist for a cluster with the name "kubedrill"`)}
+			m := New(dir, WithStateDir(testStateDir(t)))
+			m.provider = fp
+			fd := dockerFor(fp, nil)
+			i := 0
+			fd.nodes = func(context.Context) ([]byte, error) {
+				if tc.answerErr != nil {
+					return nil, tc.answerErr
+				}
+				out := tc.answers[min(i, len(tc.answers)-1)]
+				i++
+				return []byte(out), nil
+			}
+			m.run = fd.run
+			m.readyPoll = time.Millisecond
+			m.readyTimeout = tc.timeout
+			err := m.Ensure(context.Background(), "base", testData(t))
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Ensure: got %v, want nil", err)
+				}
+			} else if err == nil || !strings.HasPrefix(err.Error(), tc.wantErr) {
+				t.Fatalf("Ensure: got %v, want prefix %q", err, tc.wantErr)
+			}
+			if got := countNodeQueries(fd.calls); got < tc.wantMin {
+				t.Errorf("readiness queries: got %d, want at least %d", got, tc.wantMin)
+			}
+		})
+	}
+}
+
+func TestDeleteHonorsContextAfterKind(t *testing.T) {
+	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "kubeconfig"))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m := New(t.TempDir(), WithStateDir(testStateDir(t)))
+	m.provider = &fakeProvider{onDelete: cancel}
+	fd := &fakeDocker{}
+	m.run = fd.run
+	err := m.Delete(ctx)
+	if !errors.Is(err, context.Canceled) || !strings.HasPrefix(err.Error(), "delete cluster kubedrill: context canceled") {
+		t.Fatalf("Delete cancelled during kind delete: got %v, want context.Canceled", err)
+	}
+	if len(fd.calls) != 0 {
+		t.Errorf("docker calls after cancel: got %v, want none", fd.calls)
+	}
+}
+
+func TestEnsureAddonsHonorsContext(t *testing.T) {
+	m := addonFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	k := &fakeApplier{}
+	err := m.EnsureAddons(ctx, k, []string{"alpha"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("EnsureAddons with a cancelled context: got %v, want context.Canceled", err)
+	}
+	if len(k.calls) != 0 {
+		t.Errorf("applies after cancel: got %d, want none", len(k.calls))
+	}
+}
+
+func TestDockerError(t *testing.T) {
+	plain := errors.New("signal: killed")
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "stderr is quoted", err: exitErrorWith(t, "  Error response from daemon: boom\n"), want: "docker ps: Error response from daemon: boom: exit status 1"},
+		{name: "empty stderr", err: exitErrorWith(t, " \n"), want: "docker ps: exit status 1"},
+		{name: "not an exit error", err: plain, want: "docker ps: signal: killed"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := dockerError("docker ps", tc.err)
+			if got.Error() != tc.want {
+				t.Errorf("dockerError: got %q, want %q", got, tc.want)
+			}
+			if !errors.Is(got, tc.err) {
+				t.Errorf("dockerError: got %v, want it to wrap %v", got, tc.err)
+			}
+		})
+	}
+}
+
+func exitErrorWith(t *testing.T, stderr string) error {
+	t.Helper()
+	return exitError(t, "1", stderr)
+}
+
+func TestEnsureExistingClusterWaitsForNodes(t *testing.T) {
+	dir := t.TempDir()
+	writeProfile(t, dir, "base.yaml")
+	t.Setenv("KUBECONFIG", filepath.Join(dir, "kubeconfig"))
+	allReady := "kubedrill-control-plane=True\nkubedrill-worker=True\nkubedrill-worker2=True\n"
+	tests := []struct {
+		name        string
+		inspect     string
+		inspectErr  error
+		answers     []string
+		timeout     time.Duration
+		wantErr     string
+		wantQueries int
+		atLeast     bool
+	}{
+		{name: "nodes still joining", inspect: "/kubedrill-control-plane=true\n/kubedrill-worker=true\n/kubedrill-worker2=true\n", answers: []string{"", "kubedrill-control-plane=True\n", allReady}, timeout: time.Minute, wantQueries: 3},
+		{name: "a node never becomes ready", answers: []string{"kubedrill-control-plane=True\nkubedrill-worker=False\nkubedrill-worker2=True\n"}, timeout: 50 * time.Millisecond, wantErr: "ensure cluster kubedrill: wait for nodes: not ready after 50ms: kubedrill-worker=False", wantQueries: 1, atLeast: true},
+		{name: "stopped node containers fail fast", inspect: "/kubedrill-control-plane=false\n/kubedrill-worker=true\n/kubedrill-worker2=false\n", answers: []string{allReady}, timeout: time.Minute, wantErr: "ensure cluster kubedrill: node containers stopped: kubedrill-control-plane, kubedrill-worker2; start them with docker start kubedrill-control-plane kubedrill-worker2, or recreate the cluster with kubedrill down --yes && kubedrill up", wantQueries: 0},
+		{name: "a failing inspect leaves the verdict to the wait", inspectErr: errors.New("inspect failed"), answers: []string{allReady}, timeout: time.Minute, wantQueries: 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fp := &fakeProvider{clusters: []string{Name}}
+			m := New(dir, WithStateDir(testStateDir(t)))
+			m.provider = fp
+			fd := dockerFor(fp, func(args []string) ([]byte, error) {
+				if args[0] == "inspect" {
+					return []byte(tc.inspect), tc.inspectErr
+				}
+				return nil, nil
+			})
+			i := 0
+			fd.nodes = func(context.Context) ([]byte, error) {
+				out := tc.answers[min(i, len(tc.answers)-1)]
+				i++
+				return []byte(out), nil
+			}
+			m.run = fd.run
+			m.readyPoll = time.Millisecond
+			m.readyTimeout = tc.timeout
+			err := m.Ensure(context.Background(), "base", testData(t))
+			gotErr := ""
+			if err != nil {
+				gotErr = err.Error()
+			}
+			if tc.wantErr == "" && gotErr != "" || tc.wantErr != "" && !strings.HasPrefix(gotErr, tc.wantErr) {
+				t.Fatalf("Ensure: got %q, want prefix %q", gotErr, tc.wantErr)
+			}
+			if len(fp.created) != 0 {
+				t.Errorf("Ensure on an existing cluster: created %v, want none", fp.created)
+			}
+			if got := countNodeQueries(fd.calls); got != tc.wantQueries && !(tc.atLeast && got > tc.wantQueries) {
+				t.Errorf("readiness queries: got %d, want %d (at least: %v)", got, tc.wantQueries, tc.atLeast)
+			}
+		})
 	}
 }

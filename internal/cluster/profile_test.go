@@ -177,7 +177,7 @@ func TestEnsureCreatesAuditDir(t *testing.T) {
 	}
 	t.Setenv("KUBECONFIG", filepath.Join(dir, "kubeconfig"))
 	fp := &fakeProvider{}
-	m := New(dir)
+	m := New(dir, WithStateDir(testStateDir(t)))
 	m.provider = fp
 	m.run = (&fakeDocker{}).run
 	data := testData(t)
@@ -227,7 +227,7 @@ func TestAuditEnabled(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			m := New(t.TempDir())
+			m := New(t.TempDir(), WithStateDir(testStateDir(t)))
 			var got []string
 			m.run = func(_ context.Context, name string, args ...string) ([]byte, error) {
 				got = append([]string{name}, args...)

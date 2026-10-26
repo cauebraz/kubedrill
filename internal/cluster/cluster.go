@@ -2,7 +2,15 @@
 // scenarios run on. Profiles under cluster/profiles/<name>.yaml are kind
 // configurations written as Go templates over ProfileData; the base profile
 // is the default. Addons under cluster/addons/<name> add manifests and
-// containers to a running cluster.
+// containers to a running cluster. Every docker call runs with its own
+// bound on top of the caller's context and reports failures through one
+// helper (dockerError): 5 seconds for audit checks inside the control plane,
+// 15 seconds for listing nodes, 60 seconds (dockerTimeout) for inspecting,
+// starting and removing containers, which can wait on a busy daemon, and 5
+// minutes for docker run, which may pull an image. kind's Create and Delete
+// take no context: the context is checked before and right after each, and
+// the readiness wait after Create polls with the context, so a cancelled
+// context ends Ensure once kind returns.
 package cluster
 
 import (
@@ -36,6 +44,7 @@ const (
 	defaultProfile = "base"
 	contextName    = "kind-" + Name
 	readyTimeout   = 2 * time.Minute
+	readyPoll      = 2 * time.Second
 	profileExt     = ".yaml"
 
 	auditPolicyInNode = "/etc/kubernetes/audit-policy.yaml"
@@ -99,7 +108,13 @@ func InternalKubeconfigPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, internalKubeconfigName), nil
+	return InternalKubeconfigPathIn(dir), nil
+}
+
+// InternalKubeconfigPathIn is InternalKubeconfigPath for the cluster state
+// directory stateDir, already resolved by StateDir.
+func InternalKubeconfigPathIn(stateDir string) string {
+	return filepath.Join(stateDir, internalKubeconfigName)
 }
 
 // ScriptKubeconfigPath returns <StateDir>/kubeconfig-scripts, where the
@@ -112,7 +127,13 @@ func ScriptKubeconfigPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, scriptKubeconfigName), nil
+	return ScriptKubeconfigPathIn(dir), nil
+}
+
+// ScriptKubeconfigPathIn is ScriptKubeconfigPath for the cluster state
+// directory stateDir, already resolved by StateDir.
+func ScriptKubeconfigPathIn(stateDir string) string {
+	return filepath.Join(stateDir, scriptKubeconfigName)
 }
 
 // AuditDir returns <StateDir>/audit, the host directory the API server
@@ -122,23 +143,35 @@ func AuditDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, auditSubdir), nil
+	return AuditDirIn(dir), nil
+}
+
+// AuditDirIn is AuditDir for the cluster state directory stateDir, already
+// resolved by StateDir.
+func AuditDirIn(stateDir string) string {
+	return filepath.Join(stateDir, auditSubdir)
 }
 
 // AuditLogPath returns <StateDir>/audit/audit.log, the API server audit log
 // of the cluster. Every journal reads the same file; episodes have unique
 // namespaces, so their events do not mix.
 func AuditLogPath() (string, error) {
-	dir, err := AuditDir()
+	dir, err := StateDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, auditLogName), nil
+	return AuditLogPathIn(dir), nil
+}
+
+// AuditLogPathIn is AuditLogPath for the cluster state directory stateDir,
+// already resolved by StateDir.
+func AuditLogPathIn(stateDir string) string {
+	return filepath.Join(AuditDirIn(stateDir), auditLogName)
 }
 
 // ProfileData is the input of a profile template. Both paths are absolute
 // host paths: AuditDir receives the API server audit log (audit.log), and
-// Ensure fills it with AuditDir() when empty; AuditPolicy is the audit
+// Ensure fills it with AuditDirIn(state) when empty; AuditPolicy is the audit
 // policy file mounted into the control plane. Templates quote both with
 // printf "%q".
 type ProfileData struct {
@@ -168,14 +201,17 @@ type runner func(ctx context.Context, name string, args ...string) ([]byte, erro
 // Manager drives kind for one named cluster. The zero value is not usable;
 // use New.
 type Manager struct {
-	profilesDir string
-	addonsDir   string
-	auditPolicy string
-	out         io.Writer
-	getenv      func(string) string
-	provider    provider
-	run         runner
-	lookPath    func(file string) (string, error)
+	profilesDir  string
+	addonsDir    string
+	auditPolicy  string
+	out          io.Writer
+	getenv       func(string) string
+	stateDir     string
+	provider     provider
+	run          runner
+	lookPath     func(file string) (string, error)
+	readyTimeout time.Duration
+	readyPoll    time.Duration
 }
 
 // Option configures a Manager.
@@ -201,19 +237,32 @@ func WithGetenv(fn func(string) string) Option {
 	}
 }
 
+// WithStateDir sets the cluster state directory (StateDir, resolved once by
+// the caller) that holds the audit policy record and, when ProfileData
+// leaves AuditDir empty, the audit log directory. It is required: there is
+// no default, and Ensure, AuditPolicyStale and the record removal of Delete
+// need it.
+func WithStateDir(dir string) Option {
+	return func(m *Manager) {
+		m.stateDir = dir
+	}
+}
+
 // New returns a Manager whose profiles live under profilesDir, whose addons
 // live in the addons directory next to it (cluster/addons for
 // cluster/profiles) and whose repository audit policy is the
 // audit-policy.yaml next to it (cluster/audit-policy.yaml).
 func New(profilesDir string, opts ...Option) *Manager {
 	m := &Manager{
-		profilesDir: profilesDir,
-		addonsDir:   filepath.Join(filepath.Dir(profilesDir), "addons"),
-		auditPolicy: filepath.Join(filepath.Dir(profilesDir), auditPolicyName),
-		out:         os.Stderr,
-		getenv:      os.Getenv,
-		run:         execRunner,
-		lookPath:    exec.LookPath,
+		profilesDir:  profilesDir,
+		addonsDir:    filepath.Join(filepath.Dir(profilesDir), "addons"),
+		auditPolicy:  filepath.Join(filepath.Dir(profilesDir), auditPolicyName),
+		out:          os.Stderr,
+		getenv:       os.Getenv,
+		run:          execRunner,
+		lookPath:     exec.LookPath,
+		readyTimeout: readyTimeout,
+		readyPoll:    readyPoll,
 	}
 	for _, o := range opts {
 		o(m)
@@ -236,22 +285,23 @@ func (m *Manager) Exists(ctx context.Context) (bool, error) {
 	}
 	out, err := m.runFor(ctx, existsTimeout, "docker", "ps", "-aq", "--filter", "label="+kindClusterLabel+"="+Name)
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && len(bytes.TrimSpace(exitErr.Stderr)) > 0 {
-			return false, fmt.Errorf("list kind clusters: docker ps: %s: %w", bytes.TrimSpace(exitErr.Stderr), err)
-		}
-		return false, fmt.Errorf("list kind clusters: docker ps: %w", err)
+		return false, fmt.Errorf("list kind clusters: %w", dockerError("docker ps", err))
 	}
 	return len(bytes.TrimSpace(out)) > 0, nil
 }
 
 // Ensure creates the cluster from profile when it does not exist and waits
-// until every node is Ready. The profile is rendered as a Go template with
-// data (an empty AuditDir becomes AuditDir()), and AuditDir is created with
-// mode 0700 when missing. It is idempotent: an existing cluster is kept as
-// it is, whatever its profile, and a create that loses the race with
-// another process (kind: "node(s) already exist") counts as existing. A
-// creation records the sha256 of the audit policy file it mounted in
+// up to two minutes, polling every two seconds with ctx, until every node
+// is Ready; an existing cluster gets the same wait, after a check that
+// fails fast when docker reports a node container stopped. The profile is rendered as a Go template with data (an empty
+// AuditDir becomes AuditDir()), and AuditDir is created with mode 0700 when
+// missing. It is idempotent: an existing cluster is kept as it is, whatever
+// its profile, and a create that loses the race with another process (kind:
+// "node(s) already exist") counts as existing once the same readiness wait
+// sees every node Ready, so the second process does not run ahead of the
+// first one's creation. kind's Create takes no context: ctx is checked
+// before it and right after it returns, so a cancellation during creation
+// ends Ensure only when kind returns. A creation records the sha256 of the audit policy file it mounted in
 // <StateDir>/audit-policy.sha256, which AuditPolicyStale compares with the
 // repository file later. Afterwards the audit log is made readable on the
 // host (see openAuditLog).
@@ -280,15 +330,23 @@ func (m *Manager) ensure(ctx context.Context, profile string, data ProfileData) 
 		return fmt.Errorf("ensure cluster %s: %w", Name, err)
 	}
 	if exists {
+		if err := m.checkNodesRunning(ctx); err != nil {
+			return fmt.Errorf("ensure cluster %s: %w", Name, err)
+		}
+		if err := m.waitNodesReady(ctx); err != nil {
+			return fmt.Errorf("ensure cluster %s: wait for nodes: %w", Name, err)
+		}
 		return m.exportIfMissing(kubeconfig)
 	}
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("ensure cluster %s: %w", Name, err)
 	}
 	if data.AuditDir == "" {
-		if data.AuditDir, err = AuditDir(); err != nil {
+		state, err := m.state()
+		if err != nil {
 			return fmt.Errorf("ensure cluster %s: %w", Name, err)
 		}
+		data.AuditDir = AuditDirIn(state)
 	}
 	raw, err := renderProfile(path, data)
 	if err != nil {
@@ -300,20 +358,118 @@ func (m *Manager) ensure(ctx context.Context, profile string, data ProfileData) 
 	err = m.provider.Create(Name,
 		kindcluster.CreateWithRawConfig(raw),
 		kindcluster.CreateWithKubeconfigPath(kubeconfig),
-		kindcluster.CreateWithWaitForReady(readyTimeout),
 		kindcluster.CreateWithDisplayUsage(false),
 		kindcluster.CreateWithDisplaySalutation(false),
 	)
-	if err != nil {
-		if strings.Contains(err.Error(), "node(s) already exist") {
-			return m.exportIfMissing(kubeconfig)
-		}
+	lostRace := err != nil && strings.Contains(err.Error(), "node(s) already exist")
+	if err != nil && !lostRace {
 		return fmt.Errorf("ensure cluster %s: create from profile %s: %w", Name, path, err)
 	}
-	if err := m.recordAuditPolicy(data.AuditPolicy); err != nil {
-		fmt.Fprintf(m.out, "warning: %v\n", err)
+	if !lostRace {
+		if err := m.recordAuditPolicy(data.AuditPolicy); err != nil {
+			fmt.Fprintf(m.out, "warning: %v\n", err)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("ensure cluster %s: %w", Name, err)
+	}
+	if err := m.waitNodesReady(ctx); err != nil {
+		return fmt.Errorf("ensure cluster %s: wait for nodes: %w", Name, err)
+	}
+	if lostRace {
+		return m.exportIfMissing(kubeconfig)
 	}
 	return nil
+}
+
+// checkNodesRunning fails when docker reports a kind node container as
+// stopped, so an existing cluster left stopped (for example after a Docker
+// restart) gets a remedy instead of the full readiness wait. An inspect
+// that fails is ignored; the readiness wait reports what is wrong.
+func (m *Manager) checkNodesRunning(ctx context.Context) error {
+	names := make([]string, len(nodeNames))
+	for i, n := range nodeNames {
+		names[i] = Name + "-" + n
+	}
+	out, err := m.runFor(ctx, existsTimeout, "docker", append([]string{"inspect", "-f", "{{.Name}}={{.State.Running}}"}, names...)...)
+	if err != nil {
+		return nil
+	}
+	var stopped []string
+	for _, line := range strings.Split(string(out), "\n") {
+		name, running, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if ok && running == "false" {
+			stopped = append(stopped, strings.TrimPrefix(name, "/"))
+		}
+	}
+	if len(stopped) == 0 {
+		return nil
+	}
+	return fmt.Errorf("node containers stopped: %s; start them with docker start %s, or recreate the cluster with kubedrill down --yes && kubedrill up",
+		strings.Join(stopped, ", "), strings.Join(stopped, " "))
+}
+
+// waitNodesReady polls the nodes from inside the control plane node every
+// m.readyPoll until every kind node reports Ready, m.readyTimeout passes or
+// ctx ends, printing one progress line when the first query finds a node
+// not Ready. A failing query (the control plane container or its API server
+// not up yet) is retried; the last state or error is in the timeout error.
+func (m *Manager) waitNodesReady(ctx context.Context) error {
+	wctx, cancel := context.WithTimeout(ctx, m.readyTimeout)
+	defer cancel()
+	ticker := time.NewTicker(m.readyPoll)
+	defer ticker.Stop()
+	var last error
+	announced := false
+	for {
+		out, err := m.run(wctx, "docker", "exec", controlPlane, "kubectl", "--kubeconfig", adminKubeconfig,
+			"get", "nodes", "-o", `jsonpath={range .items[*]}{.metadata.name}={.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}`)
+		if err == nil {
+			pending := notReadyNodes(string(out))
+			if len(pending) == 0 {
+				return nil
+			}
+			last = errors.New(strings.Join(pending, ", "))
+		} else {
+			last = dockerError("docker exec "+controlPlane, err)
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if !announced {
+			fmt.Fprintf(m.out, "waiting up to %s for the nodes to be Ready...\n", m.readyTimeout)
+			announced = true
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-wctx.Done():
+			return fmt.Errorf("not ready after %s: %w", m.readyTimeout, last)
+		case <-ticker.C:
+		}
+	}
+}
+
+// notReadyNodes parses name=status lines and returns, in nodeNames order,
+// every kind node that is missing or whose Ready status is not True.
+func notReadyNodes(out string) []string {
+	status := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		if name, s, ok := strings.Cut(strings.TrimSpace(line), "="); ok {
+			status[name] = s
+		}
+	}
+	var pending []string
+	for _, n := range nodeNames {
+		full := Name + "-" + n
+		switch s, ok := status[full]; {
+		case !ok:
+			pending = append(pending, full+" missing")
+		case s != "True":
+			pending = append(pending, full+"="+s)
+		}
+	}
+	return pending
 }
 
 // recordAuditPolicy writes the sha256 of the policy file at path to
@@ -333,8 +489,20 @@ func (m *Manager) recordAuditPolicy(path string) error {
 	return nil
 }
 
+// errNoStateDir is the error of an operation that needs the cluster state
+// directory on a Manager built without WithStateDir.
+var errNoStateDir = errors.New("cluster state directory not set; build the manager with WithStateDir")
+
+// state is the cluster state directory set by WithStateDir.
+func (m *Manager) state() (string, error) {
+	if m.stateDir == "" {
+		return "", errNoStateDir
+	}
+	return m.stateDir, nil
+}
+
 func (m *Manager) auditPolicyHashPath() (string, error) {
-	dir, err := stateDir(m.getenv, os.UserHomeDir)
+	dir, err := m.state()
 	if err != nil {
 		return "", err
 	}
@@ -383,11 +551,7 @@ func (m *Manager) AuditPolicyStale(ctx context.Context) (bool, error) {
 	}
 	out, err := m.runFor(ctx, auditTimeout, "docker", "exec", controlPlane, "cat", auditPolicyInNode)
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && len(bytes.TrimSpace(exitErr.Stderr)) > 0 {
-			return false, fmt.Errorf("check audit policy on %s: %s: %w", controlPlane, bytes.TrimSpace(exitErr.Stderr), err)
-		}
-		return false, fmt.Errorf("check audit policy on %s: %w", controlPlane, err)
+		return false, dockerError("check audit policy on "+controlPlane, err)
 	}
 	sum := sha256.Sum256(out)
 	return hex.EncodeToString(sum[:]) != want, nil
@@ -496,15 +660,14 @@ func (m *Manager) AuditEnabled(ctx context.Context) (bool, error) {
 	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 && len(bytes.TrimSpace(exitErr.Stderr)) == 0 {
 		return false, nil
 	}
-	if exitErr != nil && len(bytes.TrimSpace(exitErr.Stderr)) > 0 {
-		return false, fmt.Errorf("check audit policy on %s: %s: %w", node, bytes.TrimSpace(exitErr.Stderr), err)
-	}
-	return false, fmt.Errorf("check audit policy on %s: %w", node, err)
+	return false, dockerError("check audit policy on "+node, err)
 }
 
 // Delete removes the cluster, the recorded audit policy hash and then every
 // addon container labeled app.kubernetes.io/managed-by=kubedrill (docker rm
-// -f). A missing cluster is not an error.
+// -f). A missing cluster is not an error. kind's Delete takes no context:
+// ctx is checked before it and right after it returns, before the addon
+// containers are touched.
 func (m *Manager) Delete(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("delete cluster %s: %w", Name, err)
@@ -521,16 +684,19 @@ func (m *Manager) Delete(ctx context.Context) error {
 			fmt.Fprintf(m.out, "warning: remove %s: %v\n", record, err)
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("delete cluster %s: %w", Name, err)
+	}
 	out, err := m.runFor(ctx, dockerTimeout, "docker", "ps", "-aq", "--filter", "label="+managedByLabel)
 	if err != nil {
-		return fmt.Errorf("delete cluster %s: list addon containers: %w", Name, err)
+		return fmt.Errorf("delete cluster %s: list addon containers: %w", Name, dockerError("docker ps", err))
 	}
 	ids := strings.Fields(string(out))
 	if len(ids) == 0 {
 		return nil
 	}
 	if _, err := m.runFor(ctx, dockerTimeout, "docker", append([]string{"rm", "-f"}, ids...)...); err != nil {
-		return fmt.Errorf("delete cluster %s: remove addon containers %s: %w", Name, strings.Join(ids, " "), err)
+		return fmt.Errorf("delete cluster %s: remove addon containers %s: %w", Name, strings.Join(ids, " "), dockerError("docker rm", err))
 	}
 	return nil
 }
@@ -610,4 +776,16 @@ func (m *Manager) WriteInternalKubeconfig(ctx context.Context, dstPath string) e
 		return fmt.Errorf("write internal kubeconfig for %s: %w", Name, err)
 	}
 	return nil
+}
+
+// dockerError wraps err from a docker command run as op, adding the
+// command's trimmed stderr when it exited with any.
+func dockerError(op string, err error) error {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		if stderr := bytes.TrimSpace(exitErr.Stderr); len(stderr) > 0 {
+			return fmt.Errorf("%s: %s: %w", op, stderr, err)
+		}
+	}
+	return fmt.Errorf("%s: %w", op, err)
 }

@@ -139,3 +139,55 @@ func TestBashrcSyncNamespaceWithoutKubedrillKeepsStatus(t *testing.T) {
 		t.Errorf("output: got %q, want the previous status 3 kept and no namespace cached", out)
 	}
 }
+
+func TestEntrypointOnlyTheShellPaneEndsTheSession(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not found")
+	}
+	data, err := os.ReadFile(filepath.Join("..", "..", "workstation", "entrypoint.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hook string
+	for _, l := range strings.Split(string(data), "\n") {
+		if strings.Contains(l, "set-hook") && strings.Contains(l, "pane-exited") {
+			hook = strings.TrimSpace(l)
+		}
+	}
+	if hook == "" {
+		t.Fatal("entrypoint.sh lacks the pane-exited hook")
+	}
+	conf, err := filepath.Abs(filepath.Join("..", "..", "workstation", "tmux.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := `set -u
+session=kubedrill
+shell_pane=$(tmux -f "$CONF" new-session -d -P -F '#{pane_id}' -s "$session" -x 160 -y 50 "bash --norc -i")
+` + hook + `
+watch=$(tmux split-window -P -F '#{pane_id}' -t "$shell_pane" -h "exec bash --norc -i")
+ticket=$(tmux split-window -P -F '#{pane_id}' -t "$shell_pane" -v -b "exec bash --norc -i")
+case "$TARGET" in watch) p=$watch ;; ticket) p=$ticket ;; *) p=$shell_pane ;; esac
+sleep 0.5
+tmux send-keys -t "$p" exit Enter
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  sleep 0.2
+  tmux has-session -t "$session" 2>/dev/null || { echo gone; exit 0; }
+done
+echo alive
+tmux kill-server
+`
+	for target, want := range map[string]string{"watch": "alive", "ticket": "alive", "shell": "gone"} {
+		t.Run(target, func(t *testing.T) {
+			cmd := exec.Command("bash", "-c", script)
+			cmd.Env = append(os.Environ(), "TMUX_TMPDIR="+t.TempDir(), "TMUX=", "CONF="+conf, "TARGET="+target)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("tmux script: %v\n%s", err, out)
+			}
+			if got := strings.TrimSpace(string(out)); got != want {
+				t.Errorf("exit in the %s pane: got session %q, want %q", target, got, want)
+			}
+		})
+	}
+}

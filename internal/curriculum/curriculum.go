@@ -89,9 +89,11 @@ func DefaultPath(root string) string {
 	return filepath.Join(root, "curriculum.yaml")
 }
 
-// Load parses path and validates references: unique ids, modules whose exam
-// keys exist, concept ids of the right shape, prerequisites that exist. All
-// errors are reported at once.
+// Load parses path and validates it: unique exam, domain, level and module
+// ids, level ids of the right shape, module ids prefixed by their level,
+// exam refs naming an existing exam and domain, concept ids of the right
+// shape, and each scenario listed in at most one module. All errors are
+// reported at once.
 func Load(path string) (*Curriculum, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

@@ -5,8 +5,23 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
+	"text/template"
+	"text/template/parse"
+)
+
+const (
+	maxRenderBytes = 4 << 20
+	maxRangeCount  = 100000
+	maxRenderSteps = 1000000
+	stepFunc       = "kubedrillStep"
+)
+
+var (
+	errRenderTooLarge = fmt.Errorf("rendered output exceeds %d bytes", maxRenderBytes)
+	errRenderTooLong  = fmt.Errorf("template runs more than %d steps (range iterations plus template calls)", maxRenderSteps)
 )
 
 var dnsLabel = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
@@ -41,6 +56,16 @@ func WithNamespace(ns string) RenderOption {
 	return func(c *renderConfig) { c.namespace = ns }
 }
 
+// VariantFor returns the variant Render picks for seed: the one with index
+// (seed-1) mod len(Variants), or a variant named "default" without vars when
+// the scenario declares none. Seed must be at least 1.
+func (s *Scenario) VariantFor(seed int64) Variant {
+	if len(s.Variants) == 0 {
+		return Variant{Name: "default"}
+	}
+	return s.Variants[(seed-1)%int64(len(s.Variants))]
+}
+
 // Render specialises the scenario for seed: it picks the variant with index
 // (seed-1) mod len(Variants), expands the setup templates, the string fields
 // of every check, instruction.md, hints.md, solution/README.md and every
@@ -56,10 +81,7 @@ func (s *Scenario) Render(seed int64, opts ...RenderOption) (*Rendered, error) {
 			o(&cfg)
 		}
 	}
-	variant := Variant{Name: "default"}
-	if len(s.Variants) > 0 {
-		variant = s.Variants[(seed-1)%int64(len(s.Variants))]
-	}
+	variant := s.VariantFor(seed)
 	vars := make(map[string]string, len(variant.Vars))
 	for k, v := range variant.Vars {
 		vars[k] = v
@@ -266,11 +288,166 @@ func execute(name, text string, data templateData) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var sb strings.Builder
-	if err := t.Execute(&sb, data); err != nil {
+	t.Funcs(template.FuncMap{stepFunc: newStepBudget(maxRenderSteps)})
+	w := &cappedBuilder{limit: maxRenderBytes}
+	if err := t.Execute(w, data); err != nil {
+		if errors.Is(err, errRenderTooLarge) {
+			return "", fmt.Errorf("template: %s: %w", name, err)
+		}
+		if errors.Is(err, errRenderTooLong) {
+			return "", fmt.Errorf("template: %s: %w", name, errRenderTooLong)
+		}
 		return "", err
 	}
-	return sb.String(), nil
+	return w.sb.String(), nil
+}
+
+type cappedBuilder struct {
+	sb    strings.Builder
+	limit int
+}
+
+func (w *cappedBuilder) Write(p []byte) (int, error) {
+	if w.sb.Len()+len(p) > w.limit {
+		return 0, errRenderTooLarge
+	}
+	return w.sb.Write(p)
+}
+
+func parseTemplate(name, text string) (*template.Template, error) {
+	t, err := template.New(name).Option("missingkey=error").Funcs(template.FuncMap{stepFunc: newStepBudget(0)}).Parse(text)
+	if err != nil {
+		return nil, err
+	}
+	for _, tt := range t.Templates() {
+		if tt.Tree == nil {
+			continue
+		}
+		if err := checkRangeCounts(tt.Tree.Root); err != nil {
+			return nil, fmt.Errorf("template: %s: %w", name, err)
+		}
+		guardSteps(tt.Tree.Root)
+	}
+	return t, nil
+}
+
+// newStepBudget returns the function guardSteps wires into every range
+// pipeline and template call. It passes its last argument through and
+// charges the budget one step per call plus the length of a ranged value.
+func newStepBudget(budget int) func(args ...any) (any, error) {
+	left := budget
+	return func(args ...any) (any, error) {
+		var v any
+		if len(args) > 0 {
+			v = args[len(args)-1]
+		}
+		cost, err := rangeCost(v)
+		if err != nil {
+			return nil, err
+		}
+		if cost >= left {
+			left = 0
+			return nil, errRenderTooLong
+		}
+		left -= cost + 1
+		return v, nil
+	}
+}
+
+func rangeCost(v any) (int, error) {
+	rv := reflect.ValueOf(v)
+	for rv.Kind() == reflect.Pointer || rv.Kind() == reflect.Interface {
+		if rv.IsNil() {
+			return 0, nil
+		}
+		rv = rv.Elem()
+	}
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if n := rv.Int(); n > 0 {
+			return int(min(n, int64(maxRenderSteps))), nil
+		}
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return int(min(rv.Uint(), uint64(maxRenderSteps))), nil
+	case reflect.Array, reflect.Slice, reflect.Map, reflect.String:
+		return rv.Len(), nil
+	case reflect.Chan, reflect.Func:
+		return 0, fmt.Errorf("range over a %s is not allowed in a scenario template", rv.Kind())
+	}
+	return 0, nil
+}
+
+func guardSteps(n parse.Node) {
+	switch n := n.(type) {
+	case *parse.ListNode:
+		if n == nil {
+			return
+		}
+		for _, c := range n.Nodes {
+			guardSteps(c)
+		}
+	case *parse.RangeNode:
+		if n.Pipe != nil {
+			n.Pipe.Cmds = append(n.Pipe.Cmds, stepCommand(n.Pipe.Pos))
+		}
+		guardBranch(&n.BranchNode)
+	case *parse.IfNode:
+		guardBranch(&n.BranchNode)
+	case *parse.WithNode:
+		guardBranch(&n.BranchNode)
+	case *parse.TemplateNode:
+		if n.Pipe == nil {
+			n.Pipe = &parse.PipeNode{NodeType: parse.NodePipe, Pos: n.Pos, Line: n.Line}
+		}
+		n.Pipe.Cmds = append(n.Pipe.Cmds, stepCommand(n.Pos))
+	}
+}
+
+func guardBranch(b *parse.BranchNode) {
+	guardSteps(b.List)
+	if b.ElseList != nil {
+		guardSteps(b.ElseList)
+	}
+}
+
+func stepCommand(pos parse.Pos) *parse.CommandNode {
+	return &parse.CommandNode{NodeType: parse.NodeCommand, Pos: pos, Args: []parse.Node{parse.NewIdentifier(stepFunc).SetPos(pos)}}
+}
+
+func checkRangeCounts(n parse.Node) error {
+	switch n := n.(type) {
+	case *parse.ListNode:
+		if n == nil {
+			return nil
+		}
+		for _, c := range n.Nodes {
+			if err := checkRangeCounts(c); err != nil {
+				return err
+			}
+		}
+	case *parse.RangeNode:
+		if n.Pipe != nil && len(n.Pipe.Cmds) == 1 && len(n.Pipe.Cmds[0].Args) == 1 {
+			if num, ok := n.Pipe.Cmds[0].Args[0].(*parse.NumberNode); ok && ((num.IsInt && num.Int64 > maxRangeCount) || (!num.IsInt && num.IsUint)) {
+				return fmt.Errorf("range over %s exceeds %d iterations", num.Text, maxRangeCount)
+			}
+		}
+		return checkBranch(&n.BranchNode)
+	case *parse.IfNode:
+		return checkBranch(&n.BranchNode)
+	case *parse.WithNode:
+		return checkBranch(&n.BranchNode)
+	}
+	return nil
+}
+
+func checkBranch(b *parse.BranchNode) error {
+	if err := checkRangeCounts(b.List); err != nil {
+		return err
+	}
+	if b.ElseList != nil {
+		return checkRangeCounts(b.ElseList)
+	}
+	return nil
 }
 
 func relTo(dir, path string) string {

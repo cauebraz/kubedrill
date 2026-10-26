@@ -26,14 +26,25 @@ type dockerCall []string
 type fakeDocker struct {
 	calls   []dockerCall
 	respond func(args []string) ([]byte, error)
+	nodes   func(ctx context.Context) ([]byte, error)
 }
 
-func (f *fakeDocker) run(_ context.Context, name string, args ...string) ([]byte, error) {
+func (f *fakeDocker) run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	f.calls = append(f.calls, append(dockerCall{name}, args...))
+	if isNodesQuery(args) {
+		if f.nodes != nil {
+			return f.nodes(ctx)
+		}
+		return []byte("kubedrill-control-plane=True\nkubedrill-worker=True\nkubedrill-worker2=True\n"), nil
+	}
 	if f.respond == nil {
 		return nil, nil
 	}
 	return f.respond(args)
+}
+
+func isNodesQuery(args []string) bool {
+	return len(args) > 6 && args[0] == "exec" && args[3] == "--kubeconfig" && args[5] == "get" && args[6] == "nodes"
 }
 
 func writeAddon(t *testing.T, root, name, spec string, files map[string]string) {

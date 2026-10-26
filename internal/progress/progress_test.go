@@ -20,7 +20,7 @@ func took(d time.Duration) epOpt {
 func outcome(o journal.Outcome) epOpt {
 	return func(e *journal.Episode) { e.Outcome = o }
 }
-func tele(reads, readsBefore, writes int, verdict string) epOpt {
+func tele(reads, readsBefore, writes int, verdict journal.Verdict) epOpt {
 	return func(e *journal.Episode) {
 		e.Telemetry = &journal.Telemetry{Reads: reads, ReadsBeforeFirstWrite: readsBefore, Writes: writes, Verdict: verdict}
 	}

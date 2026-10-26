@@ -25,7 +25,7 @@ func repoLayout(t *testing.T) (*Manager, string) {
 	if err := os.WriteFile(policy, []byte("apiVersion: audit.k8s.io/v1\nkind: Policy\nrules:\n- level: Metadata\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return New(profiles), policy
+	return New(profiles, WithStateDir(testStateDir(t))), policy
 }
 
 func sha(t *testing.T, path string) string {
@@ -40,7 +40,7 @@ func sha(t *testing.T, path string) string {
 
 func TestExistsUsesBoundedDockerPs(t *testing.T) {
 	fd := &fakeDocker{}
-	m := New(t.TempDir())
+	m := New(t.TempDir(), WithStateDir(testStateDir(t)))
 	m.provider = &fakeProvider{}
 	m.run = fd.run
 	var deadlineSet bool
@@ -251,5 +251,37 @@ func TestEnsureAddonsWithoutDeploymentsPrintsNoWaitLines(t *testing.T) {
 	}
 	if out.Len() != 0 {
 		t.Errorf("output: got %q, want no waiting or ready lines", out.String())
+	}
+}
+
+func TestAuditPolicyRecordUsesTheManagerStateDir(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "kubeconfig"))
+	m, policy := repoLayout(t)
+	own := t.TempDir()
+	WithStateDir(own)(m)
+	m.provider = &fakeProvider{}
+	m.run = (&fakeDocker{}).run
+	if err := m.Ensure(context.Background(), "", ProfileData{AuditPolicy: policy}); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	for _, tc := range []struct {
+		name string
+		path string
+		want bool
+	}{
+		{"record in the manager state dir", filepath.Join(own, auditPolicyHashName), true},
+		{"audit dir in the manager state dir", AuditDirIn(own), true},
+		{"record in the XDG state dir", filepath.Join(testStateDir(t), auditPolicyHashName), false},
+	} {
+		_, err := os.Stat(tc.path)
+		if got := err == nil; got != tc.want {
+			t.Errorf("%s (%s): exists %v, want %v", tc.name, tc.path, got, tc.want)
+		}
+	}
+
+	bare := New(m.profilesDir)
+	if _, err := bare.AuditPolicyStale(context.Background()); !errors.Is(err, errNoStateDir) {
+		t.Errorf("AuditPolicyStale without WithStateDir: got %v, want %v", err, errNoStateDir)
 	}
 }

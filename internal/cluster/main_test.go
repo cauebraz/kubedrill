@@ -18,3 +18,15 @@ func TestMain(m *testing.M) {
 	os.RemoveAll(dir)
 	os.Exit(code)
 }
+
+// testStateDir is the directory StateDir resolves under the test's
+// XDG_STATE_HOME; tests hand it to New with WithStateDir, as the
+// composition root does.
+func testStateDir(t *testing.T) string {
+	t.Helper()
+	dir, err := StateDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}

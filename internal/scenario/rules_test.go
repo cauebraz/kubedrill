@@ -513,6 +513,33 @@ func TestLintNewRules(t *testing.T) {
 			want: []string{"template: solution/README.md:33:8: executing \"solution/README.md\" at <.Vars.extra>: map has no entry for key \"extra\" (variant \"b\", seed 2)"},
 		},
 		{
+			name: "check path is not a valid JSONPath",
+			mutate: func(f fixture) {
+				f["checks.yaml"] = strings.Replace(f["checks.yaml"], `path: "{.spec.template.spec.containers[0].image}"`, `path: "{.spec.template.spec.containers[0].image"`, 1)
+			},
+			want: []string{`checks.yaml: check "image": path "{.spec.template.spec.containers[0].image" is not a valid JSONPath`},
+		},
+		{
+			name: "check bounds are not finite numbers",
+			mutate: func(f fixture) {
+				f["checks.yaml"] = strings.Replace(f["checks.yaml"], `equals: "{{ .Vars.image }}"`, "gte: \"abc\"\n    lte: \"NaN\"", 1)
+			},
+			want: []string{
+				`checks.yaml: check "image": gte bound "abc" is not a finite number`,
+				`checks.yaml: check "image": lte bound "NaN" is not a finite number`,
+			},
+		},
+		{
+			name: "templated bound is checked per variant",
+			mutate: func(f fixture) {
+				f["checks.yaml"] = strings.Replace(f["checks.yaml"], `equals: "{{ .Vars.image }}"`, `lte: "{{ .Vars.image }}"`, 1)
+			},
+			want: []string{
+				`checks.yaml: check "image": lte bound "nginx:a" is not a finite number (variant "a", seed 1)`,
+				`checks.yaml: check "image": lte bound "nginx:b" is not a finite number (variant "b", seed 2)`,
+			},
+		},
+		{
 			name: "approach still carries the template marker",
 			mutate: func(f fixture) {
 				f["approaches/first/snippet.txt"] = "kubectl get pods\n"
@@ -876,5 +903,26 @@ func TestRealScenarioImageCheck(t *testing.T) {
 		if re.MatchString(img) {
 			t.Errorf("matches %q accepts %q, want reject", check.Matches, img)
 		}
+	}
+}
+
+func TestNormalizeCheckWeight(t *testing.T) {
+	tests := []struct {
+		name   string
+		weight float64
+		want   float64
+	}{
+		{name: "zero becomes the default", weight: 0, want: 1},
+		{name: "explicit weight is kept", weight: 2.5, want: 2.5},
+		{name: "negative is left for validation to report", weight: -1, want: -1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := Check{Weight: tt.weight}
+			normalizeCheck(&c)
+			if c.Weight != tt.want {
+				t.Errorf("weight: got %v, want %v", c.Weight, tt.want)
+			}
+		})
 	}
 }

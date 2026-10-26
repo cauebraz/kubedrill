@@ -30,7 +30,9 @@ var apiServiceGVR = schema.GroupVersionResource{Group: "apiregistration.k8s.io",
 // objects as they are, namespaced objects in their own namespace or
 // "default". A kind that is not served yet (a custom resource whose
 // definition was applied earlier in the same call) is retried for up to a
-// minute. The error names the manifest index and the object.
+// minute: discovery not knowing the kind, or a 404 for the resource type of
+// a non-core group. Any other error, a missing namespace included, ends the
+// call at once. The error names the manifest index and the object.
 func (c *Client) ApplyCluster(ctx context.Context, manifests []string) error {
 	force := true
 	opts := metav1.PatchOptions{FieldManager: fieldManager, Force: &force}
@@ -76,7 +78,7 @@ func (c *Client) applyAnyScope(ctx context.Context, obj *unstructured.Unstructur
 			target = c.dyn.Resource(gvr).Namespace(ns)
 		}
 		if _, err := target.Patch(ctx, obj.GetName(), types.ApplyPatchType, data, opts); err != nil {
-			if apierrors.IsNotFound(err) {
+			if typeNotServed(err, gvr) {
 				lastErr = err
 				return false, nil
 			}
@@ -94,6 +96,19 @@ func (c *Client) applyAnyScope(ctx context.Context, obj *unstructured.Unstructur
 		return fmt.Errorf("not served after %s: %w", shortDuration(timeout), lastErr)
 	}
 	return err
+}
+
+// typeNotServed reports whether err is the 404 the API server returns for a
+// resource type it does not serve yet: NotFound whose details name gvr's
+// group and resource, in a non-core group (custom resources always have
+// one). A NotFound for anything else, such as the namespace, is final.
+func typeNotServed(err error, gvr schema.GroupVersionResource) bool {
+	var status apierrors.APIStatus
+	if !apierrors.IsNotFound(err) || gvr.Group == "" || !errors.As(err, &status) {
+		return false
+	}
+	d := status.Status().Details
+	return d != nil && d.Group == gvr.Group && d.Kind == gvr.Resource
 }
 
 // createNamespace creates ns with the given labels plus
@@ -140,7 +155,9 @@ func (c *Client) DeleteNamespaces(ctx context.Context, selector, keep string) (i
 		return 0, fmt.Errorf("delete namespaces %q: list: %w", selector, err)
 	}
 	var names []string
-	for _, item := range list.Items {
+	items := map[string]*unstructured.Unstructured{}
+	for i := range list.Items {
+		item := &list.Items[i]
 		if item.GetName() == keep || item.GetDeletionTimestamp() != nil {
 			continue
 		}
@@ -148,14 +165,12 @@ func (c *Client) DeleteNamespaces(ctx context.Context, selector, keep string) (i
 			continue
 		}
 		names = append(names, item.GetName())
+		items[item.GetName()] = item
 	}
 	sort.Strings(names)
 	deleted := 0
 	for _, n := range names {
-		if err := nsClient.Delete(ctx, n, metav1.DeleteOptions{}); err != nil {
-			if apierrors.IsNotFound(err) {
-				continue
-			}
+		if err := deleteExact(ctx, nsClient, items[n]); err != nil {
 			return deleted, fmt.Errorf("delete namespaces %q: delete %s: %w", selector, n, err)
 		}
 		deleted++

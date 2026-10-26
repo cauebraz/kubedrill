@@ -114,6 +114,8 @@ func TestApplyClusterErrors(t *testing.T) {
 		{name: "kind never served", manifest: "apiVersion: x.io/v1\nkind: Stage\nmetadata:\n  name: s\n", resolver: funcResolver(func(string, string) (schema.GroupVersionResource, bool, error) {
 			return schema.GroupVersionResource{}, false, &meta.NoKindMatchError{GroupKind: schema.GroupKind{Group: "x.io", Kind: "Stage"}}
 		}), want: "apply cluster manifest 0: x.io/v1/Stage s: not served after 100ms"},
+		{name: "missing namespace is not retried", manifest: "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: c\n  namespace: gone\n", fail: apierrors.NewNotFound(schema.GroupResource{Resource: "namespaces"}, "gone"), want: `apply cluster manifest 0: v1/ConfigMap c: namespaces "gone" not found`},
+		{name: "missing core type is not retried", manifest: "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: c\n", fail: apierrors.NewNotFound(schema.GroupResource{Resource: "configmaps"}, "c"), want: `apply cluster manifest 0: v1/ConfigMap c: configmaps "c" not found`},
 		{name: "server error is not retried", manifest: "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: c\n", fail: boom, want: "apply cluster manifest 0: v1/ConfigMap c: forbidden", wantIs: boom},
 	}
 	for _, tc := range tests {

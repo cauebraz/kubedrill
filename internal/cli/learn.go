@@ -11,6 +11,7 @@ import (
 
 	"github.com/cauebraz/kubedrill/internal/concepts"
 	"github.com/cauebraz/kubedrill/internal/journal"
+	"github.com/cauebraz/kubedrill/internal/render"
 	"github.com/cauebraz/kubedrill/internal/scenario"
 )
 
@@ -20,7 +21,7 @@ const (
 	conceptsIndent       = "    "
 )
 
-func (a *App) learnCommand() *cobra.Command {
+func (a *app) learnCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "learn [id]",
 		Short: "Read the fundamentals behind the active scenario, or one concept page",
@@ -43,7 +44,7 @@ func (a *App) learnCommand() *cobra.Command {
 
 // refuseInExam returns the exam refusal of cmd when the active episode is
 // an exam.
-func (a *App) refuseInExam(cmd string) error {
+func (a *app) refuseInExam(cmd string) error {
 	j, err := a.getJournal()
 	if err != nil {
 		return err
@@ -58,7 +59,7 @@ func (a *App) refuseInExam(cmd string) error {
 	return nil
 }
 
-func (a *App) learnOne(id string) error {
+func (a *app) learnOne(id string) error {
 	lib, err := a.getConcepts()
 	if err != nil {
 		return err
@@ -74,7 +75,7 @@ func (a *App) learnOne(id string) error {
 	return nil
 }
 
-func (a *App) learnActive() error {
+func (a *app) learnActive() error {
 	j, err := a.getJournal()
 	if err != nil {
 		return err
@@ -114,7 +115,7 @@ func (a *App) learnActive() error {
 		}
 		pages = append(pages, c)
 	}
-	a.printf("%s\n", a.style(styleBold, fmt.Sprintf("Fundamentals of %s (%s)", sc.Meta.Title, sc.Meta.ID)))
+	a.printf("%s\n", a.printer().Style(render.StyleBold, fmt.Sprintf("Fundamentals of %s (%s)", sc.Meta.Title, sc.Meta.ID)))
 	for _, c := range pages {
 		a.println()
 		a.printConcept(c)
@@ -123,12 +124,12 @@ func (a *App) learnActive() error {
 }
 
 // printConcept prints the header line and the rendered page of c.
-func (a *App) printConcept(c concepts.Concept) {
-	a.printf("%s  %s\n", a.style(styleAccent, c.ID), a.style(styleBold, c.Title))
-	a.printf("%s", a.markdown(c.Body))
+func (a *app) printConcept(c concepts.Concept) {
+	a.printf("%s  %s\n", a.printer().Style(render.StyleAccent, c.ID), a.printer().Style(render.StyleBold, c.Title))
+	a.printf("%s", a.printer().Markdown(c.Body))
 }
 
-func (a *App) conceptsCommand() *cobra.Command {
+func (a *app) conceptsCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "concepts",
 		Short: "List the concept pages with the number of scenarios that reference each",
@@ -178,7 +179,7 @@ func writeConcepts(w io.Writer, all []concepts.Concept, scenarios []*scenario.Sc
 		if summary == "" {
 			continue
 		}
-		for _, line := range strings.Split(wrap(summary, conceptsSummaryWidth-len(conceptsIndent)), "\n") {
+		for _, line := range strings.Split(render.Wrap(summary, conceptsSummaryWidth-len(conceptsIndent)), "\n") {
 			fmt.Fprintf(w, "%s%s\n", conceptsIndent, line)
 		}
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/cauebraz/kubedrill/internal/env"
 	"github.com/cauebraz/kubedrill/internal/faults"
 	"github.com/cauebraz/kubedrill/internal/journal"
+	"github.com/cauebraz/kubedrill/internal/render"
 	"github.com/cauebraz/kubedrill/internal/scenario"
 	"github.com/cauebraz/kubedrill/internal/telemetry"
 )
@@ -68,13 +69,13 @@ func (r refusal) Unwrap() error { return r.cause }
 
 // interactive reports whether prompts can be answered: stdin and stdout are
 // terminals.
-func (a *App) interactive() bool {
-	return a.isTerminal && a.isInputTerminal
+func (a *app) interactive() bool {
+	return a.term.IsTerminal && a.isInputTerminal
 }
 
 // ask prints question and returns the trimmed line typed; end of input is an
 // empty answer.
-func (a *App) ask(question string) string {
+func (a *app) ask(question string) string {
 	fmt.Fprintf(a.stdout, "%s ", question)
 	line, _ := a.stdin.ReadString('\n')
 	return strings.TrimSpace(line)
@@ -82,7 +83,7 @@ func (a *App) ask(question string) string {
 
 // expireIfDue finishes an exam episode whose time box ended before running
 // any command that reads the journal, and prints the outcome.
-func (a *App) expireIfDue(ctx context.Context) {
+func (a *app) expireIfDue(ctx context.Context) {
 	j, err := a.getJournal()
 	if err != nil {
 		return
@@ -91,7 +92,7 @@ func (a *App) expireIfDue(ctx context.Context) {
 	if err != nil || cur == nil || cur.Mode != journal.ModeExam || cur.Deadline == nil || a.now().Before(*cur.Deadline) {
 		return
 	}
-	s, err := a.learnerSession()
+	s, err := a.learnerSession(ctx)
 	if err != nil {
 		fmt.Fprintf(a.stderr, "warning: the exam time box of %s expired; the final grade failed: %v\n", cur.ScenarioID, err)
 		return
@@ -118,8 +119,9 @@ func outcomeLine(ep *journal.Episode) string {
 
 // afterSolve prints the solved banner, the recommendation and the next
 // steps, then the debrief: prompts on a terminal, the summary otherwise. It
-// reports whether the debrief questions were answered.
-func (a *App) afterSolve(ctx context.Context, ep *journal.Episode) (bool, error) {
+// reports whether the debrief questions were answered. Every line goes
+// through p.
+func (a *app) afterSolve(ctx context.Context, p render.Printer, ep *journal.Episode) (bool, error) {
 	if ep == nil {
 		return false, nil
 	}
@@ -131,20 +133,20 @@ func (a *App) afterSolve(ctx context.Context, ep *journal.Episode) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	a.println()
-	a.println(a.wrapLine(a.style(stylePass.Bold(true), solvedBanner(sc.Meta.Title, ep)), "  "))
+	p.Println()
+	p.Println(p.WrapLine(p.Style(render.StylePass.Bold(true), render.SolvedBanner(sc.Meta.Title, ep)), "  "))
 	if j, err := a.getJournal(); err == nil {
 		if eps, err := allEpisodes(j); err == nil {
 			if rec, ok := a.recommend(cat, eps); ok {
-				for _, l := range a.recommendationLines(cat, rec, "Recommended") {
-					a.println(l)
+				for _, l := range recommendationLines(p, cat, rec, "Recommended") {
+					p.Println(l)
 				}
 			}
 		}
 	}
-	a.println(a.wrapLine(a.solvedNextLine(sc.Meta.ID), "  "))
-	a.println()
-	return a.debrief(ctx, ep, sc, a.interactive())
+	p.Println(p.WrapLine(solvedNextLine(p, sc.Meta.ID), "  "))
+	p.Println()
+	return a.debrief(ctx, p, ep, sc, a.interactive())
 }
 
 // debriefLater points at the command that answers the debrief questions
@@ -157,11 +159,11 @@ const debriefLater = "kubedrill debrief --redo answers the questions later"
 // when a question has an answer, the debrief --redo pointer otherwise (also
 // without prompts on a non-terminal). It reports whether any question has
 // an answer.
-func (a *App) debrief(_ context.Context, ep *journal.Episode, sc *scenario.Scenario, prompt bool) (bool, error) {
-	a.writeDebriefSummary(ep, sc)
+func (a *app) debrief(ctx context.Context, p render.Printer, ep *journal.Episode, sc *scenario.Scenario, prompt bool) (bool, error) {
+	a.writeDebriefSummary(p, ep, sc)
 	if !prompt {
 		if !a.interactive() {
-			a.println(a.wrapLine(debriefLater, "  "))
+			p.Println(p.WrapLine(debriefLater, "  "))
 		}
 		return false, nil
 	}
@@ -173,7 +175,7 @@ func (a *App) debrief(_ context.Context, ep *journal.Episode, sc *scenario.Scena
 	d := journal.Debrief{At: a.now(), Principle: prev.Principle}
 	d.RuledOutEarlier = a.askKeeping("Which observation would have ruled out your first hypothesis earlier?", prev.RuledOutEarlier)
 	d.NextTimeFirst = a.askKeeping("Next time I check first:", prev.NextTimeFirst)
-	s, err := a.learnerSession()
+	s, err := a.learnerSession(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -182,9 +184,9 @@ func (a *App) debrief(_ context.Context, ep *journal.Episode, sc *scenario.Scena
 	}
 	answered := d.RuledOutEarlier != "" || d.NextTimeFirst != ""
 	if answered {
-		a.println(a.wrapLine("debrief recorded; kubedrill debrief shows it again", "  "))
+		p.Println(p.WrapLine("debrief recorded; kubedrill debrief shows it again", "  "))
 	} else {
-		a.println(a.wrapLine(debriefLater, "  "))
+		p.Println(p.WrapLine(debriefLater, "  "))
 	}
 	return answered, nil
 }
@@ -192,7 +194,7 @@ func (a *App) debrief(_ context.Context, ep *journal.Episode, sc *scenario.Scena
 // askMatched asks whether the diagnosis matched the root cause, showing a
 // previous answer as [y] or [n], which Enter keeps; without a diagnosis it
 // asks nothing and returns nil.
-func (a *App) askMatched(diag *journal.Diagnosis) *bool {
+func (a *app) askMatched(diag *journal.Diagnosis) *bool {
 	if diag == nil {
 		return nil
 	}
@@ -216,7 +218,7 @@ func (a *App) askMatched(diag *journal.Diagnosis) *bool {
 
 // askKeeping asks question; with a previous answer the prompt shows it in
 // brackets and an empty line keeps it, otherwise enter skips.
-func (a *App) askKeeping(question, previous string) string {
+func (a *app) askKeeping(question, previous string) string {
 	if previous == "" {
 		return a.ask(question + " (enter to skip)")
 	}
@@ -241,66 +243,66 @@ func rootCause(sc *scenario.Scenario, ep *journal.Episode) string {
 // writeDebriefSummary prints the facts of an ended episode: duration,
 // hints, the trajectory from telemetry, the diagnosis next to the root
 // cause, and the stored answers.
-func (a *App) writeDebriefSummary(ep *journal.Episode, sc *scenario.Scenario) {
-	a.println(a.wrapLine(a.style(styleBold, fmt.Sprintf("Debrief: %s (episode %s, %s)", sc.Meta.ID, ep.ID, ep.Outcome)), "  "))
-	a.detail(fmt.Sprintf("  duration %s, %s", minutesCell(ep.DurationAt(a.now())), plural(ep.HintsUsed, "hint")))
+func (a *app) writeDebriefSummary(p render.Printer, ep *journal.Episode, sc *scenario.Scenario) {
+	p.Println(p.WrapLine(p.Style(render.StyleBold, fmt.Sprintf("Debrief: %s (episode %s, %s)", sc.Meta.ID, ep.ID, ep.Outcome)), "  "))
+	detail(p, fmt.Sprintf("  duration %s, %s", render.Minutes(ep.DurationAt(a.now())), render.Plural(ep.HintsUsed, "hint")))
 	t := ep.Telemetry
 	switch {
 	case t == nil || t.Source == "" || t.Source == "none":
-		a.detail("  telemetry: none recorded (no audit log or shell log for this episode)")
+		detail(p, "  telemetry: none recorded (no audit log or shell log for this episode)")
 	default:
-		a.detail(fmt.Sprintf("  observations before the first write: %d (telemetry: %s)", t.ReadsBeforeFirstWrite, t.Source))
+		detail(p, fmt.Sprintf("  observations before the first write: %d (telemetry: %s)", t.ReadsBeforeFirstWrite, t.Source))
 		switch {
 		case t.FirstWriteTarget == "":
-			a.detail("  first write: none recorded")
+			detail(p, "  first write: none recorded")
 		case telemetry.MatchTarget(t.FirstWriteTarget, sc.Meta.FixTargets):
-			a.detail(fmt.Sprintf("  first write: %s (a fix target)", t.FirstWriteTarget))
+			detail(p, fmt.Sprintf("  first write: %s (a fix target)", t.FirstWriteTarget))
 		default:
-			a.detail(fmt.Sprintf("  first write: %s (not a fix target; the fix targets are %s)", t.FirstWriteTarget, orDash(strings.Join(sc.Meta.FixTargets, ", "))))
+			detail(p, fmt.Sprintf("  first write: %s (not a fix target; the fix targets are %s)", t.FirstWriteTarget, render.OrDash(strings.Join(sc.Meta.FixTargets, ", "))))
 		}
-		a.detail(fmt.Sprintf("  verdict: %s", verdictLabel(t.Verdict)))
+		detail(p, fmt.Sprintf("  verdict: %s", verdictLabel(t.Verdict)))
 	}
 	diag := "none recorded"
 	if ep.Diagnosis != nil {
 		diag = ep.Diagnosis.Text
 	}
-	a.detail("  your diagnosis: " + diag)
-	a.detail("  root cause: " + orDash(rootCause(sc, ep)))
+	detail(p, "  your diagnosis: "+diag)
+	detail(p, "  root cause: "+render.OrDash(rootCause(sc, ep)))
 	if ep.Diagnosis != nil && ep.Diagnosis.Matched != nil {
-		a.detail(fmt.Sprintf("  diagnosis matched: %s", yesNo(*ep.Diagnosis.Matched)))
+		detail(p, fmt.Sprintf("  diagnosis matched: %s", yesNo(*ep.Diagnosis.Matched)))
 	}
 	if d := ep.Debrief; d != nil {
 		if d.RuledOutEarlier != "" {
-			a.detail(fmt.Sprintf("  would have ruled it out earlier: %s", d.RuledOutEarlier))
+			detail(p, fmt.Sprintf("  would have ruled it out earlier: %s", d.RuledOutEarlier))
 		}
 		if d.NextTimeFirst != "" {
-			a.detail(fmt.Sprintf("  next time I check first: %s", d.NextTimeFirst))
+			detail(p, fmt.Sprintf("  next time I check first: %s", d.NextTimeFirst))
 		}
 		if d.Principle != "" {
-			a.detail(fmt.Sprintf("  principle: %s", d.Principle))
+			detail(p, fmt.Sprintf("  principle: %s", d.Principle))
 		}
 	}
 }
 
 // detail prints one indented debrief line, wrapped with a four space
 // hanging indent.
-func (a *App) detail(line string) {
-	a.println(a.wrapLine(line, "    "))
+func detail(p render.Printer, line string) {
+	p.Println(p.WrapLine(line, "    "))
 }
 
 // verdictLabel names the telemetry verdict; "unknown" means the audit log
 // was off.
-func verdictLabel(v string) string {
+func verdictLabel(v journal.Verdict) string {
 	switch v {
 	case "":
 		return "-"
-	case "unknown":
+	case journal.VerdictUnknown:
 		return "unknown (telemetry off)"
 	}
-	return v
+	return string(v)
 }
 
-func (a *App) debriefCommand() *cobra.Command {
+func (a *app) debriefCommand() *cobra.Command {
 	var redo bool
 	cmd := &cobra.Command{
 		Use:   "debrief [episode-id]",
@@ -334,7 +336,7 @@ func (a *App) debriefCommand() *cobra.Command {
 			if redo && !a.interactive() {
 				return errors.New("debrief --redo asks questions and needs a terminal on stdin and stdout")
 			}
-			_, err = a.debrief(cmd.Context(), ep, sc, a.interactive() && (redo || ep.Debrief == nil))
+			_, err = a.debrief(cmd.Context(), a.printer(), ep, sc, a.interactive() && (redo || ep.Debrief == nil))
 			return err
 		},
 	}
@@ -381,7 +383,7 @@ func findEpisode(j Journal, id string, withActive bool) (*journal.Episode, error
 	return nil, errors.New("no ended episode yet; kubedrill journal lists the episodes")
 }
 
-func (a *App) replayCommand() *cobra.Command {
+func (a *app) replayCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "replay [episode-id]",
 		Short: "Play the terminal recording of an episode in the workstation image",
@@ -468,7 +470,7 @@ func faultActionNames() []string {
 	return names
 }
 
-func (a *App) faultCommand() *cobra.Command {
+func (a *app) faultCommand() *cobra.Command {
 	var delay time.Duration
 	var loss float64
 	names := faultActionNames()
@@ -488,7 +490,7 @@ func (a *App) faultCommand() *cobra.Command {
 			if !slices.Contains(names, args[0]) {
 				return fmt.Errorf("unknown action %q; valid: %s", args[0], strings.Join(names, ", "))
 			}
-			if !isNodeName(args[1]) {
+			if !slices.Contains(cluster.NodeNames(), args[1]) {
 				return unknownNode(args[1])
 			}
 			return nil
@@ -539,7 +541,7 @@ func unknownNode(node string) error {
 	return fmt.Errorf("unknown node %q; valid: %s", node, strings.Join(cluster.NodeNames(), ", "))
 }
 
-func (a *App) faultManager() (Faults, error) {
+func (a *app) faultManager() (Faults, error) {
 	fm, err := a.getFaults()
 	if err != nil {
 		return nil, err
@@ -550,7 +552,7 @@ func (a *App) faultManager() (Faults, error) {
 	return fm, nil
 }
 
-func (a *App) healCommand() *cobra.Command {
+func (a *app) healCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "heal",
 		Short: "Undo every fault kubedrill fault recorded",
@@ -601,49 +603,39 @@ const auditPolicyNoticeFile = ".audit-policy-notice"
 // way, that the audit policy changed since the cluster was created. Nothing
 // is printed when the audit log is on and the policy is current, or when a
 // question fails.
-func (a *App) telemetryNotice(j Journal) {
-	if on, known := a.auditState(); known && !on {
-		a.noticeOnce(j, telemetryNoticeFile, telemetryOff)
+func (a *app) telemetryNotice(ctx context.Context, j Journal) {
+	if on, known := a.auditState(ctx); known && !on {
+		a.noticeOnce(ctx, j, telemetryNoticeFile, telemetryOff)
 	}
-	if stale, err := a.auditPolicyStale(); err == nil && stale {
-		a.noticeOnce(j, auditPolicyNoticeFile, auditPolicyOld)
+	if stale, err := a.auditPolicyStale(ctx); err == nil && stale {
+		a.noticeOnce(ctx, j, auditPolicyNoticeFile, auditPolicyOld)
 	}
 }
 
-// auditPolicyStale asks the cluster, under the command context with a 5 s
-// timeout, whether the audit policy changed since it was created.
-func (a *App) auditPolicyStale() (bool, error) {
+// auditPolicyStale asks the cluster, under ctx with a 5 s timeout, whether
+// the audit policy changed since it was created.
+func (a *app) auditPolicyStale(ctx context.Context) (bool, error) {
 	cl, err := a.getCluster()
 	if err != nil {
 		return false, err
 	}
-	ctx, cancel := a.boundedCtx()
+	ctx, cancel := context.WithTimeout(ctx, auditCheckTimeout)
 	defer cancel()
 	return cl.AuditPolicyStale(ctx)
-}
-
-// boundedCtx derives a context with auditCheckTimeout from the command
-// context (or the background one).
-func (a *App) boundedCtx() (context.Context, context.CancelFunc) {
-	ctx := a.cmdCtx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithTimeout(ctx, auditCheckTimeout)
 }
 
 // noticeOnce prints text on stderr unless the marker file under the journal
 // directory already records the current cluster (its creation time when
 // the cluster reports one, "shown" otherwise), then records it.
-func (a *App) noticeOnce(j Journal, file, text string) {
+func (a *app) noticeOnce(ctx context.Context, j Journal, file, text string) {
 	cl, err := a.getCluster()
 	if err != nil {
 		return
 	}
 	stamp := "shown"
 	if cc, ok := cl.(clusterCreated); ok {
-		ctx, cancel := a.boundedCtx()
-		created, err := cc.Created(ctx)
+		cctx, cancel := context.WithTimeout(ctx, auditCheckTimeout)
+		created, err := cc.Created(cctx)
 		cancel()
 		if err == nil && !created.IsZero() {
 			stamp = created.UTC().Format(time.RFC3339)

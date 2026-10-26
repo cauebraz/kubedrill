@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,7 +29,7 @@ func TestScriptKubeconfigLivesInTheStateDir(t *testing.T) {
 	if err := os.WriteFile(stale, []byte("old pinned copy"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	f := factories(io.Discard, func(string) string { return "" }, time.Now)
+	f := factories(io.Discard, func(string) string { return "" }, time.Now, resolveStateDir())
 	got, err := f.ScriptKubeconfig(journalDir, learner, "kind-kubedrill")
 	if err != nil {
 		t.Fatalf("ScriptKubeconfig: %v", err)
@@ -60,7 +61,7 @@ func TestScriptKubeconfigLivesInTheStateDir(t *testing.T) {
 }
 
 func TestFaultsFactoryUsesTheGivenStateDir(t *testing.T) {
-	f := factories(io.Discard, func(string) string { return "" }, time.Now)
+	f := factories(io.Discard, func(string) string { return "" }, time.Now, resolveStateDir())
 	dir := filepath.Join(t.TempDir(), "state")
 	fm := f.Faults(dir)
 	if fm == nil {
@@ -73,7 +74,7 @@ func TestFaultsFactoryUsesTheGivenStateDir(t *testing.T) {
 		t.Errorf("lock file under the given state dir: %v, want it created there", err)
 	}
 	var out testWriter
-	if fm := factories(&out, func(string) string { return "" }, time.Now).Faults(""); fm != nil {
+	if fm := factories(&out, func(string) string { return "" }, time.Now, resolveStateDir()).Faults(""); fm != nil {
 		t.Errorf("Faults with an empty state dir: got %T, want nil and a warning", fm)
 	}
 	if out.String() == "" {
@@ -90,42 +91,74 @@ func TestWorkstationFactoryUsesTheClusterStateDir(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", state)
 	root := t.TempDir()
-	old := time.Now().Add(-time.Hour)
-	for _, rel := range []string{"cmd/kubedrill/main.go", "internal/x/x.go", "go.mod"} {
+	for rel, body := range map[string]string{
+		"go.mod":                "module example.com/kubedrillfixture\n\ngo 1.21\n",
+		"cmd/kubedrill/main.go": "package main\n\nfunc main() {}\n",
+	} {
 		p := filepath.Join(root, rel)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(p, []byte("x\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Chtimes(p, old, old); err != nil {
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	sum := sha256.Sum256([]byte(root))
-	binDir := filepath.Join(state, "kubedrill", "kubedrill", "bin")
-	binary := filepath.Join(binDir, "kubedrill-linux-"+runtime.GOARCH+"-"+hex.EncodeToString(sum[:])[:8])
-	if err := os.MkdirAll(binDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(binary, []byte("bin"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	fresh := time.Now().Add(time.Hour)
-	if err := os.Chtimes(binary, fresh, fresh); err != nil {
-		t.Fatal(err)
-	}
-	f := factories(io.Discard, func(string) string { return "" }, time.Now)
+	binary := filepath.Join(state, "kubedrill", "kubedrill", "bin", "kubedrill-linux-"+runtime.GOARCH+"-"+hex.EncodeToString(sum[:])[:8])
+	f := factories(io.Discard, func(string) string { return "" }, time.Now, resolveStateDir())
 	ws, ok := f.Workstation(root, t.TempDir()).(*workstation.Manager)
 	if !ok {
 		t.Fatalf("Workstation factory: got %T, want *workstation.Manager", f.Workstation(root, t.TempDir()))
 	}
 	got, err := ws.EnsureBinary(context.Background())
 	if err != nil {
-		t.Fatalf("EnsureBinary with a fresh binary in the state dir: %v", err)
+		t.Fatalf("EnsureBinary: %v", err)
 	}
 	if got != binary {
 		t.Errorf("EnsureBinary path: got %q, want %q (WithStateDir pointing at the cluster state dir)", got, binary)
+	}
+	if _, err := os.Stat(binary); err != nil {
+		t.Errorf("built binary: %v", err)
+	}
+}
+
+func TestWorkstationFactoryReportsTheStateDirError(t *testing.T) {
+	cause := errors.New("cluster state directory: home directory: $HOME is not defined")
+	f := factories(io.Discard, func(string) string { return "" }, time.Now, stateDir{err: cause})
+	ws := f.Workstation(t.TempDir(), t.TempDir())
+	want := "workstation: " + cause.Error()
+	for name, err := range map[string]error{
+		"DockerAvailable": ws.DockerAvailable(context.Background()),
+		"Shell":           ws.Shell(context.Background(), workstation.ShellOptions{}),
+		"NodeShell":       ws.NodeShell(context.Background(), "kubedrill", "worker"),
+		"Replay":          ws.Replay(context.Background(), "x.cast"),
+	} {
+		if err == nil || err.Error() != want || !errors.Is(err, cause) {
+			t.Errorf("%s: got %v, want %q wrapping the cause", name, err, want)
+		}
+	}
+	if _, err := checkBinDir(stateDir{err: cause}); !errors.Is(err, cause) {
+		t.Errorf("checkBinDir: got %v, want the state dir error", err)
+	}
+}
+
+func TestConnectOnTheHostNeverExportsTheLearnerKubeconfig(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+	dir := t.TempDir()
+	learner := filepath.Join(dir, "config")
+	if err := os.WriteFile(learner, []byte(unreachableKubeconfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f := factories(io.Discard, func(string) string { return "" }, time.Now, resolveStateDir())
+	if _, _, err := f.Connect(learner, "kind-other", ""); err == nil || !strings.Contains(err.Error(), "write script kubeconfig: context kind-other not found") {
+		t.Errorf("Connect without a pinned kubeconfig and without the context: got %v, want the pin error", err)
+	}
+	if _, g, err := f.Connect(learner, "kind-kubedrill", ""); err != nil || g == nil {
+		t.Fatalf("Connect without a pinned kubeconfig: got (%v, %v), want a grader", g, err)
+	}
+	pinned := filepath.Join(state, "kubedrill", "kubedrill", "kubeconfig-scripts")
+	if _, err := os.Stat(pinned); err != nil {
+		t.Errorf("Connect without a pinned kubeconfig: %s not written: %v", pinned, err)
 	}
 }

@@ -4,8 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -142,5 +147,122 @@ func TestGradeFailingKeepsNamespace(t *testing.T) {
 	}
 	if h.journal.current == nil || h.journal.current.EndedAt != nil {
 		t.Errorf("current after a failing grade: got %+v, want it active with EndedAt nil", h.journal.current)
+	}
+}
+
+func TestRunScriptKillsBackgroundChild(t *testing.T) {
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "child.pid")
+	script := filepath.Join(dir, "hook.sh")
+	if err := writeFile(script, "#!/bin/bash\nsleep 30 &\necho $! > "+pidFile+"\nexit 0\n"); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	err := RunScript(io.Discard)(context.Background(), script, nil)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("run: got %v, want nil", err)
+	}
+	if elapsed > time.Second {
+		t.Errorf("elapsed: got %v, want under 1s", elapsed)
+	}
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	alive := true
+	for i := 0; i < 50 && alive; i++ {
+		alive = syscall.Kill(pid, 0) == nil
+		if alive {
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	if alive {
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+		t.Errorf("background child %d: got alive after the hook returned, want dead", pid)
+	}
+}
+
+func TestRunScriptExitStatus(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "hook.sh")
+	if err := writeFile(script, "#!/bin/bash\nexit 3\n"); err != nil {
+		t.Fatal(err)
+	}
+	err := RunScript(io.Discard)(context.Background(), script, nil)
+	if want := "run " + script + ": exit status 3"; err == nil || err.Error() != want {
+		t.Errorf("run: got %v, want %q", err, want)
+	}
+}
+
+func TestSubmitJudgedAtStart(t *testing.T) {
+	h := newHarness(t, testScenario(), "", 0)
+	h.start(t, journal.ModeExam, 1)
+	submitAt := t0.Add(10*time.Minute - time.Second)
+	h.now = submitAt
+	h.grader.grade = grader.Grade{Passed: true}
+	h.grader.during = func() { h.now = h.now.Add(time.Minute) }
+	_, ep, err := h.s.Submit(context.Background())
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if ep.Outcome != journal.OutcomeSolved {
+		t.Errorf("outcome: got %s, want %s", ep.Outcome, journal.OutcomeSolved)
+	}
+	if ep.EndedAt == nil || !ep.EndedAt.Equal(submitAt) {
+		t.Errorf("EndedAt: got %v, want %v", ep.EndedAt, submitAt)
+	}
+	if want := []time.Time{submitAt}; !slices.Equal(h.windows, want) {
+		t.Errorf("telemetry window end: got %v, want %v", h.windows, want)
+	}
+}
+
+func TestExpireGraceJudgedAtStart(t *testing.T) {
+	tests := []struct {
+		name    string
+		after   time.Duration
+		outcome journal.Outcome
+	}{
+		{"starts 10s after the deadline, grades 40s: solved", 10 * time.Second, journal.OutcomeSolved},
+		{"starts 31s after the deadline: timed out", 31 * time.Second, journal.OutcomeTimedOut},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t, testScenario(), "", 0)
+			h.start(t, journal.ModeExam, 1)
+			startAt := t0.Add(10*time.Minute + tc.after)
+			h.now = startAt
+			h.grader.grade = grader.Grade{Passed: true}
+			h.grader.during = func() { h.now = h.now.Add(40 * time.Second) }
+			ep, err := h.s.Expire(context.Background())
+			if err != nil {
+				t.Fatalf("Expire: %v", err)
+			}
+			if ep.Outcome != tc.outcome {
+				t.Errorf("outcome: got %s, want %s", ep.Outcome, tc.outcome)
+			}
+			if ep.EndedAt == nil || !ep.EndedAt.Equal(startAt) {
+				t.Errorf("EndedAt: got %v, want %v", ep.EndedAt, startAt)
+			}
+		})
+	}
+}
+
+func TestNamespaceSelector(t *testing.T) {
+	tests := []struct {
+		id   string
+		want string
+	}{
+		{"0123abcd", "app.kubernetes.io/managed-by=kubedrill,kubedrill.io/journal=0123abcd"},
+		{"ffff0000ffff0000", "app.kubernetes.io/managed-by=kubedrill,kubedrill.io/journal=ffff0000ffff0000"},
+	}
+	for _, tc := range tests {
+		if got := NamespaceSelector(tc.id); got != tc.want {
+			t.Errorf("NamespaceSelector(%q) = %q, want %q", tc.id, got, tc.want)
+		}
 	}
 }

@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/cauebraz/kubedrill/internal/grader"
@@ -66,23 +65,6 @@ func TestUpReportsAuditPolicyDriftEveryTime(t *testing.T) {
 	mustNotContain(t, errOut, auditPolicyOld)
 	if f.cluster.staleAsks != 3 {
 		t.Errorf("stale asked %d times, want 3 (never on a creation)", f.cluster.staleAsks)
-	}
-}
-
-func TestMinutesCellFloorsAtOneTenth(t *testing.T) {
-	for _, tc := range []struct {
-		d    time.Duration
-		want string
-	}{
-		{0, "-"},
-		{3 * time.Second, "0.1 min"},
-		{30 * time.Second, "0.5 min"},
-		{4*time.Minute + 6*time.Second, "4.1 min"},
-		{90 * time.Minute, "90.0 min"},
-	} {
-		if got := minutesCell(tc.d); got != tc.want {
-			t.Errorf("minutesCell(%s): got %q, want %q", tc.d, got, tc.want)
-		}
 	}
 }
 
@@ -190,153 +172,6 @@ func TestFitListTableKeepsMinimumTitle(t *testing.T) {
 	h, r = fitListTable(header, rows, 100)
 	if len(h) != 8 || r[0][1] != rows[0][1] {
 		t.Errorf("at 100 columns: header %v title %q", h, r[0][1])
-	}
-}
-
-func TestMarkdownJoinsListContinuations(t *testing.T) {
-	md := "Intro line\nsecond intro line.\n\n- first item line\n  continues here with more words\n  and a third line\n- second item\n  - nested item\n    nested continuation\n\n  not a continuation after a blank line\n\n```\n- code line\n  code continuation\n```\n\n1. ordered item\n   continues too\n"
-	got := joinListContinuations(md)
-	want := "Intro line\nsecond intro line.\n\n- first item line continues here with more words and a third line\n- second item\n  - nested item nested continuation\n\n  not a continuation after a blank line\n\n```\n- code line\n  code continuation\n```\n\n1. ordered item continues too\n"
-	if got != want {
-		t.Errorf("joinListContinuations:\n%s\nwant:\n%s", got, want)
-	}
-	var out strings.Builder
-	a := newApp(Options{Stdout: &out, IsTerminal: true, Getenv: func(k string) string { return map[string]string{"NO_COLOR": "1", "COLUMNS": "60"}[k] }})
-	plain := a.markdown("- first item line\n  continues here with more words and keeps going past the width\n- second\n")
-	mustContain(t, plain, "- first item line continues here with more words and keeps\n  going past the width\n- second\n")
-	b := newApp(Options{Stdout: &out, IsTerminal: true, Getenv: func(k string) string { return map[string]string{"COLUMNS": "60"}[k] }})
-	colored := stripANSI(b.markdown("- first item line\n  continues here with more words and keeps going past the width\n- second\n"))
-	mustContain(t, colored, "first item line continues here with more words and keeps")
-	mustNotContain(t, colored, "line\n  continues")
-	for _, l := range strings.Split(colored, "\n") {
-		if lipgloss.Width(l) > 60 {
-			t.Errorf("colored line of %d columns: %q", lipgloss.Width(l), l)
-		}
-	}
-}
-
-func TestWatchNarrowPaneWrapsStatusBannerAndNext(t *testing.T) {
-	m := newTestModel(&fakeWatcher{observe: failGrade()})
-	next, _ := m.Update(tea.WindowSizeMsg{Width: 30})
-	next, _ = next.(watchModel).Update(pollMsg{grade: failGrade()})
-	m = next.(watchModel)
-	view := m.View().Content
-	mustContain(t, view, "elapsed 0s   hints 0/2\n  checked 0s ago\n")
-	end := m.started.Add(4 * time.Minute)
-	m.solved = true
-	m.solvedEp = &journal.Episode{StartedAt: m.started, EndedAt: &end, HintsUsed: 1, Variant: "image"}
-	m.pick = &nextPick{ref: "002-service-dns", reason: "you have not tried it yet; it is the next one at L1"}
-	view = m.View().Content
-	mustContain(t, view, "Solved: Hello app is down in\n  4.0 min with 1 hint (variant\n  image)\n", "Next: kubedrill solution\n  001-hello-down (compare with\n  the reference) | kubedrill\n  list\n", "n: debrief, then start\n  002-service-dns (you have\n")
-	for _, l := range strings.Split(view, "\n") {
-		if strings.HasPrefix(l, "1 of 2 checks") || strings.HasPrefix(l, "c check") {
-			continue
-		}
-		if lipgloss.Width(l) > 30 {
-			t.Errorf("solved line of %d columns: %q", lipgloss.Width(l), l)
-		}
-	}
-	m.title = strings.Repeat("x", 50)
-	view = m.View().Content
-	mustContain(t, view, "Solved:\n  "+strings.Repeat("x", 25)+"...\n  in 4.0 min")
-	m.confirmReset, m.solved = true, false
-	view = m.View().Content
-	mustContain(t, view, "press x again to reset\n  001-hello-down with a new\n  seed; any other key cancels\n")
-}
-
-func TestWatchHintRevealsSpoilers(t *testing.T) {
-	m := newTestModel(&fakeWatcher{observe: spoilerGrade(), hints: []string{"Look at the image."}})
-	m.width = 120
-	next, _ := m.Update(pollMsg{grade: spoilerGrade()})
-	m = next.(watchModel)
-	mustContain(t, m.View().Content, "actual: "+spoilerHidden)
-	next, cmd := m.Update(key("h"))
-	next, _ = next.(watchModel).Update(runCmd(t, cmd))
-	m = next.(watchModel)
-	if m.hints != 1 {
-		t.Fatalf("hints: got %d, want 1", m.hints)
-	}
-	view := m.View().Content
-	mustContain(t, view, "actual: nginx:1.2x", "hint 1 of 1 (where to look): Look at the image.")
-	mustNotContain(t, view, spoilerHidden)
-}
-
-func TestWatchWidthBoundaryTruncatesOrWraps(t *testing.T) {
-	g := grader.Grade{Results: []grader.Result{{ID: "a", Description: strings.Repeat("word ", 30), Status: grader.StatusFail, Expected: "1", Actual: "0"}}}
-	for _, tc := range []struct {
-		width int
-		cut   bool
-	}{{80, true}, {79, false}} {
-		m := newTestModel(&fakeWatcher{observe: g})
-		next, _ := m.Update(tea.WindowSizeMsg{Width: tc.width})
-		next, _ = next.(watchModel).Update(pollMsg{grade: g})
-		view := next.(watchModel).View().Content
-		var first, second string
-		for i, l := range strings.Split(view, "\n") {
-			if strings.HasPrefix(l, "[fail] ") {
-				first = l
-				second = strings.Split(view, "\n")[i+1]
-				break
-			}
-		}
-		if tc.cut {
-			if lipgloss.Width(first) != tc.width || !strings.HasSuffix(first, "...") || !strings.HasPrefix(second, detailIndent+"expected") {
-				t.Errorf("width %d: first %q second %q, want a cut line", tc.width, first, second)
-			}
-			continue
-		}
-		if strings.HasSuffix(first, "...") || !strings.HasPrefix(second, detailIndent+"word") || lipgloss.Width(first) > tc.width {
-			t.Errorf("width %d: first %q second %q, want a wrapped line", tc.width, first, second)
-		}
-	}
-}
-
-func TestWatchProgressOutsideStartKeepsNotice(t *testing.T) {
-	m := newTestModel(&fakeWatcher{observe: failGrade()})
-	m.notice = "surrender cancelled"
-	next, cmd := m.Update(progressMsg("creating namespace x"))
-	if cmd != nil {
-		t.Error("progress issued a command")
-	}
-	if got := next.(watchModel).notice; got != "surrender cancelled" {
-		t.Errorf("notice: got %q, want it untouched outside a start", got)
-	}
-}
-
-func TestHangingWrapMeasuresVisibleColumnsAndKeepsLead(t *testing.T) {
-	styled := "\x1b[1mbold words\x1b[0m here and some more text"
-	got := hangingWrap(styled, 20, "  ")
-	if len(got) != 2 || got[0] != "\x1b[1mbold words\x1b[0m here and" || got[1] != "  some more text" {
-		t.Errorf("styled wrap: %q", got)
-	}
-	got = hangingWrap("  abc def ghi", 9, "    ")
-	if len(got) != 2 || got[0] != "  abc def" || got[1] != "    ghi" {
-		t.Errorf("leading spaces: %q", got)
-	}
-	if got := hangingWrap("short", 20, "  "); len(got) != 1 || got[0] != "short" {
-		t.Errorf("fits: %q", got)
-	}
-}
-
-func TestPaneWidthWinsOverColumns(t *testing.T) {
-	var out strings.Builder
-	a := newApp(Options{Stdout: &out, IsTerminal: true, Getenv: func(k string) string { return map[string]string{"COLUMNS": "120", "NO_COLOR": "1"}[k] }})
-	if got := a.width(); got != 120 {
-		t.Fatalf("width before watch: %d", got)
-	}
-	a.paneWidth = 50
-	if got := a.width(); got != 50 {
-		t.Errorf("width with a pane: got %d, want 50", got)
-	}
-	a.paneWidth = 20
-	if got := a.width(); got != markdownMinWidth {
-		t.Errorf("width with a tiny pane: got %d, want the floor %d", got, markdownMinWidth)
-	}
-	a.paneWidth = 50
-	for _, l := range strings.Split(a.wrapLine("  your diagnosis: "+strings.Repeat("cause ", 20), "    "), "\n") {
-		if lipgloss.Width(l) > 50 {
-			t.Errorf("debrief line of %d columns: %q", lipgloss.Width(l), l)
-		}
 	}
 }
 

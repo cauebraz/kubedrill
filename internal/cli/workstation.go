@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -30,7 +31,7 @@ func checkLayout(layout string) error {
 	return fmt.Errorf("--layout must be %s or %s, got %q", layoutTmux, layoutShell, layout)
 }
 
-func (a *App) shellCommand() *cobra.Command {
+func (a *app) shellCommand() *cobra.Command {
 	var layout string
 	var exam bool
 	cmd := &cobra.Command{
@@ -54,11 +55,11 @@ func (a *App) shellCommand() *cobra.Command {
 
 // runShell opens the workstation for the active episode, or for the cluster
 // alone without one; exam forces the exam workstation.
-func (a *App) runShell(ctx context.Context, layout string, exam bool) error {
+func (a *app) runShell(ctx context.Context, layout string, exam bool) error {
 	if a.insideWorkstation() {
 		return errors.New("already inside the workstation (KUBEDRILL_WORKSTATION=1); exit this shell to return to the host")
 	}
-	if !a.isTerminal || !a.isInputTerminal {
+	if !a.term.IsTerminal || !a.isInputTerminal {
 		return errors.New("shell needs a terminal on stdin and stdout; run it from an interactive terminal")
 	}
 	j, err := a.getJournal()
@@ -101,16 +102,17 @@ func (a *App) runShell(ctx context.Context, layout string, exam bool) error {
 // episode (ep may be nil) opens the exam workstation with its deadline. The
 // return line is printed when the shell exits normally and an episode is
 // still active, the one check would grade.
-func (a *App) openWorkstation(ctx context.Context, j Journal, ws Workstation, layout string, ep *journal.Episode) error {
+func (a *app) openWorkstation(ctx context.Context, j Journal, ws Workstation, layout string, ep *journal.Episode) error {
 	cl, err := a.getCluster()
 	if err != nil {
 		return err
 	}
 	fmt.Fprintln(a.stderr, "preparing the workstation...")
-	kubeconfig, err := cluster.InternalKubeconfigPath()
+	state, err := a.stateDir()
 	if err != nil {
 		return fmt.Errorf("workstation kubeconfig path: %w", err)
 	}
+	kubeconfig := cluster.InternalKubeconfigPathIn(state)
 	if err := cl.WriteInternalKubeconfig(ctx, kubeconfig); err != nil {
 		return fmt.Errorf("write workstation kubeconfig: %w", err)
 	}
@@ -130,7 +132,7 @@ func (a *App) openWorkstation(ctx context.Context, j Journal, ws Workstation, la
 	return nil
 }
 
-func (a *App) nodeCommand() *cobra.Command {
+func (a *app) nodeCommand() *cobra.Command {
 	names := strings.Join(cluster.NodeNames(), "|")
 	usage := "usage: kubedrill node <" + names + "> (kubectl get nodes lists them as " + cluster.Name + "-<node>)"
 	return &cobra.Command{
@@ -140,7 +142,7 @@ func (a *App) nodeCommand() *cobra.Command {
 			"Changes made there (files, processes, kubelet state) persist until kubedrill\n" +
 			"down; exit the shell to return to where node was run.",
 		Args: func(_ *cobra.Command, args []string) error {
-			if len(args) != 1 || !isNodeName(args[0]) {
+			if len(args) != 1 || !slices.Contains(cluster.NodeNames(), args[0]) {
 				return errors.New(usage)
 			}
 			return nil
@@ -167,13 +169,4 @@ func (a *App) nodeCommand() *cobra.Command {
 			return nil
 		},
 	}
-}
-
-func isNodeName(s string) bool {
-	for _, n := range cluster.NodeNames() {
-		if n == s {
-			return true
-		}
-	}
-	return false
 }

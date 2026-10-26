@@ -63,7 +63,9 @@ to the new namespace at its next prompt.
 | `--layout shell`                  | A single login shell, no tmux                           |
 | `kubedrill` binary not mounted    | `kubedrill binary not mounted at /usr/local/bin/kubedrill; starting a plain shell` |
 
-Exiting the shell ends the session and the container.
+Exiting the shell ends the session and the container. Quitting the ticket
+or watch pane leaves a bash in its place; exiting that bash closes only
+that pane.
 
 ## The shell
 
@@ -144,7 +146,8 @@ Nothing leaves your machine, and the checks never read these files.
   which is `<journal dir>/shell/commands.jsonl` on the host:
   `{"ts":"2026-10-25T14:03:11.120Z","cmd":"kubectl get pods","exit":0,"ms":180}`.
   kubedrill reads it when an episode ends, to count commands and list the
-  kubectl lines of "your path".
+  kubectl lines of "your path". Over 10 MiB it moves to
+  `commands.jsonl.1` after that read.
 - Recording: while an episode is active and stdin is a terminal, the shell
   runs under asciinema and writes
   `/data/recordings/<namespace>-<unix>.cast`. Idle time over 2 seconds is
@@ -178,7 +181,8 @@ stays readable at `/workspace/repo` (see Accepted risks).
 
 - Docker is required. Without the daemon, `kubedrill shell` fails with
   `the workstation needs docker: docker is not available (is Docker Desktop
-  or the daemon running?): <exit status>`.
+  or the daemon running?): docker info: <docker's message>: <exit status>`,
+  so a permission problem on the docker socket shows its own text.
 - The cluster must run on docker. Without the `kind` network it fails with
   `kind docker network not found; was the cluster created with docker?
   (kubedrill up)`.
@@ -210,9 +214,11 @@ container is built and started.
 | `/audit`                     | cluster audit directory (`cluster.AuditDir()`, `~/.local/state/kubedrill/kubedrill/audit` by default), only when it exists | read-only |
 
 The cluster state directory is `~/.local/state/kubedrill/kubedrill` (under
-`XDG_STATE_HOME` when set), outside the journal. `kubedrill` refuses a
-kubeconfig or binary inside the journal directory, which the container could
-rewrite.
+`XDG_STATE_HOME` when set), outside the journal. The journal directory is
+mounted read-write, so `kubedrill` refuses to start the workstation when it
+overlaps something the host later trusts: a kubeconfig or binary inside it,
+or the repository or the state directory inside it, or the journal inside
+either of them.
 
 Environment:
 
@@ -275,9 +281,10 @@ No capability is added back. The image strips the file capability of `ping`
   [workstation/README.md](../workstation/README.md).
 - `EnsureImage` runs `docker image inspect` and builds only when the tag is
   missing, with `docker build --progress quiet`. It prints `rebuilding
-  workstation image <tag> (sources changed)...` when an older
-  `kubedrill-workstation` tag exists, `building workstation image <tag>
-  (first time only, a few minutes)...` otherwise, and `workstation image
+  workstation image <tag> (sources changed)...` when any other
+  `kubedrill-workstation:<12 hex>` tag exists, whatever its age,
+  `building workstation image <tag> (first time only, a few minutes)...`
+  otherwise, and `workstation image
   <tag> built in <elapsed>` at the end.
 - After a build it removes older `kubedrill-workstation:<12 hex>` tags and
   prints `removed <n> older workstation image(s)`. It never removes the
@@ -285,13 +292,16 @@ No capability is added back. The image strips the file capability of `ping`
   may use it), untagged images or tags that are not 12 hex digits (such as
   `dev`).
 - The docker queries (`info`, `image inspect`, `image ls`, `network
-  inspect`, `inspect`) give up after 10 seconds. The build and the
-  interactive sessions have no timeout.
+  inspect`, `inspect`) give up after 10 seconds and keep docker's error
+  text. The build and the interactive sessions have no timeout; cancelling
+  the build kills its whole process group.
+- A session that ends with status 126 or 127 counts as a docker failure
+  only when docker printed a message; otherwise it is the status of your
+  last shell command and is not reported.
 - `EnsureBinary` cross-compiles `cmd/kubedrill` with `GOOS=linux
-  CGO_ENABLED=0 -trimpath -buildvcs=false` for the host architecture. It
-  rebuilds when the binary is missing or older than `go.mod`, `go.sum` or
-  the newest non-test `.go` file under `cmd/` or `internal/` (`testdata`
-  directories excluded).
+  CGO_ENABLED=0 -trimpath -buildvcs=false` for the host architecture on
+  every run; the Go build cache makes an unchanged tree a no-op of about
+  0.2 s, and a deleted source file is never left in a stale binary.
 
 ### tmux layout
 
@@ -304,8 +314,9 @@ No capability is added back. The image strips the file capability of `ping`
   episode is active and the terminal has at least 30 lines, in exam mode
   too.
 
-The shell pane gets `KUBEDRILL_TICKET_PANE` (1 or 0) and the keyboard. The
-container exits 0 when the shell ends.
+The shell pane gets `KUBEDRILL_TICKET_PANE` (1 or 0) and the keyboard. A
+`pane-exited` hook ends the session only when the exited pane is the shell
+pane. The container exits 0 when the shell ends.
 
 ## Accepted risks
 

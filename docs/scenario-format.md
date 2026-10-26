@@ -224,6 +224,14 @@ command history, so several valid fixes pass.
 - A `critical` check that fails, errors or is skipped forces the score to 0.
 - Every check has a 30 second budget. A probe check gets
   `max(30s, probe.timeout + 30s)`.
+- A probe fails at once, without waiting for its timeout, on
+  `InvalidImageName`, `ErrImageNeverPull`, `CreateContainerConfigError`
+  (with the kubelet message) and on a Forbidden or Unauthorized answer.
+  A probe that times out names the last error it saw (`last error: ...`).
+- A script check runs in its own process group. The group is killed when
+  the script exits, so a background child (`kubectl port-forward ... &`)
+  never outlives the check and never turns a passing check into an error.
+  Its output is capped at 64 KiB.
 
 ### Check fields
 
@@ -331,9 +339,9 @@ At least one per check. All compare after trimming whitespace.
   exists`. With a `selector`: `expected: at least one matching object
   actual: 0 matching objects`, and for `exists: false`, `expected: no
   matching objects  actual: N matching objects`.
-- A `checks.yaml` lint never saw that combines `exists` with `path`,
-  `probe` or `script` is graded as "has a value": `expected: a value at
-  <path>` (or `a value`, or `no value`).
+- A `checks.yaml` that lint never saw and that combines `exists` with
+  `path`, `probe` or `script` is an `[err ]` result with the same message
+  lint gives.
 
 ## setup/ and hook.sh
 
@@ -358,6 +366,9 @@ Rules for manifests:
   want 1 so the reset does not wait for old pods`). Set the same field on
   StatefulSet, Job and DaemonSet pod templates; lint checks Deployments
   only.
+- Every object has `metadata.name`. Objects are applied by name, so
+  `generateName` alone is refused (`has no metadata.name (generateName is
+  not supported: objects are applied by name)`).
 - Write `metadata.namespace: {{ .Namespace }}` in every manifest. An object
   without it lands in the episode namespace, but the explicit form keeps the
   file readable on its own.
@@ -405,14 +416,16 @@ A hook that needs a node-level fault calls the running binary:
 - Faults are recorded in `<cluster state dir>/faults.json`. The next
   `start` and `kubedrill heal` undo them, so a scenario never leaves a
   broken node behind.
+- A fault call cut short (Ctrl-C, timeout) keeps its record, because
+  Docker may still apply it; the error ends with `run kubedrill heal`.
 - `netem` needs the `sch_netem` module in the Docker VM kernel and fails
   with `tc netem is not available in this Docker VM kernel` without it.
 
 ### Script environment
 
 `hook.sh` and `solution/solve.sh` must be executable. They run with `bash`
-from their own directory, with the same allowlist `env.RunScript` gives
-script checks (`PATH`, `HOME`, `TMPDIR`, `LANG`, `LC_ALL`, `TERM`, `USER`)
+from their own directory through `internal/scriptrun`, the runner script
+checks use, with the same allowlist (`PATH`, `HOME`, `TMPDIR`, `LANG`, `LC_ALL`, `TERM`, `USER`)
 plus:
 
 | Variable | Value |
@@ -431,8 +444,9 @@ plus:
 - When the cluster does not exist yet, the scripts receive the original
   kubeconfig path. `start` checks the cluster first and stops with
   `cluster kubedrill: missing`.
-- Script checks read the pinned path once it is written, and the cluster
-  kubeconfig before that.
+- Script checks always get the pinned path. When it cannot be written, the
+  command stops with `script checks need a kubeconfig pinned to that
+  context`; it never falls back to your own kubeconfig.
 - Scripts are bash 3.2 compatible (macOS default): no `mapfile`, no
   associative arrays, no `${var,,}`.
 
@@ -527,13 +541,15 @@ Files:
   template parses; every Deployment sets `terminationGracePeriodSeconds:
   1`; the sandbox rule unless `allow_privileged = true`. Lint cuts setup
   files with `yamldoc.Split`, the splitter `kube` and the addon loader use,
-  so it sees the same documents the start applies.
+  so it sees the same documents the start applies. Text after `--- ` that
+  is not a comment starts the next document.
 - `checks.yaml`: strict YAML (unknown fields rejected), at least one check,
   the field rules above, `why` of 20 to 400 characters, `depends_on`
   targets that exist and form no cycle, `exists` only on a `resource`
   without `path`, `exit_code` only on a `probe` or `script`, `matches` a
   valid RE2 regexp, `spoiler` a boolean, `probe.image` pinned by digest,
-  `probe.timeout` a Go duration of at least 1s
+  `probe.timeout` a Go duration of at least 1s; on every rendered variant,
+  `path` parses as a JSONPath and `gte`/`lte` parse as finite numbers
 - `solution/`: `README.md` with the seven sections in order, `solve.sh`
   executable
 - `approaches/`: only directories, each named in lowercase words joined by
@@ -544,6 +560,10 @@ Files:
 
 Across the tree:
 
+- template output is capped at 4 MiB, a `range` over an integer literal
+  above 100000 is refused, and a render stops after 1000000 steps (range
+  iterations plus `template` calls, even ones that print nothing), so a
+  template cannot hang lint or start
 - every variant seed (1 to n) renders setup, checks, `instruction.md`,
   `hints.md`, `solution/README.md` and `approaches/`, so an undefined
   `.Vars` key shows up before a learner hits it

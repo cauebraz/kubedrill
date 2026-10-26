@@ -13,8 +13,9 @@ import (
 )
 
 // Write replaces path with data and mode perm: a temporary file next to
-// path is written, synced, chmodded and renamed over path. The parent
-// directory must exist.
+// path is written, synced, chmodded and renamed over path, then the parent
+// directory is synced so the rename survives a crash. The parent directory
+// must exist.
 func Write(path string, data []byte, perm fs.FileMode) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
@@ -43,6 +44,27 @@ func Write(path string, data []byte, perm fs.FileMode) error {
 	if err := os.Rename(name, path); err != nil {
 		_ = os.Remove(name)
 		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := syncDir(dir); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
+}
+
+// syncDir fsyncs dir. File systems that cannot sync a directory (EINVAL,
+// ENOTSUP) are not an error: the rename is then as durable as they allow.
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return fmt.Errorf("sync directory %s: %w", dir, err)
+	}
+	err = d.Sync()
+	cerr := d.Close()
+	if err != nil && !errors.Is(err, syscall.EINVAL) && !errors.Is(err, syscall.ENOTSUP) {
+		return fmt.Errorf("sync directory %s: %w", dir, err)
+	}
+	if cerr != nil {
+		return fmt.Errorf("sync directory %s: %w", dir, cerr)
 	}
 	return nil
 }

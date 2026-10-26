@@ -191,15 +191,19 @@ func (j *fakeJournal) Modify(id string, fn func(*journal.Episode) error) (*journ
 	return &cp, nil
 }
 
-func (j *fakeJournal) UpdateEnded(e journal.Episode) error {
-	*j.calls = append(*j.calls, "update-ended:"+e.ID)
+func (j *fakeJournal) ModifyEnded(id string, fn func(*journal.Episode) error) (*journal.Episode, error) {
+	*j.calls = append(*j.calls, "modify-ended:"+id)
 	for i := range j.ended {
-		if j.ended[i].ID == e.ID {
+		if j.ended[i].ID == id {
+			e := j.ended[i]
+			if err := fn(&e); err != nil {
+				return nil, err
+			}
 			j.ended[i] = e
-			return nil
+			return &e, nil
 		}
 	}
-	return journal.ErrUnknownEpisode
+	return nil, journal.ErrUnknownEpisode
 }
 
 func (j *fakeJournal) Episodes(string) ([]journal.Episode, error) {
@@ -932,7 +936,7 @@ func TestRecordDebrief(t *testing.T) {
 		if err := h.s.RecordDebrief(started.ID, d, &yes); err != nil {
 			t.Fatalf("RecordDebrief: %v", err)
 		}
-		if want := []string{"update-ended:" + started.ID}; !reflect.DeepEqual(h.calls, want) {
+		if want := []string{"modify-ended:" + started.ID}; !reflect.DeepEqual(h.calls, want) {
 			t.Errorf("calls: got %v, want %v", h.calls, want)
 		}
 		got := h.journal.ended[0]

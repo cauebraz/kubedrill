@@ -31,9 +31,22 @@ const (
 
 var podGVR = schema.GroupVersionResource{Version: "v1", Resource: "pods"}
 
+// terminalWaiting lists the container waiting reasons that never clear on
+// their own, so RunProbe stops waiting at once. ErrImagePull and
+// ImagePullBackOff are left out: a registry blip clears them.
+var terminalWaiting = map[string]bool{
+	"InvalidImageName":           true,
+	"ErrImageNeverPull":          true,
+	"CreateContainerConfigError": true,
+}
+
 // RunProbe runs image with command as a one-shot pod in ns, waits for it to
 // finish within the context deadline, and returns its exit code and logs.
-// The pod is deleted on every path.
+// The pod is deleted on every path. The wait ends at once when the pod
+// disappears, when reading it is Forbidden or Unauthorized, or when the
+// container waits with InvalidImageName, ErrImageNeverPull or
+// CreateContainerConfigError; other read errors are retried and the last
+// one is in the timeout error.
 func (c *Client) RunProbe(ctx context.Context, ns string, probe scenario.Probe) (ProbeResult, error) {
 	if probe.Image == "" {
 		return ProbeResult{}, errors.New("run probe: image is empty")
@@ -58,27 +71,53 @@ func (c *Client) RunProbe(ctx context.Context, ns string, probe scenario.Probe) 
 	defer cancel()
 	var final *unstructured.Unstructured
 	var lastWaiting string
+	var lastErr error
+	terminal := false
 	err = wait.PollUntilContextCancel(waitCtx, probePollInterval, true, func(ctx context.Context) (bool, error) {
 		pod, err := pods.Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
-			if apierrors.IsNotFound(err) {
-				return false, fmt.Errorf("pod disappeared")
+			switch {
+			case apierrors.IsNotFound(err):
+				terminal = true
+				return false, errors.New("pod disappeared")
+			case apierrors.IsForbidden(err), apierrors.IsUnauthorized(err):
+				terminal = true
+				return false, fmt.Errorf("get pod: %w", err)
+			}
+			if ctx.Err() == nil {
+				lastErr = err
 			}
 			return false, nil
 		}
+		lastErr = nil
 		phase, _, _ := unstructured.NestedString(pod.Object, "status", "phase")
 		if phase == "Succeeded" || phase == "Failed" {
 			final = pod
 			return true, nil
 		}
-		if reason := waitingReason(pod); reason != "" {
+		reason, message := waitingState(pod)
+		if terminalWaiting[reason] {
+			terminal = true
+			return false, fmt.Errorf("container %s cannot start: %s: %s", probeContainer, reason, message)
+		}
+		if reason != "" {
 			lastWaiting = reason
 		}
 		return false, nil
 	})
 	if err != nil {
+		if terminal {
+			return ProbeResult{}, fmt.Errorf("run probe %s in %q: %w", name, ns, err)
+		}
+		var detail []string
 		if lastWaiting != "" {
-			return ProbeResult{}, fmt.Errorf("run probe %s in %q: wait for completion: %w (container waiting: %s)", name, ns, err, lastWaiting)
+			detail = append(detail, "container waiting: "+lastWaiting)
+		}
+		if lastErr != nil {
+			detail = append(detail, "last error: "+lastErr.Error())
+		}
+		if len(detail) > 0 {
+			return ProbeResult{}, fmt.Errorf("run probe %s in %q: wait for completion: %w (%s)", name, ns, err, strings.Join(detail, "; "))
 		}
 		return ProbeResult{}, fmt.Errorf("run probe %s in %q: wait for completion: %w", name, ns, err)
 	}
@@ -154,7 +193,7 @@ func probePod(name string, probe scenario.Probe, timeout time.Duration) *unstruc
 	}}
 }
 
-func waitingReason(pod *unstructured.Unstructured) string {
+func waitingState(pod *unstructured.Unstructured) (reason, message string) {
 	statuses, _, _ := unstructured.NestedSlice(pod.Object, "status", "containerStatuses")
 	for _, s := range statuses {
 		m, ok := s.(map[string]any)
@@ -164,10 +203,11 @@ func waitingReason(pod *unstructured.Unstructured) string {
 		if n, _, _ := unstructured.NestedString(m, "name"); n != probeContainer {
 			continue
 		}
-		reason, _, _ := unstructured.NestedString(m, "state", "waiting", "reason")
-		return reason
+		reason, _, _ = unstructured.NestedString(m, "state", "waiting", "reason")
+		message, _, _ = unstructured.NestedString(m, "state", "waiting", "message")
+		return reason, message
 	}
-	return ""
+	return "", ""
 }
 
 // ProbeTimeout is the time a probe pod may run: p.Timeout parsed as a Go

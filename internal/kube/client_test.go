@@ -415,13 +415,33 @@ func TestGetAndListThroughFake(t *testing.T) {
 	}
 }
 
-type stubVersioner struct{ err error }
+type stubVersioner struct {
+	err    error
+	gotCtx *context.Context
+}
 
-func (s stubVersioner) ServerVersion() (*version.Info, error) {
+func (s stubVersioner) ServerVersionWithContext(ctx context.Context) (*version.Info, error) {
+	if s.gotCtx != nil {
+		*s.gotCtx = ctx
+	}
 	if s.err != nil {
 		return nil, s.err
 	}
 	return &version.Info{GitVersion: "v1.37.1"}, nil
+}
+
+type pingKey struct{}
+
+func TestPingPassesContext(t *testing.T) {
+	var got context.Context
+	c := &Client{disco: stubVersioner{gotCtx: &got}}
+	ctx := context.WithValue(context.Background(), pingKey{}, "caller")
+	if err := c.Ping(ctx); err != nil {
+		t.Fatalf("Ping: %v", err)
+	}
+	if got == nil || got.Value(pingKey{}) != "caller" {
+		t.Errorf("Ping context: got %v, want the caller's context", got)
+	}
 }
 
 func TestPing(t *testing.T) {

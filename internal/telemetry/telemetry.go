@@ -6,9 +6,11 @@ package telemetry
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,14 +28,6 @@ const (
 	maxCommands           = 50
 	maxLine               = 16 * 1024 * 1024
 	preWriteWindow        = time.Second
-)
-
-// Verdicts of Summarize.
-const (
-	VerdictRootCause   = "root-cause"
-	VerdictSymptomOnly = "symptom-only"
-	VerdictNoWrites    = "no-writes"
-	VerdictUnknown     = "unknown"
 )
 
 // AuditEvent is the part of one audit.k8s.io/v1 Event the summary uses.
@@ -96,19 +90,37 @@ type shellLine struct {
 // (inclusive) that touch namespace: objects in it, the namespace object
 // itself, and cluster-scoped objects that are nodes, persistentvolumes or one
 // of fixTargets (see MatchTarget). It reads path and the rotated siblings
-// next to it (audit-*.log) modified at or after since. Only the
+// next to it (audit-*.log) modified at or after since. The current file is
+// opened before the backups are listed, so a rotation in between neither
+// loses the lines it moved nor reads them twice. Only the
 // ResponseComplete stage is kept. Requests from kubedrill itself (user agent
 // containing "kubedrill", which covers the kubedrill-check kubectl of script
 // checks), from system users (controllers, nodes, service accounts) and
 // dry-run requests are dropped. Lines that do not decode, such as a partial
-// last line while the API server writes, are skipped. A missing path returns
+// last line while the API server writes, and lines over 16 MiB are skipped.
+// A missing path returns
 // an error that satisfies errors.Is(err, fs.ErrNotExist): with the audit log
 // on, a missing file means the trajectory is unknown, not empty.
 func ReadAudit(path string, since, until time.Time, namespace string, fixTargets []string) ([]AuditEvent, error) {
-	if _, err := os.Stat(path); err != nil {
+	return readAudit(path, since, until, namespace, fixTargets, nil)
+}
+
+// readAudit is ReadAudit; afterOpen, when not nil, runs between opening the
+// current file and listing the backups.
+func readAudit(path string, since, until time.Time, namespace string, fixTargets []string, afterOpen func()) ([]AuditEvent, error) {
+	cur, err := os.Open(path)
+	if err != nil {
 		return nil, fmt.Errorf("read audit log: %w", err)
 	}
-	files := append(rotated(path, since), path)
+	defer cur.Close()
+	curInfo, err := cur.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("read audit log: %w", err)
+	}
+	if afterOpen != nil {
+		afterOpen()
+	}
+	backups := rotated(path, since, curInfo)
 	var out []AuditEvent
 	keep := func(line []byte) {
 		var l auditLine
@@ -157,18 +169,23 @@ func ReadAudit(path string, since, until time.Time, namespace string, fixTargets
 		}
 		out = append(out, e)
 	}
-	for _, f := range files {
-		if err := scanLines(f, keep); err != nil {
+	for _, f := range backups {
+		if err := scanFile(f, keep); err != nil {
 			return nil, fmt.Errorf("read audit log: %w", err)
 		}
+	}
+	if err := eachLine(cur, maxLine, keep); err != nil {
+		return nil, fmt.Errorf("read audit log: scan %s: %w", path, err)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Time.Before(out[j].Time) })
 	return out, nil
 }
 
 // rotated lists the backups the API server keeps next to path
-// (<base>-<timestamp><ext>) modified at or after since, oldest first.
-func rotated(path string, since time.Time) []string {
+// (<base>-<timestamp><ext>) modified at or after since, oldest first,
+// leaving out the one that is the same file as current (the open current
+// file, renamed by a rotation after it was opened).
+func rotated(path string, since time.Time, current os.FileInfo) []string {
 	ext := filepath.Ext(path)
 	base := strings.TrimSuffix(filepath.Base(path), ext)
 	matches, err := filepath.Glob(filepath.Join(filepath.Dir(path), base+"-*"+ext))
@@ -182,7 +199,7 @@ func rotated(path string, since time.Time) []string {
 	var found []file
 	for _, m := range matches {
 		info, err := os.Stat(m)
-		if err != nil || info.IsDir() || info.ModTime().Before(since) {
+		if err != nil || info.IsDir() || info.ModTime().Before(since) || os.SameFile(info, current) {
 			continue
 		}
 		found = append(found, file{m, info.ModTime()})
@@ -219,10 +236,15 @@ func MatchTarget(target string, fixTargets []string) bool {
 // ReadShellLog returns the shell commands in path run between since and
 // until (inclusive), oldest first. Each line is
 // {"ts":"<RFC3339Nano>","cmd":"...","exit":0,"ms":12}; lines that do not
-// decode are skipped. A missing file returns nil, nil.
+// decode and lines over 16 MiB are skipped, and a line whose leading ts is
+// outside the window is skipped without decoding the rest. A missing file
+// returns nil, nil; an error means the file could not be read at all.
 func ReadShellLog(path string, since, until time.Time) ([]ShellCommand, error) {
 	var out []ShellCommand
-	err := scanLines(path, func(line []byte) {
+	err := scanFile(path, func(line []byte) {
+		if ts, ok := leadingTS(line); ok && (ts.Before(since) || ts.After(until)) {
+			return
+		}
 		var l shellLine
 		if json.Unmarshal(line, &l) != nil || l.TS.IsZero() || strings.TrimSpace(l.Cmd) == "" {
 			return
@@ -265,7 +287,7 @@ func IsWrite(verb string) bool {
 // otherwise. Commands lists up to 50 kubectl command lines from the shell
 // log, in order.
 func Summarize(audit []AuditEvent, auditAvailable bool, shell []ShellCommand, fixTargets []string) journal.Telemetry {
-	t := journal.Telemetry{Source: source(auditAvailable, len(shell) > 0), Verdict: VerdictUnknown}
+	t := journal.Telemetry{Source: source(auditAvailable, len(shell) > 0), Verdict: journal.VerdictUnknown}
 	var firstKubectl *time.Time
 	if auditAvailable {
 		events := append([]AuditEvent(nil), audit...)
@@ -300,11 +322,11 @@ func Summarize(audit []AuditEvent, auditAvailable bool, shell []ShellCommand, fi
 		}
 		switch {
 		case t.Writes == 0:
-			t.Verdict = VerdictNoWrites
+			t.Verdict = journal.VerdictNoWrites
 		case hit:
-			t.Verdict = VerdictRootCause
+			t.Verdict = journal.VerdictRootCause
 		default:
-			t.Verdict = VerdictSymptomOnly
+			t.Verdict = journal.VerdictSymptomOnly
 		}
 	}
 	for _, c := range shell {
@@ -417,7 +439,51 @@ func isKubectl(cmd string) bool {
 	return name == "kubectl" || name == "k"
 }
 
-func scanLines(path string, fn func(line []byte)) error {
+// RotateShellLog renames the shell log at path to path+".1", replacing an
+// older backup, when it is larger than limit bytes, so the next episode
+// reads a short file. The workstation shell reopens the log for every
+// command, so the next command starts a new file. It reports whether it
+// rotated; a missing file is not an error.
+func RotateShellLog(path string, limit int64) (bool, error) {
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("rotate shell log: %w", err)
+	}
+	if info.Size() <= limit {
+		return false, nil
+	}
+	if err := os.Rename(path, path+".1"); err != nil {
+		return false, fmt.Errorf("rotate shell log: %w", err)
+	}
+	return true, nil
+}
+
+var tsPrefix = []byte(`{"ts":"`)
+
+// leadingTS parses the ts field when the line starts with it, as the
+// workstation shell writes every line.
+func leadingTS(line []byte) (time.Time, bool) {
+	if !bytes.HasPrefix(line, tsPrefix) {
+		return time.Time{}, false
+	}
+	rest := line[len(tsPrefix):]
+	end := bytes.IndexByte(rest, '"')
+	if end < 0 {
+		return time.Time{}, false
+	}
+	ts, err := time.Parse(time.RFC3339Nano, string(rest[:end]))
+	if err != nil {
+		return time.Time{}, false
+	}
+	return ts, true
+}
+
+// scanFile calls fn for every non-empty line of path up to maxLine bytes; a
+// missing file has no lines.
+func scanFile(path string, fn func(line []byte)) error {
 	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -426,17 +492,42 @@ func scanLines(path string, fn func(line []byte)) error {
 		return fmt.Errorf("open %s: %w", path, err)
 	}
 	defer f.Close()
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), maxLine)
-	for sc.Scan() {
-		line := sc.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-		fn(line)
-	}
-	if err := sc.Err(); err != nil {
+	if err := eachLine(f, maxLine, fn); err != nil {
 		return fmt.Errorf("scan %s: %w", path, err)
 	}
 	return nil
+}
+
+// eachLine calls fn for every non-empty line of r without its line ending.
+// A line longer than limit bytes is skipped, not an error; the slice passed
+// to fn is only valid during the call.
+func eachLine(r io.Reader, limit int, fn func(line []byte)) error {
+	br := bufio.NewReaderSize(r, 64*1024)
+	var buf []byte
+	overlong := false
+	for {
+		chunk, err := br.ReadSlice('\n')
+		if !overlong {
+			if len(buf)+len(chunk) > limit+1 {
+				overlong, buf = true, buf[:0]
+			} else {
+				buf = append(buf, chunk...)
+			}
+		}
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		if err != nil && !errors.Is(err, io.EOF) {
+			return err
+		}
+		if !overlong {
+			if line := bytes.TrimRight(buf, "\r\n"); len(line) > 0 {
+				fn(line)
+			}
+		}
+		buf, overlong = buf[:0], false
+		if err != nil {
+			return nil
+		}
+	}
 }
