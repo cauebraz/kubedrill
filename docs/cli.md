@@ -1166,6 +1166,9 @@ Style:
   non-breaking space padding.
 - A command copied from a ticket pastes back into the shell unchanged.
   Colors are kept.
+- A hard line break (a line ending in a backslash or two spaces, as in the
+  `From:` and `Priority:` lines of a ticket) stays a line break, inside a
+  block quote too; glamour alone joins the two lines with a space.
 - The style is fixed: the CLI never queries the terminal for its background
   color, so nothing typed ahead is consumed by a terminal reply.
   `KUBEDRILL_NO_TERM_QUERY=1`, set inside the workstation, keeps it that way.

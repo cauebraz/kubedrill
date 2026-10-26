@@ -48,6 +48,70 @@ func markdownStyle() ansi.StyleConfig {
 // rendered text is wrapped, so a span never breaks across lines.
 const codeSpace = '\uE000'
 
+// hardBreak stands for a markdown hard line break (a line ending in a
+// backslash or two spaces) while glamour renders, since glamour joins the
+// two lines with a space; splitHardBreaks turns it back into a line break.
+const hardBreak = '\uE001'
+
+// markHardBreaks replaces each hard line break outside fenced code blocks
+// with hardBreak: the trailing backslash or spaces of a line followed by a
+// non-blank line are removed and hardBreak is appended.
+func markHardBreaks(md string) string {
+	lines := strings.Split(md, "\n")
+	fence := ""
+	for i, l := range lines {
+		t := strings.TrimSpace(l)
+		if fence != "" {
+			if strings.HasPrefix(t, fence) {
+				fence = ""
+			}
+			continue
+		}
+		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
+			fence = t[:3]
+			continue
+		}
+		if i+1 >= len(lines) || strings.Trim(lines[i+1], " >") == "" || t == "" || t == ">" {
+			continue
+		}
+		switch {
+		case strings.HasSuffix(l, "\\") && !strings.HasSuffix(l, "\\\\"):
+			lines[i] = strings.TrimSuffix(l, "\\") + string(hardBreak)
+		case strings.HasSuffix(l, "  "):
+			lines[i] = strings.TrimRight(l, " ") + string(hardBreak)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// leadingSpace matches the escape sequences and the one space glamour puts
+// after a hard break marker.
+var leadingSpace = regexp.MustCompile(`^((?:\x1b\[[0-9;]*m)*) `)
+
+// splitHardBreaks breaks every rendered line at hardBreak; the new line
+// repeats the margin and block quote bars of the line it came from.
+func splitHardBreaks(rendered string) string {
+	if !strings.ContainsRune(rendered, hardBreak) {
+		return rendered
+	}
+	lines := strings.Split(rendered, "\n")
+	out := make([]string, 0, len(lines))
+	for _, l := range lines {
+		parts := strings.Split(l, string(hardBreak))
+		if len(parts) == 1 {
+			out = append(out, l)
+			continue
+		}
+		m := linePrefix.FindStringSubmatch(StripANSI(l))
+		prefix := m[1] + m[2] + strings.Repeat(" ", len(m[3]))
+		out = append(out, parts[0])
+		for _, p := range parts[1:] {
+			out = append(out, prefix+leadingSpace.ReplaceAllString(p, "$1"))
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
 // listMarker matches the start of a list item: a bullet or an ordered
 // marker after optional indentation.
 var listMarker = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)])\s+`)

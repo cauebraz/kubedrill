@@ -123,7 +123,9 @@ func (p Printer) WrapLine(line, cont string) string {
 // and unchanged on a pipe so logs keep it. Glamour renders without wrapping
 // and the result is wrapped afterwards: fenced code blocks and inline code
 // spans never wrap (they overflow), and block quote and list item
-// continuation lines keep the "| " prefix and a hanging indent.
+// continuation lines keep the "| " prefix and a hanging indent. A hard line
+// break (a line ending in a backslash or two spaces) stays a line break,
+// which glamour alone would turn into a space.
 func (p Printer) Markdown(md string) string {
 	if !p.Color {
 		md = strings.TrimRight(md, "\n") + "\n"
@@ -133,7 +135,7 @@ func (p Printer) Markdown(md string) string {
 		src, code := protectCode(joinListContinuations(md))
 		return strings.ReplaceAll(wrapLines(src, p.Width, code), string(codeSpace), " ")
 	}
-	src, code := protectCode(joinListContinuations(md))
+	src, code := protectCode(markHardBreaks(joinListContinuations(md)))
 	r, err := glamour.NewTermRenderer(
 		glamour.WithStyles(markdownStyle()),
 		glamour.WithWordWrap(0),
@@ -145,7 +147,7 @@ func (p Printer) Markdown(md string) string {
 	if err != nil {
 		return md
 	}
-	return strings.ReplaceAll(wrapLines(out, p.Width, code), string(codeSpace), " ")
+	return strings.ReplaceAll(wrapLines(splitHardBreaks(out), p.Width, code), string(codeSpace), " ")
 }
 
 // The styles of the command output and the TUIs.

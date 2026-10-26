@@ -97,6 +97,39 @@ func TestMarkdownJoinsListContinuations(t *testing.T) {
 	}
 }
 
+func TestMarkdownKeepsHardLineBreaks(t *testing.T) {
+	tests := []struct {
+		name    string
+		md      string
+		want    []string
+		notWant []string
+	}{
+		{name: "backslash in a block quote", md: "> **From:** Dana (storefront team)\\\n> **Priority:** high\n>\n> We moved it.\n", want: []string{"| From: Dana (storefront team)\n", "| Priority: high\n"}, notWant: []string{"\uE001", "team) Priority"}},
+		{name: "two spaces in a paragraph", md: "From: Dana  \nPriority: high\n", want: []string{"From: Dana\n", "Priority: high\n"}, notWant: []string{"Dana Priority"}},
+		{name: "soft break stays a space", md: "From: Dana\nPriority: high\n", want: []string{"From: Dana Priority: high"}},
+		{name: "escaped backslash is no break", md: "path C:\\\\\nnext\n", want: []string{"next"}, notWant: []string{"\uE001"}},
+		{name: "backslash before a blank line", md: "end\\\n\nnext paragraph\n", want: []string{"next paragraph"}, notWant: []string{"\uE001"}},
+		{name: "fenced code keeps its backslash", md: "```\nline one \\\nline two\n```\n", want: []string{"line one \\\n"}, notWant: []string{"\uE001"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var out strings.Builder
+			term := Terminal{Out: &out, IsTerminal: true, Color: true, Getenv: func(k string) string { return map[string]string{"COLUMNS": "80"}[k] }}
+			got := StripANSI(term.Printer().Markdown(tc.md))
+			for _, w := range tc.want {
+				if !strings.Contains(got, w) {
+					t.Errorf("Markdown(%q):\n%s\nwant it to contain %q", tc.md, got, w)
+				}
+			}
+			for _, w := range tc.notWant {
+				if strings.Contains(got, w) {
+					t.Errorf("Markdown(%q):\n%s\nwant no %q", tc.md, got, w)
+				}
+			}
+		})
+	}
+}
+
 func TestPaneWidthWinsOverColumns(t *testing.T) {
 	var out strings.Builder
 	a := Terminal{Out: &out, IsTerminal: true, Getenv: func(k string) string { return map[string]string{"COLUMNS": "120"}[k] }}
