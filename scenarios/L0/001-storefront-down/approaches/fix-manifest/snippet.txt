@@ -1,0 +1,6 @@
+git switch -c fix/storefront-image
+sed -i.bak 's|image: .*|image: nginx:1.27-alpine|' deploy/storefront.yaml && rm deploy/storefront.yaml.bak
+kubectl -n {{ .Namespace }} diff -f deploy/storefront.yaml
+kubectl -n {{ .Namespace }} apply -f deploy/storefront.yaml
+kubectl -n {{ .Namespace }} rollout status deployment/storefront --timeout=120s
+git commit -am "fix(storefront): use the nginx 1.27-alpine image from docker hub"

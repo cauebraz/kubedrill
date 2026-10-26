@@ -31,7 +31,7 @@ Gateway and KWOK to the cluster.
 The workstation opens in your terminal. This is the first scenario, a
 minute in:
 
-![The kubedrill workstation on scenario 000: the ticket at the top left, the shell below it, the live checks on the right](docs/images/first-scenario.png)
+![The kubedrill workstation on scenario 001: the ticket at the top left, the shell below it, the live checks on the right](docs/images/first-scenario.png)
 
 The ticket sits at the top left; the mouse wheel scrolls it while you type.
 Your shell below already points at the scenario namespace. The checks on

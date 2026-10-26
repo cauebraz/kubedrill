@@ -14,7 +14,7 @@ linux `kubedrill` binary the container uses.
 With an active episode and a terminal of at least 120 columns, the
 workstation opens a tmux session with three panes:
 
-![The workstation on scenario 000: ticket at the top left, shell below, checks on the right](images/first-scenario.png)
+![The workstation on scenario 001: ticket at the top left, shell below, checks on the right](images/first-scenario.png)
 
 ```
 +--------------------------------+---------------------+
@@ -80,7 +80,7 @@ On login the shell:
 - points `kubectl` at the episode namespace, so `k get pods` needs no `-n`.
 
 The prompt shows that namespace: `learner@kubedrill /workspace
-[ns:hello-world-k3x9p]`.
+[ns:shop-k3x9p]`.
 
 Other settings from `workstation/bashrc`: `alias k=kubectl` with
 completion, helm and `kubedrill` completion, `KUBE_EDITOR=vim`.

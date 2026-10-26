@@ -82,7 +82,7 @@ func (c *Catalog) All() []*Scenario {
 }
 
 // Find resolves ref to one scenario: the exact Meta.ID, a three-digit numeric
-// prefix such as "000", or a prefix of the id that matches exactly one
+// prefix such as "001", or a prefix of the id that matches exactly one
 // scenario. It returns a *NotFoundError (errors.Is ErrNotFound) when nothing
 // matches and an error wrapping ErrAmbiguous when several ids match.
 func (c *Catalog) Find(ref string) (*Scenario, error) {

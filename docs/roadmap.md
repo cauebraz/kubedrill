@@ -2,7 +2,7 @@
 
 Where the curriculum goes and what the platform still lacks.
 
-- Today: 1 scenario exists (`000-hello-down`, L0).
+- Today: 1 scenario exists (`001-storefront-down`, L0).
 - Planned: 138 scenarios in 40 modules across 7 levels, 575 hours in total.
 
 Everything here is read from `curriculum.yaml`. `kubedrill path` prints the

@@ -45,7 +45,7 @@ kubedrill start <id>   # a scenario you pick
 ```
 
 `start` creates a new namespace for this episode, for example
-`hello-world-k3x9p`, and applies the broken setup there. The ticket, hints
+`shop-k3x9p`, and applies the broken setup there. The ticket, hints
 and walkthrough all name this namespace. The namespaces of your older
 episodes are deleted in the background.
 
@@ -102,11 +102,12 @@ Any fix that produces the required state passes.
 Each check prints what it expected and what it found:
 
 ```
-[fail] service hello has at least one ready endpoint
+[fail] service storefront has at least one ready endpoint
        expected: at least one value  actual: no value at {.items[*].endpoints[?(@.conditions.ready==true)].addresses[*]}
        why: A Service is only a selector; EndpointSlices hold the pod IPs that
             are Ready. With no ready endpoint kube-proxy rejects every
-            connection to the hello Service (connection refused).
+            connection to the storefront Service (connection refused), and
+            the edge answers 503.
 ```
 
 - **`why:`** says what the check protects in production. It is not a hint
@@ -189,10 +190,10 @@ needed first. Start the scenario again with a new seed the same day.
 When every check passes, the debrief prints a summary:
 
 ```
-Debrief: 000-hello-down (episode <id>, solved)
+Debrief: 001-storefront-down (episode <id>, solved)
   duration 4.1 min, 0 hints
   observations before the first write: 5 (telemetry: audit+shell)
-  first write: apps/deployments/hello (a fix target)
+  first write: apps/deployments/storefront (a fix target)
   verdict: root-cause
   your diagnosis: <your text>
   root cause: <root cause of the variant>

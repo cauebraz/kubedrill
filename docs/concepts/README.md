@@ -14,7 +14,7 @@ Scenarios reference them from `scenario.toml` and the CLI prints them.
 
 ```toml
 [scenario]
-id = "000-hello-down"
+id = "001-storefront-down"
 type = "break-fix"
 concepts = ["pod-lifecycle", "image-pull", "readiness-and-endpoints"]
 ```

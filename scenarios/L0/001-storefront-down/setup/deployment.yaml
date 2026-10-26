@@ -1,25 +1,27 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: hello
+  name: storefront
   namespace: {{ .Namespace }}
   labels:
-    app: hello
-    team: frontend
+    app.kubernetes.io/name: storefront
+    app.kubernetes.io/part-of: shop
+    team: storefront
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels:
-      app: hello
+      app.kubernetes.io/name: storefront
   template:
     metadata:
       labels:
-        app: hello
-        team: frontend
+        app.kubernetes.io/name: storefront
+        app.kubernetes.io/part-of: shop
+        team: storefront
     spec:
       terminationGracePeriodSeconds: 1
       containers:
-        - name: app
+        - name: web
           image: {{ .Vars.image }}
           ports:
             - name: http
@@ -28,9 +30,17 @@ spec:
             httpGet:
               path: /
               port: http
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html
+              readOnly: true
           resources:
             requests:
               cpu: 10m
               memory: 32Mi
             limits:
               memory: 64Mi
+      volumes:
+        - name: html
+          configMap:
+            name: storefront-html

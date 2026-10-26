@@ -587,13 +587,13 @@ func TestRealScenarioDiagnosisData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(s.Meta.FixTargets, ","); got != "apps/deployments/hello" {
-		t.Errorf("FixTargets = %q, want apps/deployments/hello", got)
+	if got := strings.Join(s.Meta.FixTargets, ","); got != "apps/deployments/storefront" {
+		t.Errorf("FixTargets = %q, want apps/deployments/storefront", got)
 	}
 	wantCause := map[string]string{
-		"typo-tag":         "1.27-alpnie",
-		"wrong-repo":       "library/ngnix",
-		"private-registry": "registry.internal.example",
+		"old-registry": "registry.old-dc.example",
+		"typo-tag":     "1.27-alpnie",
+		"wrong-repo":   "library/ngnix",
 	}
 	for _, v := range s.Variants {
 		if !strings.Contains(v.RootCause, wantCause[v.Name]) {
@@ -607,19 +607,20 @@ func TestRealScenarioDiagnosisData(t *testing.T) {
 	if got := strings.Join(names, ","); got != "fix-manifest,set-image" {
 		t.Errorf("Approaches = %q, want fix-manifest,set-image", got)
 	}
-	r, err := s.Render(1, WithNamespace("hello-world-k3x9z"))
+	r, err := s.Render(1, WithNamespace("shop-k3x9z"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	literal := regexp.MustCompile("-n shop([^-a-z0-9]|$)|\\.shop\\.svc|`shop`")
 	for name, text := range map[string]string{"instruction": r.Instruction, "solution": r.Solution, "hints": strings.Join(r.Hints, "\n")} {
 		if strings.Contains(text, "{{") {
 			t.Errorf("%s still holds a template action", name)
 		}
-		if strings.Contains(strings.ReplaceAll(text, "hello-world-k3x9z", ""), "hello-world") {
-			t.Errorf("%s names the literal namespace hello-world instead of the episode namespace", name)
+		if m := literal.FindString(text); m != "" {
+			t.Errorf("%s names the literal namespace shop (%q) instead of the episode namespace", name, m)
 		}
 	}
-	if !strings.Contains(r.Instruction, "http://hello.hello-world-k3x9z.svc") {
+	if !strings.Contains(r.Instruction, "http://storefront.shop-k3x9z.svc") {
 		t.Errorf("instruction lacks the episode URL")
 	}
 	for _, a := range r.Approaches {
@@ -627,7 +628,7 @@ func TestRealScenarioDiagnosisData(t *testing.T) {
 			t.Errorf("approach %s still holds a template action", a.Name)
 		}
 		for _, line := range strings.Split(a.Snippet, "\n") {
-			if strings.HasPrefix(line, "kubectl ") && !strings.HasPrefix(line, "kubectl -n hello-world-k3x9z ") {
+			if strings.HasPrefix(line, "kubectl ") && !strings.HasPrefix(line, "kubectl -n shop-k3x9z ") {
 				t.Errorf("approach %s line %q does not target the episode namespace", a.Name, line)
 			}
 		}

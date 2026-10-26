@@ -1,14 +1,19 @@
 [scenario]
-id = "000-hello-down"
-title = "Hello app is down after the cluster migration"
+id = "001-storefront-down"
+title = "Storefront is down after the cluster migration"
 level = "L0"
 module = "L0.1"
 type = "break-fix"
 minutes = 10
-namespace = "hello-world"
+namespace = "shop"
 exam = ["CKA:troubleshooting"]
 concepts = ["pod-lifecycle", "image-pull", "readiness-and-endpoints"]
-fix_targets = ["apps/deployments/hello"]
+fix_targets = ["apps/deployments/storefront"]
+
+[[variant]]
+name = "old-registry"
+vars = { image = "registry.old-dc.example/mirror/nginx:1.27-alpine" }
+root_cause = "The Deployment image still points at the old datacenter's registry mirror registry.old-dc.example, which does not resolve from the new cluster's nodes, so every pull fails."
 
 [[variant]]
 name = "typo-tag"
@@ -19,8 +24,3 @@ root_cause = "The Deployment image tag 1.27-alpnie does not exist in docker.io/l
 name = "wrong-repo"
 vars = { image = "docker.io/library/ngnix:1.27-alpine" }
 root_cause = "The Deployment image names the repository library/ngnix, which does not exist on Docker Hub, so every pull is denied."
-
-[[variant]]
-name = "private-registry"
-vars = { image = "registry.internal.example/platform/nginx:1.27-alpine" }
-root_cause = "The Deployment image points at the registry host registry.internal.example, which does not resolve from the nodes, so every pull fails."

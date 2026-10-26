@@ -1,0 +1,2 @@
+kubectl -n {{ .Namespace }} set image deployment/storefront web=nginx:1.27-alpine
+kubectl -n {{ .Namespace }} rollout status deployment/storefront --timeout=120s

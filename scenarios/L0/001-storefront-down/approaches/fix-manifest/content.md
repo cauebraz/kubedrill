@@ -1,13 +1,15 @@
 Correct the image in the manifest the team deploys from, review the change
-with `kubectl -n {{ .Namespace }} diff -f deploy/hello.yaml`, apply it and
-record it in the repository. The workstation holds no copy of the team's
+with `kubectl -n {{ .Namespace }} diff -f deploy/storefront.yaml`, apply it
+and record it in the repository. The workstation holds no copy of the team's
 repository;
-`mkdir -p deploy && kubectl -n {{ .Namespace }} get deployment hello -o yaml > deploy/hello.yaml`
+`mkdir -p deploy && kubectl -n {{ .Namespace }} get deployment storefront -o yaml > deploy/storefront.yaml`
 gives you a file to practice the same edit, diff and apply.
 
 Choose it when the manifest is the source of truth, which is every GitOps
 setup: the fix survives the next pipeline run, the history records who
-changed what, and the reviewer sees a one-line diff.
+changed what, and the reviewer sees a one-line diff. After a migration it is
+also the moment to search the repository for the old registry host, since
+every manifest copied from the old environment may carry it.
 
 The trade-off is time. A pull request, a review and a pipeline run take
 minutes that an outage may not have. A common pattern combines both routes:

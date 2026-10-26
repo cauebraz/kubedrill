@@ -1,6 +1,6 @@
 checks:
   - id: deploy-exists
-    description: deployment hello exists
+    description: deployment storefront exists
     why: >-
       The Deployment is the object the team owns; if it is gone, nothing below
       it (ReplicaSet, pods) can recover and the fix is a redeploy, not a patch.
@@ -9,11 +9,11 @@ checks:
       apiVersion: apps/v1
       kind: Deployment
       namespace: "{{ .Namespace }}"
-      name: hello
+      name: storefront
     exists: true
 
   - id: ready-replicas
-    description: deployment hello has 2 ready replicas
+    description: deployment storefront has 3 ready replicas
     why: >-
       readyReplicas counts pods whose Ready condition is true; the same
       condition is what puts a pod IP into the Service's EndpointSlices, so 0
@@ -24,37 +24,50 @@ checks:
       apiVersion: apps/v1
       kind: Deployment
       namespace: "{{ .Namespace }}"
-      name: hello
+      name: storefront
     path: "{.status.readyReplicas}"
-    equals: "2"
+    equals: "3"
 
   - id: image-correct
-    description: deployment hello runs the nginx:1.27-alpine image
+    description: deployment storefront runs the nginx:1.27-alpine image
     why: >-
       The image reference is the contract between the manifest and the
-      registry; one wrong character means no container ever starts, and the
-      pipeline that applied it still reported success.
+      registry; one wrong host, repository or tag means no container ever
+      starts, and the pipeline that applied it still reported success.
     depends_on: [deploy-exists]
     resource:
       apiVersion: apps/v1
       kind: Deployment
       namespace: "{{ .Namespace }}"
-      name: hello
+      name: storefront
     path: "{.spec.template.spec.containers[0].image}"
     matches: "^(docker\\.io/(library/)?)?nginx:1\\.27-alpine(@sha256:[0-9a-f]{64})?$"
     spoiler: true
 
   - id: service-endpoints
-    description: service hello has at least one ready endpoint
+    description: service storefront has at least one ready endpoint
     why: >-
       A Service is only a selector; EndpointSlices hold the pod IPs that are
       Ready. With no ready endpoint kube-proxy rejects every connection to
-      the hello Service (connection refused).
+      the storefront Service (connection refused), and the edge answers 503.
     depends_on: [ready-replicas]
     resource:
       apiVersion: discovery.k8s.io/v1
       kind: EndpointSlice
       namespace: "{{ .Namespace }}"
-      selector: kubernetes.io/service-name=hello
+      selector: kubernetes.io/service-name=storefront
     path: "{.items[*].endpoints[?(@.conditions.ready==true)].addresses[*]}"
     not_empty: true
+
+  - id: page-served
+    description: service storefront serves the ACME Storefront 2.14.0 page
+    why: >-
+      Ready endpoints prove the pods passed their probe, not that customers
+      get the page; an in-cluster request through the Service is what the
+      edge does, and the body proves the static build is the one mounted.
+    depends_on: [service-endpoints]
+    probe:
+      image: curlimages/curl:8.14.1@sha256:9a1ed35addb45476afa911696297f8e115993df459278ed036182dd2cd22b67b
+      command: ["curl", "-fsS", "-m", "5", "http://storefront.{{ .Namespace }}.svc/"]
+      timeout: 30s
+    contains: "ACME Storefront 2.14.0"

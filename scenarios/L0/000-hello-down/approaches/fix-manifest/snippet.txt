@@ -1,6 +1,0 @@
-git switch -c fix/hello-image
-sed -i.bak 's|image: .*|image: nginx:1.27-alpine|' deploy/hello.yaml && rm deploy/hello.yaml.bak
-kubectl -n {{ .Namespace }} diff -f deploy/hello.yaml
-kubectl -n {{ .Namespace }} apply -f deploy/hello.yaml
-kubectl -n {{ .Namespace }} rollout status deployment/hello --timeout=120s
-git commit -am "fix(hello): use the nginx 1.27-alpine image"

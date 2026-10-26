@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-const realScenario = "../../scenarios/L0/000-hello-down"
+const realScenario = "../../scenarios/L0/001-storefront-down"
 
 type fixture map[string]string
 
@@ -100,7 +100,7 @@ func TestLoadRealScenario(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(%s): %v", realScenario, err)
 	}
-	if got, want := s.Meta.ID, "000-hello-down"; got != want {
+	if got, want := s.Meta.ID, "001-storefront-down"; got != want {
 		t.Errorf("Meta.ID = %q, want %q", got, want)
 	}
 	if got, want := s.Meta.Level, "L0"; got != want {
@@ -109,7 +109,7 @@ func TestLoadRealScenario(t *testing.T) {
 	if got, want := s.Meta.Type, TypeBreakFix; got != want {
 		t.Errorf("Meta.Type = %q, want %q", got, want)
 	}
-	if got, want := s.Meta.Namespace, "hello-world"; got != want {
+	if got, want := s.Meta.Namespace, "shop"; got != want {
 		t.Errorf("Meta.Namespace = %q, want %q", got, want)
 	}
 	if got, want := len(s.Variants), 3; got != want {
@@ -118,10 +118,10 @@ func TestLoadRealScenario(t *testing.T) {
 	if got, want := len(s.Hints), 4; got != want {
 		t.Errorf("len(Hints) = %d, want %d", got, want)
 	}
-	if got, want := len(s.Checks), 4; got != want {
+	if got, want := len(s.Checks), 5; got != want {
 		t.Errorf("len(Checks) = %d, want %d", got, want)
 	}
-	if got, want := len(s.SetupFiles), 2; got != want {
+	if got, want := len(s.SetupFiles), 3; got != want {
 		t.Errorf("len(SetupFiles) = %d, want %d", got, want)
 	}
 	for _, p := range []string{s.SolveScript, s.Dir} {
@@ -337,10 +337,10 @@ func TestRenderVariantCycling(t *testing.T) {
 		name  string
 		image string
 	}{
-		{1, "typo-tag", "nginx:1.27-alpnie"},
-		{2, "wrong-repo", "docker.io/library/ngnix:1.27-alpine"},
-		{3, "private-registry", "registry.internal.example/platform/nginx:1.27-alpine"},
-		{4, "typo-tag", "nginx:1.27-alpnie"},
+		{1, "old-registry", "registry.old-dc.example/mirror/nginx:1.27-alpine"},
+		{2, "typo-tag", "nginx:1.27-alpnie"},
+		{3, "wrong-repo", "docker.io/library/ngnix:1.27-alpine"},
+		{4, "old-registry", "registry.old-dc.example/mirror/nginx:1.27-alpine"},
 	}
 	for _, tc := range tests {
 		r, err := s.Render(tc.seed)
@@ -353,17 +353,17 @@ func TestRenderVariantCycling(t *testing.T) {
 		if got := r.Vars["image"]; got != tc.image {
 			t.Errorf("seed %d: Vars[image] = %q, want %q", tc.seed, got, tc.image)
 		}
-		if r.Namespace != "hello-world" {
-			t.Errorf("seed %d: Namespace = %q, want hello-world", tc.seed, r.Namespace)
+		if r.Namespace != "shop" {
+			t.Errorf("seed %d: Namespace = %q, want shop", tc.seed, r.Namespace)
 		}
-		if len(r.Manifests) != 2 || !strings.Contains(r.Manifests[0], "image: "+tc.image) {
+		if len(r.Manifests) != 3 || !strings.Contains(r.Manifests[1], "image: "+tc.image) {
 			t.Errorf("seed %d: manifests do not contain image %q", tc.seed, tc.image)
 		}
 		if strings.Contains(strings.Join(r.Manifests, ""), "{{") {
 			t.Errorf("seed %d: manifests still contain template syntax", tc.seed)
 		}
-		if got := r.Checks[0].Resource.Namespace; got != "hello-world" {
-			t.Errorf("seed %d: check namespace = %q, want hello-world", tc.seed, got)
+		if got := r.Checks[0].Resource.Namespace; got != "shop" {
+			t.Errorf("seed %d: check namespace = %q, want shop", tc.seed, got)
 		}
 		if r.Seed != tc.seed {
 			t.Errorf("Seed = %d, want %d", r.Seed, tc.seed)
@@ -1149,10 +1149,10 @@ func TestVariantForMatchesRender(t *testing.T) {
 		seed int64
 		want string
 	}{
-		{1, "typo-tag"},
-		{2, "wrong-repo"},
-		{3, "private-registry"},
-		{4, "typo-tag"},
+		{1, "old-registry"},
+		{2, "typo-tag"},
+		{3, "wrong-repo"},
+		{4, "old-registry"},
 		{1_000_000, s.Variants[(1_000_000-1)%int64(len(s.Variants))].Name},
 	}
 	for _, tc := range tests {

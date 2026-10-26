@@ -12,12 +12,13 @@ one, see [CONTRIBUTING.md](../CONTRIBUTING.md).
 ## Directory layout
 
 ```
-scenarios/L0/000-hello-down/
+scenarios/L0/001-storefront-down/
 |-- scenario.toml        metadata, concepts, fix_targets and [[variant]] tables
 |-- instruction.md       the ticket: symptom, environment, "## Done when", constraints
 |-- hints.md             the hint ladder: 3 or 4 "## Hint N: <rung>" sections
 |-- setup/
-|   |-- deployment.yaml  Go text/template manifests, applied in file-name order
+|   |-- configmap.yaml   Go text/template manifests, applied in file-name order
+|   |-- deployment.yaml
 |   |-- service.yaml
 |   `-- hook.sh          optional, executable, runs after the manifests
 |-- checks.yaml          declarative grading: source, validators, why, depends_on, weight, critical
@@ -37,30 +38,30 @@ kebab-case slug (`^\d{3}-[a-z0-9-]+$`). The parent directory is the level,
 
 ## scenario.toml
 
-Abridged from `000-hello-down` (one variant left out):
+Abridged from `001-storefront-down` (one variant left out):
 
 ```toml
 [scenario]
-id = "000-hello-down"
-title = "Hello app is down after the cluster migration"
+id = "001-storefront-down"
+title = "Storefront is down after the cluster migration"
 level = "L0"
 module = "L0.1"
 type = "break-fix"
 minutes = 10
-namespace = "hello-world"
+namespace = "shop"
 exam = ["CKA:troubleshooting"]
 concepts = ["pod-lifecycle", "image-pull", "readiness-and-endpoints"]
-fix_targets = ["apps/deployments/hello"]
+fix_targets = ["apps/deployments/storefront"]
+
+[[variant]]
+name = "old-registry"
+vars = { image = "registry.old-dc.example/mirror/nginx:1.27-alpine" }
+root_cause = "The Deployment image still points at the old datacenter's registry mirror registry.old-dc.example, which does not resolve from the new cluster's nodes, so every pull fails."
 
 [[variant]]
 name = "typo-tag"
 vars = { image = "nginx:1.27-alpnie" }
 root_cause = "The Deployment image tag 1.27-alpnie does not exist in docker.io/library/nginx, so every pull fails with not found."
-
-[[variant]]
-name = "wrong-repo"
-vars = { image = "docker.io/library/ngnix:1.27-alpine" }
-root_cause = "The Deployment image names the repository library/ngnix, which does not exist on Docker Hub, so every pull is denied."
 ```
 
 | Key | Required | Rule |
@@ -93,7 +94,7 @@ Notes:
   `kubedrill-debug` (node debugging pods) or any `kube-*` name.
 - `fix_targets`: each entry is `group/resource/name`, with the core group
   written `core` and the resource as the lowercase plural
-  (`apps/deployments/hello`, `core/services/hello`). No duplicates.
+  (`apps/deployments/storefront`, `core/services/storefront`). No duplicates.
   Telemetry compares the learner's writes with this list for the verdict
   (`root-cause` or `symptom-only`).
 - `concepts`: `kubedrill learn` prints the pages. Reuse a page when it names
@@ -138,7 +139,7 @@ so an undefined key fails the render instead of printing an empty string:
 | Field | Value |
 |-------|-------|
 | `{{ .Seed }}` | The episode seed, int64, at least 1 |
-| `{{ .Namespace }}` | The episode namespace: rendered `namespace` plus its suffix (`hello-world-k3x9p`) |
+| `{{ .Namespace }}` | The episode namespace: rendered `namespace` plus its suffix (`shop-k3x9p`) |
 | `{{ .Variant }}` | The selected variant name |
 | `{{ .Vars.key }}` | The variant's `vars.key` |
 
@@ -198,7 +199,7 @@ this order. The fourth is optional.
 ```yaml
 checks:
   - id: ready-replicas
-    description: deployment hello has 2 ready replicas
+    description: deployment storefront has 3 ready replicas
     why: readyReplicas counts pods that pass readiness; replicas that are Running but not Ready receive no traffic, so this is the number users feel.
     depends_on: [deploy-exists]
     weight: 2
@@ -206,9 +207,9 @@ checks:
       apiVersion: apps/v1
       kind: Deployment
       namespace: "{{ .Namespace }}"
-      name: hello
+      name: storefront
     path: "{.status.readyReplicas}"
-    equals: "2"
+    equals: "3"
 ```
 
 Checks assert outcomes (ready replicas, endpoints, a response code), never
@@ -255,7 +256,7 @@ starts with a capital letter unless the first word is a field name
 `spoiler: true` fits a check whose actual value names the root cause, such
 as an image reference or a selector value. The grader copies the flag into
 the result, and `check` and `watch` hide the actual value until the first
-hint or a recorded diagnosis. `000-hello-down` sets it on `image-correct`.
+hint or a recorded diagnosis. `001-storefront-down` sets it on `image-correct`.
 
 Templated fields: `description`, `resource.namespace`, `resource.name`,
 `resource.selector`, `path`, `equals`, `not_equals`, `matches`, `contains`,
@@ -469,7 +470,7 @@ The sections are required, exactly these, in this order:
    trace it would leave.
 4. `## Observation that splits them`: the read commands that rule all but
    one cause out, with the output line that matters, per variant when it
-   differs. `000-hello-down` runs `kubectl -n {{ .Namespace }} get events
+   differs. `001-storefront-down` runs `kubectl -n {{ .Namespace }} get events
    --sort-by=.lastTimestamp` and `kubectl -n {{ .Namespace }} describe pod
    <pod-name>`.
 5. `## Change`: one change in a fenced code block, with a second valid path
@@ -507,8 +508,8 @@ exactly two files:
   paragraph or two. `kubedrill solution --approach <name>` prints it.
 
 Both are templates, so a snippet names the namespace with `-n {{ .Namespace
-}}`: `kubectl -n {{ .Namespace }} set image deployment/hello
-app=nginx:1.27-alpine`.
+}}`: `kubectl -n {{ .Namespace }} set image deployment/storefront
+web=nginx:1.27-alpine`.
 
 ## What lint and smoke enforce
 

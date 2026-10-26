@@ -91,8 +91,8 @@ func TestLoadRealCurriculum(t *testing.T) {
 			t.Fatalf("exam %s: weights sum to %d, want 100", ex.ID, sum)
 		}
 	}
-	if got := c.Levels[0].Modules[0].Scenarios[0].ID; got != "000-hello-down" {
-		t.Fatalf("L0.1 first scenario id: got %q, want 000-hello-down", got)
+	if got := c.Levels[0].Modules[0].Scenarios[0].ID; got != "001-storefront-down" {
+		t.Fatalf("L0.1 first scenario id: got %q, want 001-storefront-down", got)
 	}
 	if got, want := strings.Join(c.Levels[0].Modules[0].Concepts, ","), "pod-lifecycle,image-pull,readiness-and-endpoints,labels-and-selectors,troubleshooting-loop,what-changed"; got != want {
 		t.Fatalf("L0.1 concepts: got %q, want %q", got, want)
@@ -100,7 +100,7 @@ func TestLoadRealCurriculum(t *testing.T) {
 	if got, want := strings.Join(c.ConceptIDs(), ","), "cluster-dns,control-plane-signals,image-pull,labels-and-selectors,pod-lifecycle,readiness-and-endpoints,resources-and-qos,troubleshooting-loop,what-changed"; got != want {
 		t.Fatalf("ConceptIDs: got %q, want %q", got, want)
 	}
-	cov, err := c.ExamCoverage("CKA", map[string]bool{"000-hello-down": true})
+	cov, err := c.ExamCoverage("CKA", map[string]bool{"001-storefront-down": true})
 	if err != nil {
 		t.Fatalf("ExamCoverage CKA: %v", err)
 	}
@@ -116,8 +116,8 @@ func TestLoadRealCurriculum(t *testing.T) {
 	if ts == nil {
 		t.Fatal("CKA coverage: troubleshooting domain missing")
 	}
-	if len(ts.Scenarios) != 1 || ts.Scenarios[0] != "000-hello-down" || ts.Done != 1 {
-		t.Fatalf("troubleshooting coverage: got %+v, want [000-hello-down] done 1", ts)
+	if len(ts.Scenarios) != 1 || ts.Scenarios[0] != "001-storefront-down" || ts.Done != 1 {
+		t.Fatalf("troubleshooting coverage: got %+v, want [001-storefront-down] done 1", ts)
 	}
 }
 

@@ -28,7 +28,7 @@ Conventions shared by every command:
 
 - Every command accepts the global flag `--root <dir>`, the repository root
   (see `KUBEDRILL_ROOT` in [Environment variables](#environment-variables)).
-- `<ref>` is a scenario id (`000-hello-down`), its numeric prefix (`000`) or
+- `<ref>` is a scenario id (`001-storefront-down`), its numeric prefix (`000`) or
   any id prefix that matches one scenario.
 - `kubedrill <command> --help` prints a two to five line description for
   `start`, `watch`, `check`, `hint`, `diagnose`, `debrief`, `submit`,
@@ -243,8 +243,8 @@ Grades once, prints one line per check and records the grade.
   list grades nothing` (`kubedrill submit grades them once` in exam mode).
 - For every check: `N. <id>: <description>`, then `asserts: <subject>
   <validators>` built from the check fields, for example `asserts:
-  Deployment hello in namespace hello-world-ab12c: {.status.readyReplicas}
-  equals "2"`. The namespace part appears when the check names one, which a
+  Deployment storefront in namespace shop-ab12c: {.status.readyReplicas}
+  equals "3"`. The namespace part appears when the check names one, which a
   rendered check always does.
 - Then, when they apply: `runs after <ids>`, `critical: if it does not pass
   (failed, errored or skipped) the score is 0` and `why: ...`.
@@ -985,7 +985,7 @@ After a solve (`check`, `watch`, `submit`) the debrief prints:
 Debrief: <id> (episode <episode id>, solved)
   duration 4.1 min, 0 hints
   observations before the first write: 5 (telemetry: audit+shell)
-  first write: apps/deployments/hello (a fix target)
+  first write: apps/deployments/storefront (a fix target)
   verdict: root-cause
   your diagnosis: <your text>
   root cause: <root_cause of the variant>

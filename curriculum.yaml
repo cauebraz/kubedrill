@@ -12,8 +12,8 @@ levels:
         exam: ["CKA:troubleshooting"]
         concepts: [pod-lifecycle, image-pull, readiness-and-endpoints, labels-and-selectors, troubleshooting-loop, what-changed]
         scenarios:
-          - id: 000-hello-down
-            ticket: "Dashboard says hello 0/2 ready after the migration"
+          - id: 001-storefront-down
+            ticket: "Storefront 0/3 ready and the edge returns 503 after the cluster migration"
             type: break-fix
             feasibility: kind
           - ticket: "Find which of 40 pods in shop is restarting and why; label it triage=yes"
