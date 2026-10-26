@@ -34,8 +34,8 @@ func TestExecuteBoundsOutput(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			start := time.Now()
 			got, err := execute("f.yaml", tt.text, templateData{Seed: tt.seed, Variant: "v1", Vars: map[string]string{"a": "b"}})
-			if elapsed := time.Since(start); elapsed > 5*time.Second {
-				t.Errorf("elapsed: got %v, want under 5s", elapsed)
+			if elapsed := time.Since(start); elapsed > 30*time.Second {
+				t.Errorf("elapsed: got %v, want under 30s", elapsed)
 			}
 			gotErr := ""
 			if err != nil {

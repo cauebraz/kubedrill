@@ -5,9 +5,28 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+// syncBuilder is a strings.Builder safe for one writer and one reader.
+type syncBuilder struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *syncBuilder) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuilder) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
 
 func TestPromptsEndOnInterrupt(t *testing.T) {
 	tests := []struct {
@@ -71,7 +90,7 @@ func TestDefaultPromptEndsOnFirstInterrupt(t *testing.T) {
 	pr, pw := io.Pipe()
 	t.Cleanup(func() { pw.Close() })
 	ctx, cancel := context.WithCancel(context.Background())
-	var out, errb strings.Builder
+	var out, errb syncBuilder
 	done := make(chan int, 1)
 	go func() {
 		done <- Main(ctx, []string{"--root", f.root}, Options{
@@ -89,17 +108,24 @@ func TestDefaultPromptEndsOnFirstInterrupt(t *testing.T) {
 			NamespaceSuffix: func() string { return "abcde" },
 		})
 	}()
-	time.Sleep(200 * time.Millisecond)
+	const prompt = "Start 001-hello-down now? [Y/n]"
+	deadline := time.Now().Add(30 * time.Second)
+	for !strings.Contains(out.String(), prompt) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the prompt never appeared:\n%s", out.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	cancel()
 	select {
 	case code := <-done:
 		if code != ExitError {
 			t.Errorf("exit: got %d, want %d", code, ExitError)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("the Start now? prompt kept waiting after the interrupt")
 	}
-	mustContain(t, out.String(), "Start 001-hello-down now? [Y/n]")
+	mustContain(t, out.String(), prompt)
 	mustContain(t, errb.String(), "kubedrill: interrupted")
 	if cur, _ := f.journal.Current(); cur != nil {
 		t.Errorf("episode started after an interrupt at the prompt: %s", cur.ID)
