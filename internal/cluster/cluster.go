@@ -40,6 +40,11 @@ import (
 // Name is the kind cluster name every profile uses.
 const Name = "kubedrill"
 
+// DebugImage is the image of the node debugging pods (kubectl debug node)
+// that kubedrill node uses where docker is not available. PullDebugImage
+// loads it on every node so the first node shell needs no registry.
+const DebugImage = "busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e"
+
 const (
 	defaultProfile = "base"
 	contextName    = "kind-" + Name
@@ -61,6 +66,7 @@ const (
 	auditPolicyName        = "audit-policy.yaml"
 	kindClusterLabel       = "io.x-k8s.kind.cluster"
 	existsTimeout          = 15 * time.Second
+	pullTimeout            = 60 * time.Second
 )
 
 var nodeNames = []string{"control-plane", "worker", "worker2"}
@@ -378,6 +384,23 @@ func (m *Manager) ensure(ctx context.Context, profile string, data ProfileData) 
 	}
 	if lostRace {
 		return m.exportIfMissing(kubeconfig)
+	}
+	return nil
+}
+
+// PullDebugImage pulls DebugImage into the containerd of every kind node
+// with crictl, one docker exec per node bounded by 60 seconds. It returns
+// every failure at once, each naming its node.
+func (m *Manager) PullDebugImage(ctx context.Context) error {
+	var errs []error
+	for _, n := range nodeNames {
+		node := Name + "-" + n
+		if _, err := m.runFor(ctx, pullTimeout, "docker", "exec", node, "crictl", "pull", DebugImage); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", node, dockerError("docker exec "+node, err)))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("pull %s: %w", DebugImage, errors.Join(errs...))
 	}
 	return nil
 }

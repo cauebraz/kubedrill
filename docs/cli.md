@@ -694,6 +694,10 @@ Addons:
 - Then it prints `addons: metrics-server, gateway`.
 - While an aggregated API is not served yet it prints `waiting for API
   services: ...`, then `API services available`.
+- Then it pulls the node debugging image (pinned busybox) on every node
+  with `crictl`, so `kubedrill node` inside the workstation needs no
+  registry. A failed pull is the line `warning: pull ...; kubedrill node
+  pulls it on first use inside the workstation`, and `up` still succeeds.
 - An unknown name is `unknown addon(s) x; valid: ...`, exit 1.
 
 ### down
@@ -758,11 +762,23 @@ each, or `no recorded faults`.
 kubedrill node <control-plane|worker|worker2>
 ```
 
-Opens a root shell on the named kind node: a `docker exec` into the kind
-node container `kubedrill-<node>`, not the workstation image.
+Opens a root shell on the named kind node. Changes made there persist
+until `kubedrill down`.
 
-- It first prints `kubedrill node: root on kubedrill-<node> (kind node;
-  changes persist until kubedrill down)`.
+- On the host it runs `docker exec` into the kind node container
+  `kubedrill-<node>` and first prints `kubedrill node: root on
+  kubedrill-<node> (kind node; changes persist until kubedrill down)`.
+- Inside the workstation, which has no docker, it runs `kubectl debug
+  node/kubedrill-<node> --profile=sysadmin` and chroots into the node
+  filesystem at `/host`, the way you reach a node on a real cluster
+  without ssh. It first prints `kubedrill node: root on kubedrill-<node>
+  through kubectl debug node/kubedrill-<node> --profile=sysadmin -- chroot
+  /host (changes persist until kubedrill down)`. The debugging pod runs
+  in the `kubedrill-debug` namespace, which the checks and the debrief do
+  not read, and is deleted when the shell ends.
+- In the workstation, `ssh control-plane`, `ssh worker` and `ssh worker2`
+  (also `ssh kubedrill-worker` or `ssh root@worker`) run `kubedrill node`,
+  as `ssh <node>` does in the exam. Every other `ssh` is the real client.
 - Any other argument is the usage error `usage: kubedrill node
   <control-plane|worker|worker2> (kubectl get nodes lists them as
   kubedrill-<node>)`.

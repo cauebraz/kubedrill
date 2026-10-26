@@ -56,6 +56,7 @@ type Cluster interface {
 	Addons() []string
 	BaseAddons() []string
 	EnsureAddons(ctx context.Context, k cluster.AddonApplier, names []string) error
+	PullDebugImage(ctx context.Context) error
 }
 
 // Faults is what fault, heal and start need from the fault manager.
@@ -82,6 +83,7 @@ type Workstation interface {
 	DockerAvailable(ctx context.Context) error
 	Shell(ctx context.Context, opts workstation.ShellOptions) error
 	NodeShell(ctx context.Context, clusterName, node string) error
+	NodeDebug(ctx context.Context, clusterName, node, image string) error
 	Replay(ctx context.Context, cast string) error
 }
 

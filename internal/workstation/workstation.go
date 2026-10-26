@@ -730,6 +730,94 @@ func (m *Manager) NodeShell(ctx context.Context, clusterName, node string) error
 	return sessionResult("node shell on "+name, cmd.Run(), tail)
 }
 
+// DebugNamespace holds the node debugging pods NodeDebug creates. The
+// checks and the telemetry read only the episode namespace, so these pods
+// count neither in the grade nor in the debrief.
+const DebugNamespace = "kubedrill-debug"
+
+// NodeDebug opens a root shell on the kind node <clusterName>-<node> without
+// docker, the way a real cluster allows it: kubectl debug
+// node/<clusterName>-<node> --profile=sysadmin with image, chrooted into
+// the node filesystem at /host. It applies DebugNamespace first, deletes the
+// finished pods in it before the session and, after it, the debugging pod
+// for this node that the session created (pods listed before the session,
+// such as another live session's, are kept; the deletion outlives a
+// cancelled ctx by up to 30 seconds). It runs the kubectl on PATH with the
+// current KUBECONFIG. A session that kubectl ends with a non-zero status
+// returns nil: kubectl has already printed its own message, and the status
+// may be the last command of the node shell.
+func (m *Manager) NodeDebug(ctx context.Context, clusterName, node, image string) error {
+	if nodes := cluster.NodeNames(); !slices.Contains(nodes, node) {
+		return fmt.Errorf("node debug: node %q is not one of %s", node, strings.Join(nodes, ", "))
+	}
+	if clusterName == "" {
+		return errors.New("node debug: cluster name is empty")
+	}
+	name := clusterName + "-" + node
+	apply := m.run(ctx, "kubectl", "apply", "-f", "-")
+	apply.Stdin = strings.NewReader("apiVersion: v1\nkind: Namespace\nmetadata:\n  name: " + DebugNamespace + "\n")
+	if out, err := apply.CombinedOutput(); err != nil {
+		return fmt.Errorf("node debug %s: apply namespace %s: %w: %s", name, DebugNamespace, err, strings.TrimSpace(string(out)))
+	}
+	m.deleteFinishedDebugPods(ctx)
+	before, listed := m.debugPods(ctx, name)
+	defer func() {
+		if !listed {
+			return
+		}
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		after, ok := m.debugPods(cctx, name)
+		if !ok {
+			return
+		}
+		var created []string
+		for _, p := range after {
+			if !slices.Contains(before, p) {
+				created = append(created, p)
+			}
+		}
+		if len(created) > 0 {
+			args := append([]string{"delete", "pods", "--namespace", DebugNamespace, "--ignore-not-found", "--wait=false"}, created...)
+			_ = m.run(cctx, "kubectl", args...).Run()
+		}
+	}()
+	cmd := m.run(ctx, "kubectl", "debug", "node/"+name, "--namespace", DebugNamespace, "-it", "--quiet",
+		"--profile=sysadmin", "--image="+image, "--", "chroot", "/host", "/bin/bash", "-l")
+	tail := m.attach(cmd)
+	err := cmd.Run()
+	var exitErr *exec.ExitError
+	if err == nil || errors.As(err, &exitErr) {
+		return nil
+	}
+	return fmt.Errorf("node debug %s: %w: %s", name, err, strings.TrimSpace(tail.String()))
+}
+
+// debugPods lists the pods in DebugNamespace that kubectl debug created for
+// node (named node-debugger-<node>-<suffix>); ok is false when kubectl
+// fails.
+func (m *Manager) debugPods(ctx context.Context, node string) (names []string, ok bool) {
+	out, err := m.run(ctx, "kubectl", "get", "pods", "--namespace", DebugNamespace, "-o", "jsonpath={.items[*].metadata.name}").Output()
+	if err != nil {
+		return nil, false
+	}
+	for _, p := range strings.Fields(string(out)) {
+		if strings.HasPrefix(p, "node-debugger-"+node+"-") {
+			names = append(names, p)
+		}
+	}
+	return names, true
+}
+
+// deleteFinishedDebugPods deletes the pods in DebugNamespace that are
+// neither Pending nor Running, best effort: a failure leaves them for the
+// next session or kubedrill down.
+func (m *Manager) deleteFinishedDebugPods(ctx context.Context) {
+	cmd := m.run(ctx, "kubectl", "delete", "pods", "--namespace", DebugNamespace,
+		"--field-selector=status.phase!=Pending,status.phase!=Running", "--ignore-not-found", "--wait=false")
+	_ = cmd.Run()
+}
+
 // DockerAvailable reports whether the docker daemon answers `docker info`
 // within ten seconds.
 func (m *Manager) DockerAvailable(ctx context.Context) error {

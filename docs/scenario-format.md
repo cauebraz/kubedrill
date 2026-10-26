@@ -89,8 +89,8 @@ Notes:
   alphanumerics>`. It may use template syntax (`shop-{{ .Seed }}`).
   Rendered, it must be a DNS-1123 label of at most 57 characters, so the
   suffixed name fits the 63 of a label. It must not be `default`,
-  `kube-system`, `kube-public`, `kube-node-lease`, `local-path-storage` or
-  any `kube-*` name.
+  `kube-system`, `kube-public`, `kube-node-lease`, `local-path-storage`,
+  `kubedrill-debug` (node debugging pods) or any `kube-*` name.
 - `fix_targets`: each entry is `group/resource/name`, with the core group
   written `core` and the resource as the lowercase plural
   (`apps/deployments/hello`, `core/services/hello`). No duplicates.

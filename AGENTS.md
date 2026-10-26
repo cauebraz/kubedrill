@@ -24,7 +24,7 @@ internal/scenario/        on-disk scenario format: scenario.toml, instruction.md
 internal/grader/          runs checks.yaml as a DAG against the cluster, produces Grade with Results; script checks get an env allowlist (PATH, HOME, TMPDIR, LANG, LC_ALL, TERM, USER plus TASK_NS, SEED, VARIANT, VAR_*, KUBECONFIG) shared with hook.sh and solve.sh through internal/scriptrun; wrapper.go puts a kubectl tagged kubedrill-check first on PATH for them
 internal/kube/            the Kubernetes API client (dynamic client, server-side apply, probes, namespace GC, APIService health); cluster/ uses clientcmd, grader/ uses client-go jsonpath
 internal/yamldoc/         one YAML document splitter (Split) shared by kube, scenario lint and the addon loader
-internal/cluster/         kind lifecycle (doctor, ensure, delete, kubeconfig, audit check, audit policy drift, profile render), profile templates and addons; the cluster state dir ($XDG_STATE_HOME/kubedrill/kubedrill) holds audit/ (the audit log), bin/ (the kubedrill-check kubectl wrapper and the linux binary), kubeconfig-internal, kubeconfig-scripts, audit-policy.sha256 and faults.json
+internal/cluster/         kind lifecycle (doctor, ensure, delete, kubeconfig, audit check, audit policy drift, profile render, node debug image preload), profile templates and addons; the cluster state dir ($XDG_STATE_HOME/kubedrill/kubedrill) holds audit/ (the audit log), bin/ (the kubedrill-check kubectl wrapper and the linux binary), kubeconfig-internal, kubeconfig-scripts, audit-policy.sha256 and faults.json
 internal/env/             learner loop and state machine: Start/Observe/Grade/Diagnose/Hint/Surrender/Submit/Expire
 internal/atomicfile/      file writes through a temporary file, a rename and a directory fsync
 internal/scriptrun/       bash runner for script checks, hook.sh and solve.sh: process-group kill after exit and on cancel, output cap, host env allowlist
@@ -34,7 +34,7 @@ internal/telemetry/       reads the audit log and the shell log (drops kubedrill
 internal/faults/          node faults through docker (pause, stop kubelet, tc netem), recorded in faults.json in the cluster state dir, Heal
 internal/curriculum/      curriculum.yaml: levels L0-L6, modules, exam map
 internal/concepts/        loads and validates docs/concepts/*.md (title, intro, four sections)
-internal/workstation/     the workstation container: image tag, linux binary and kubeconfig-internal (both in the cluster state dir, mounted read-only), docker run, exam mode, replay, node shell
+internal/workstation/     the workstation container: image tag, linux binary and kubeconfig-internal (both in the cluster state dir, mounted read-only), docker run, exam mode, replay, node shell (docker exec on the host, kubectl debug node in the kubedrill-debug namespace inside the workstation)
 internal/cli/             cobra commands, Factories/Options, session assembly and command handlers
 internal/render/          terminal text: width resolution, wrap and truncate, markdown, styles, check result lines, Printer, progress line
 internal/tui/watch/       Bubble Tea model of kubedrill watch (Session, Options, Run)

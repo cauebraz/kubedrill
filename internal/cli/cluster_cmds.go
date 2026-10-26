@@ -192,7 +192,9 @@ func parseAddons(cl Cluster, value string) ([]string, error) {
 }
 
 // ensureCluster ensures the cluster exists (audit log under
-// <cluster state>/audit), then installs the base addons plus extra.
+// <cluster state>/audit), installs the base addons plus extra, waits for
+// the API services and preloads cluster.DebugImage on the nodes; a failed
+// preload is a warning.
 func (a *app) ensureCluster(ctx context.Context, cl Cluster, profile string, extra []string) error {
 	data, err := a.profileData()
 	if err != nil {
@@ -218,7 +220,16 @@ func (a *app) ensureCluster(ctx context.Context, cl Cluster, profile string, ext
 		return err
 	}
 	a.printf("addons: %s\n", strings.Join(names, ", "))
-	return a.waitAPIServices(ctx, conn, apiServiceWait)
+	if err := a.waitAPIServices(ctx, conn, apiServiceWait); err != nil {
+		return err
+	}
+	if err := cl.PullDebugImage(ctx); err != nil {
+		if ctx.Err() != nil {
+			return err
+		}
+		a.printf("warning: %v; kubedrill node pulls it on first use inside the workstation\n", err)
+	}
+	return nil
 }
 
 // profileData is the template input of every profile: the audit directory

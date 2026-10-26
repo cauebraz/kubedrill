@@ -528,6 +528,24 @@ func TestUpAddons(t *testing.T) {
 	}
 }
 
+func TestUpPreloadsDebugImage(t *testing.T) {
+	f := newFixture(t)
+	code, out, errOut := f.run(t, "", "up")
+	if code != 0 {
+		t.Fatalf("exit: got %d, want 0 (%s)", code, errOut)
+	}
+	if f.cluster.pulls != 1 {
+		t.Errorf("debug image pulls: got %d, want 1", f.cluster.pulls)
+	}
+	mustNotContain(t, out, "warning:")
+	f.cluster.pullErr = errors.New("pull busybox: kubedrill-worker: no network")
+	code, out, errOut = f.run(t, "", "up")
+	if code != 0 {
+		t.Fatalf("exit with a failed preload: got %d, want 0 (%s)", code, errOut)
+	}
+	mustContain(t, out, "warning: pull busybox: kubedrill-worker: no network; kubedrill node pulls it on first use inside the workstation\n")
+}
+
 func TestUpWaitsForAPIServices(t *testing.T) {
 	f := newFixture(t)
 	f.kube.down = [][]string{{"v1beta1.metrics.k8s.io"}, {"v1beta1.metrics.k8s.io"}}

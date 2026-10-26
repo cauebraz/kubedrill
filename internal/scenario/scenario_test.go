@@ -681,6 +681,7 @@ func TestRenderNamespaceRules(t *testing.T) {
 		{"kube-system", "namespace \"kube-system\" is reserved"},
 		{"kube-anything", "namespace \"kube-anything\" is reserved"},
 		{"local-path-storage", "namespace \"local-path-storage\" is reserved"},
+		{"kubedrill-debug", "namespace \"kubedrill-debug\" is reserved"},
 		{"Shop", "namespace \"Shop\" is not a DNS-1123 label"},
 		{"shop_{{ .Seed }}", "namespace \"shop_1\" is not a DNS-1123 label"},
 		{"-shop", "namespace \"-shop\" is not a DNS-1123 label"},

@@ -11,7 +11,7 @@ and exam mode are in [docs/workstation.md](../docs/workstation.md).
 | `Dockerfile`     | Base image pinned by digest, apt packages pinned by version, every binary downloaded from its release URL and verified with `sha256sum -c` |
 | `versions.env`   | The one place a tool version is written; the Dockerfile reads it                         |
 | `checksums.txt`  | `<sha256>  <filename>` for every downloaded file, amd64 and arm64                        |
-| `bashrc`         | Login shell: aliases, completion, prompt, episode namespace, shell log, banner           |
+| `bashrc`         | Login shell: aliases, completion, prompt, episode namespace, `ssh <node>`, shell log, banner |
 | `tmux.conf`      | tmux settings: mouse on, 20000 lines of history, status line with the cluster name       |
 | `entrypoint.sh`  | Takes `shell` or `tmux`, builds the pane layout and starts the asciinema recording       |
 

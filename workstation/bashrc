@@ -67,6 +67,21 @@ if command -v kubedrill >/dev/null 2>&1; then
   PROMPT_COMMAND="__kubedrill_sync_namespace${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
 fi
 
+ssh() {
+  local node
+  if [ "$#" -eq 1 ]; then
+    node=${1#*@}
+    node=${node#"${KUBEDRILL_CLUSTER:-kubedrill}"-}
+    case "$node" in
+      control-plane | worker | worker2)
+        kubedrill node "$node"
+        return
+        ;;
+    esac
+  fi
+  command ssh "$@"
+}
+
 PS1='\[\e[1;34m\]\u@\h\[\e[0m\] \[\e[1;32m\]\w\[\e[0m\] \[\e[0;33m\][ns:$(__kubedrill_ns)]\[\e[0m\]\n\$ '
 
 __kubedrill_json() {

@@ -18,7 +18,15 @@ type fakeWorkstation struct {
 	log           *[]string
 	shells        []workstation.ShellOptions
 	nodes         []string
+	debugs        []string
+	debugErr      error
 	replays       []string
+}
+
+func (w *fakeWorkstation) NodeDebug(_ context.Context, clusterName, node, image string) error {
+	w.record("NodeDebug " + clusterName + " " + node + " " + image)
+	w.debugs = append(w.debugs, node)
+	return w.debugErr
 }
 
 func (w *fakeWorkstation) Replay(_ context.Context, cast string) error {
@@ -325,6 +333,29 @@ func TestNodeCommand(t *testing.T) {
 		t.Errorf("docker down exit: got %d, want 1", code)
 	}
 	mustContain(t, errOut, "a node shell needs docker: daemon down")
+	if len(f.ws.debugs) != 0 {
+		t.Errorf("kubectl debug on the host: got %v, want none", f.ws.debugs)
+	}
+}
+
+func TestNodeCommandInsideWorkstationUsesKubectlDebug(t *testing.T) {
+	f := newFixture(t)
+	log := withWorkstation(f)
+	f.env = map[string]string{"KUBEDRILL_WORKSTATION": "1"}
+	code, out, errOut := f.run(t, "", "node", "worker")
+	if code != 0 {
+		t.Fatalf("exit: got %d, want 0 (%s)", code, errOut)
+	}
+	mustContain(t, out, "kubedrill node: root on kubedrill-worker through kubectl debug node/kubedrill-worker --profile=sysadmin -- chroot /host (changes persist until kubedrill down)\n")
+	if got, want := strings.Join(*log, "|"), "NodeDebug kubedrill worker "+cluster.DebugImage; got != want {
+		t.Errorf("calls: got %q, want %q (no docker probe, no docker exec)", got, want)
+	}
+	f.ws.debugErr = errors.New("kubectl: executable file not found in $PATH")
+	code, _, errOut = f.run(t, "", "node", "control-plane")
+	if code != 1 {
+		t.Errorf("failing kubectl exit: got %d, want 1", code)
+	}
+	mustContain(t, errOut, "node shell control-plane: kubectl: executable file not found in $PATH")
 }
 
 func TestStartInsideWorkstationPrintsTicketOnly(t *testing.T) {

@@ -42,6 +42,13 @@ type fakeCluster struct {
 	stale     bool
 	staleErr  error
 	staleAsks int
+	pulls     int
+	pullErr   error
+}
+
+func (c *fakeCluster) PullDebugImage(context.Context) error {
+	c.pulls++
+	return c.pullErr
 }
 
 func (c *fakeCluster) Doctor(context.Context) ([]cluster.Tool, error) { return c.tools, nil }

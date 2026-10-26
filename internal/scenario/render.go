@@ -32,6 +32,7 @@ var reservedNamespaces = map[string]bool{
 	"kube-public":        true,
 	"kube-node-lease":    true,
 	"local-path-storage": true,
+	"kubedrill-debug":    true,
 }
 
 type templateData struct {

@@ -983,3 +983,61 @@ func TestReplayUserAndRefusals(t *testing.T) {
 		}
 	}
 }
+
+func TestNodeDebug(t *testing.T) {
+	const image = "busybox:1@sha256:abc"
+	finished := "kubectl delete pods --namespace kubedrill-debug --field-selector=status.phase!=Pending,status.phase!=Running --ignore-not-found --wait=false"
+	list := "kubectl get pods --namespace kubedrill-debug -o jsonpath={.items[*].metadata.name}"
+	created := "kubectl delete pods --namespace kubedrill-debug --ignore-not-found --wait=false node-debugger-kubedrill-worker-new"
+	debug := func(node string) string {
+		return "kubectl debug node/kubedrill-" + node + " --namespace kubedrill-debug -it --quiet --profile=sysadmin --image=" + image + " -- chroot /host /bin/bash -l"
+	}
+	pods := func(dir string) string {
+		return "if [ -f " + dir + "/listed ]; then echo node-debugger-kubedrill-worker-old node-debugger-kubedrill-worker-new node-debugger-kubedrill-worker2-x other; " +
+			"else touch " + dir + "/listed; echo node-debugger-kubedrill-worker-old; fi"
+	}
+	tests := []struct {
+		name      string
+		node      string
+		scripts   func(dir string) map[string]string
+		wantErr   string
+		wantCalls []string
+	}{
+		{name: "session deletes only the pod it created", node: "worker", wantCalls: []string{"kubectl apply -f -", finished, list, debug("worker"), list, created}},
+		{name: "shell ends non-zero", node: "worker", scripts: func(string) map[string]string { return map[string]string{"kubectl debug": "exit 3"} }, wantCalls: []string{"kubectl apply -f -", finished, list, debug("worker"), list, created}},
+		{name: "no new pod for this node", node: "control-plane", wantCalls: []string{"kubectl apply -f -", finished, list, debug("control-plane"), list}},
+		{name: "failing list keeps every pod", node: "worker", scripts: func(string) map[string]string { return failing("kubectl get") }, wantCalls: []string{"kubectl apply -f -", finished, list, debug("worker")}},
+		{name: "namespace apply fails", node: "worker", scripts: func(string) map[string]string { return map[string]string{"kubectl apply": "cat; exit 1"} }, wantErr: "node debug kubedrill-worker: apply namespace kubedrill-debug: exit status 1: apiVersion: v1\nkind: Namespace\nmetadata:\n  name: kubedrill-debug", wantCalls: []string{"kubectl apply -f -"}},
+		{name: "unknown node", node: "worker3", wantErr: `node debug: node "worker3" is not one of control-plane, worker, worker2`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			scripts := map[string]string{"kubectl get": pods(dir)}
+			if tt.scripts != nil {
+				for k, v := range tt.scripts(dir) {
+					scripts[k] = v
+				}
+			}
+			fr := &fakeRunner{scripts: scripts}
+			m := New(writeRepo(t), t.TempDir(), WithRunner(fr.run))
+			m.stdin, m.stdout, m.stderr = strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}
+			err := m.NodeDebug(context.Background(), "kubedrill", tt.node, image)
+			gotErr := ""
+			if err != nil {
+				gotErr = err.Error()
+			}
+			if gotErr != tt.wantErr {
+				t.Fatalf("NodeDebug: got error %q, want %q", gotErr, tt.wantErr)
+			}
+			if got := fr.joined(); !reflect.DeepEqual(got, tt.wantCalls) {
+				t.Errorf("NodeDebug calls:\n got %q\nwant %q", got, tt.wantCalls)
+			}
+			for _, c := range fr.calls {
+				if c.name == "kubectl" && len(c.args) > 0 && c.args[0] == "debug" && (c.cmd.WaitDelay != 5*time.Second || c.cmd.Cancel == nil) {
+					t.Errorf("kubectl debug: WaitDelay %v Cancel nil=%v, want 5s and a Cancel", c.cmd.WaitDelay, c.cmd.Cancel == nil)
+				}
+			}
+		})
+	}
+}

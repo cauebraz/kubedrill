@@ -235,6 +235,10 @@ func (u unavailableWorkstation) Shell(context.Context, workstation.ShellOptions)
 
 func (u unavailableWorkstation) NodeShell(context.Context, string, string) error { return u.err }
 
+func (u unavailableWorkstation) NodeDebug(context.Context, string, string, string) error {
+	return u.err
+}
+
 func (u unavailableWorkstation) Replay(context.Context, string) error { return u.err }
 
 // checkBinDir writes the kubedrill-check kubectl wrapper into
@@ -403,6 +407,10 @@ func (w *workstationCluster) Ensure(context.Context, string, cluster.ProfileData
 }
 
 func (w *workstationCluster) EnsureAddons(context.Context, cluster.AddonApplier, []string) error {
+	return hostOnly("kubedrill up")
+}
+
+func (w *workstationCluster) PullDebugImage(context.Context) error {
 	return hostOnly("kubedrill up")
 }
 

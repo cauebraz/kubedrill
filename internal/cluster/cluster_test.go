@@ -1003,3 +1003,46 @@ func TestEnsureExistingClusterWaitsForNodes(t *testing.T) {
 		})
 	}
 }
+
+func TestPullDebugImage(t *testing.T) {
+	tests := []struct {
+		name    string
+		fail    string
+		wantErr string
+	}{
+		{name: "every node pulls"},
+		{name: "one node fails", fail: "kubedrill-worker2", wantErr: "pull " + DebugImage + ": kubedrill-worker2: docker exec kubedrill-worker2: no route to registry"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := New(t.TempDir(), WithStateDir(testStateDir(t)))
+			fd := &fakeDocker{respond: func(args []string) ([]byte, error) {
+				if args[1] == tc.fail {
+					return nil, exitErrorWith(t, "no route to registry")
+				}
+				return nil, nil
+			}}
+			m.run = fd.run
+			err := m.PullDebugImage(context.Background())
+			gotErr := ""
+			if err != nil {
+				gotErr = err.Error()
+			}
+			if tc.wantErr == "" && gotErr != "" || tc.wantErr != "" && !strings.HasPrefix(gotErr, tc.wantErr) {
+				t.Fatalf("PullDebugImage: got %q, want prefix %q", gotErr, tc.wantErr)
+			}
+			var got []string
+			for _, c := range fd.calls {
+				got = append(got, strings.Join(c, " "))
+			}
+			want := []string{
+				"docker exec kubedrill-control-plane crictl pull " + DebugImage,
+				"docker exec kubedrill-worker crictl pull " + DebugImage,
+				"docker exec kubedrill-worker2 crictl pull " + DebugImage,
+			}
+			if strings.Join(got, "\n") != strings.Join(want, "\n") {
+				t.Errorf("calls:\n got %q\nwant %q", got, want)
+			}
+		})
+	}
+}

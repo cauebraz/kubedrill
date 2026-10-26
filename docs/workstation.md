@@ -122,7 +122,8 @@ curl, ca-certificates, procps.
 |-----------------------------|--------------------------------------------------------------------------|
 | `kubedrill start <id>`      | Starts the episode and opens the workstation with its ticket             |
 | `kubedrill shell`           | Opens a new workstation for the active episode, or the tools without one |
-| `kubedrill node <name>`     | Opens a shell on a kind node: `control-plane`, `worker` or `worker2`     |
+| `kubedrill node <name>`     | Opens a root shell on a kind node: `control-plane`, `worker` or `worker2` |
+| `ssh <name>`                | Same as `kubedrill node <name>`, inside the workstation                  |
 | `kubedrill replay [episode-id]` | Plays the latest recording of an episode                             |
 
 - `start` prints on the host `ticket shown in the workstation (kubedrill
@@ -133,8 +134,18 @@ curl, ca-certificates, procps.
   and the cluster are untouched.
 - `--layout shell` opens one login shell without tmux. `--exam` opens the
   exam workstation, which is automatic during an exam episode.
-- `node` runs `docker exec` into the kind node container, for kubelet,
-  containerd and systemd scenarios.
+- `node` opens a root shell on a kind node, for kubelet, containerd and
+  systemd scenarios. On the host it runs `docker exec` into the node
+  container. Inside the workstation there is no docker, on purpose: the
+  docker socket would give root on the host and would show how kubedrill
+  set up the episode. There it runs `kubectl debug node/kubedrill-<name>
+  --profile=sysadmin -- chroot /host /bin/bash -l` in the `kubedrill-debug`
+  namespace (outside the checks and the debrief) and deletes the pod when
+  the shell ends. `up` preloads its image on the nodes.
+- `ssh worker` (or `control-plane`, `worker2`, with or without the
+  `kubedrill-` prefix or a `user@`) runs `kubedrill node`, also in exam
+  mode, because the exam reaches nodes with `ssh <node>`. Any other `ssh`
+  is the real OpenSSH client.
 
 ## What is recorded
 
