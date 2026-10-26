@@ -14,6 +14,8 @@ linux `kubedrill` binary the container uses.
 With an active episode and a terminal of at least 120 columns, the
 workstation opens a tmux session with three panes:
 
+![The workstation on scenario 000: ticket at the top left, shell below, checks on the right](images/first-scenario.png)
+
 ```
 +--------------------------------+---------------------+
 | ticket                         | kubedrill watch     |

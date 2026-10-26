@@ -28,20 +28,15 @@ Gateway and KWOK to the cluster.
 
 ## Your first scenario
 
-The workstation opens in your terminal:
+The workstation opens in your terminal. This is the first scenario, a
+minute in:
 
-```
-+------------------------------+------------------+
-| the ticket (scroll it with   | live checks      |
-| the mouse wheel)             | (kubedrill watch)|
-+------------------------------+                  |
-| your shell, already in the   |                  |
-| scenario namespace           |                  |
-+------------------------------+------------------+
-```
+![The kubedrill workstation on scenario 000: the ticket at the top left, the shell below it, the live checks on the right](docs/images/first-scenario.png)
 
-Read the ticket, investigate with `kubectl`, fix it. The checks on the right
-turn to `[pass]` as you go. When you are stuck:
+The ticket sits at the top left; the mouse wheel scrolls it while you type.
+Your shell below already points at the scenario namespace. The checks on
+the right re-grade every 5 seconds and turn to `[pass]` as you fix things.
+When you are stuck:
 
 ```sh
 kubedrill hint                   # the next hint: where to look, what to observe, what it means
