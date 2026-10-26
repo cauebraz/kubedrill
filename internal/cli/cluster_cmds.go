@@ -64,7 +64,11 @@ func (a *app) continuePractice(ctx context.Context) error {
 		return nil
 	}
 	a.println()
-	switch strings.ToLower(a.ask(fmt.Sprintf("Start %s now? [Y/n]", pick.Ref))) {
+	ans, err := a.ask(fmt.Sprintf("Start %s now? [Y/n]", pick.Ref))
+	if err != nil {
+		return err
+	}
+	switch strings.ToLower(ans) {
 	case "", "y", "yes":
 		return a.runStart(ctx, pick.Ref, startOptions{seed: pick.Seed, layout: layoutTmux})
 	}

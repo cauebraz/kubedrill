@@ -183,6 +183,7 @@ type app struct {
 	stderr          io.Writer
 	stdin           *bufio.Reader
 	rawStdin        io.Reader
+	interrupted     <-chan struct{}
 	getenv          func(string) string
 	getwd           func() (string, error)
 	isInputTerminal bool
@@ -211,6 +212,7 @@ type app struct {
 // Main runs kubedrill with args and returns the process exit code.
 func Main(ctx context.Context, args []string, o Options) int {
 	a := newApp(o)
+	a.interrupted = ctx.Done()
 	cmd := a.rootCommand()
 	cmd.SetArgs(args)
 	cmd.SetOut(a.stdout)
@@ -265,7 +267,7 @@ func newApp(o Options) *app {
 	}
 	inputTerminal := o.IsInputTerminal
 	if !inputTerminal && o.IsTerminal {
-		inputTerminal = isCharDevice(o.Stdin)
+		inputTerminal = render.IsTerminal(o.Stdin)
 	}
 	a := &app{
 		f:               o.Factories,
@@ -290,18 +292,6 @@ func newApp(o Options) *app {
 		progress: render.NewProgress(o.Stderr, o.Now),
 	}
 	return a
-}
-
-func isCharDevice(r io.Reader) bool {
-	f, ok := r.(*os.File)
-	if !ok {
-		return false
-	}
-	st, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return st.Mode()&os.ModeCharDevice != 0
 }
 
 // explain turns a command error into the learner-facing line.
@@ -778,7 +768,11 @@ func (a *app) confirm(question string, yes bool) (bool, error) {
 		return true, nil
 	}
 	fmt.Fprintf(a.stdout, "%s [y/N] ", question)
-	line, err := a.stdin.ReadString('\n')
+	line, err := a.readLine()
+	if errors.Is(err, errInterrupted) {
+		a.println()
+		return false, err
+	}
 	if err != nil && line == "" {
 		if a.isInputTerminal {
 			a.println()
@@ -792,6 +786,35 @@ func (a *app) confirm(question string, yes bool) (bool, error) {
 	}
 	ans := strings.ToLower(strings.TrimSpace(line))
 	return ans == "y" || ans == "yes", nil
+}
+
+// errInterrupted is returned by a prompt when SIGINT or SIGTERM arrives
+// while it waits for a line.
+var errInterrupted = errors.New("interrupted")
+
+// readLine reads one line from stdin and returns errInterrupted as soon as
+// the run is interrupted (the context Main received is canceled), so a
+// single Ctrl-C ends a command that waits at a prompt. The read runs in its
+// own goroutine, which ends with the line; after an interruption it stays
+// blocked on stdin until the process exits, which follows the returned
+// error. One goroutine per prompt, never a read ahead: stdin is handed to
+// docker run -it afterwards and must not lose a line to a pending read.
+func (a *app) readLine() (string, error) {
+	type result struct {
+		line string
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		line, err := a.stdin.ReadString('\n')
+		done <- result{line, err}
+	}()
+	select {
+	case r := <-done:
+		return r.line, r.err
+	case <-a.interrupted:
+		return "", errInterrupted
+	}
 }
 
 func (a *app) printf(format string, args ...any) {

@@ -74,11 +74,15 @@ func (a *app) interactive() bool {
 }
 
 // ask prints question and returns the trimmed line typed; end of input is an
-// empty answer.
-func (a *app) ask(question string) string {
+// empty answer and an interruption is errInterrupted.
+func (a *app) ask(question string) (string, error) {
 	fmt.Fprintf(a.stdout, "%s ", question)
-	line, _ := a.stdin.ReadString('\n')
-	return strings.TrimSpace(line)
+	line, err := a.readLine()
+	if errors.Is(err, errInterrupted) {
+		a.println()
+		return "", err
+	}
+	return strings.TrimSpace(line), nil
 }
 
 // expireIfDue finishes an exam episode whose time box ended before running
@@ -171,10 +175,17 @@ func (a *app) debrief(ctx context.Context, p render.Printer, ep *journal.Episode
 	if ep.Debrief != nil {
 		prev = *ep.Debrief
 	}
-	matched := a.askMatched(ep.Diagnosis)
+	matched, err := a.askMatched(ep.Diagnosis)
+	if err != nil {
+		return false, err
+	}
 	d := journal.Debrief{At: a.now(), Principle: prev.Principle}
-	d.RuledOutEarlier = a.askKeeping("Which observation would have ruled out your first hypothesis earlier?", prev.RuledOutEarlier)
-	d.NextTimeFirst = a.askKeeping("Next time I check first:", prev.NextTimeFirst)
+	if d.RuledOutEarlier, err = a.askKeeping("Which observation would have ruled out your first hypothesis earlier?", prev.RuledOutEarlier); err != nil {
+		return false, err
+	}
+	if d.NextTimeFirst, err = a.askKeeping("Next time I check first:", prev.NextTimeFirst); err != nil {
+		return false, err
+	}
 	s, err := a.learnerSession(ctx)
 	if err != nil {
 		return false, err
@@ -194,9 +205,9 @@ func (a *app) debrief(ctx context.Context, p render.Printer, ep *journal.Episode
 // askMatched asks whether the diagnosis matched the root cause, showing a
 // previous answer as [y] or [n], which Enter keeps; without a diagnosis it
 // asks nothing and returns nil.
-func (a *app) askMatched(diag *journal.Diagnosis) *bool {
+func (a *app) askMatched(diag *journal.Diagnosis) (*bool, error) {
 	if diag == nil {
-		return nil
+		return nil, nil
 	}
 	matched := diag.Matched
 	q := "Did your diagnosis match? [y/n]"
@@ -207,25 +218,30 @@ func (a *app) askMatched(diag *journal.Diagnosis) *bool {
 		}
 		q = fmt.Sprintf("Did your diagnosis match? [y/n] [%s]", prev)
 	}
-	switch strings.ToLower(a.ask(q)) {
+	ans, err := a.ask(q)
+	if err != nil {
+		return nil, err
+	}
+	switch strings.ToLower(ans) {
 	case "y", "yes":
 		matched = boolPtr(true)
 	case "n", "no":
 		matched = boolPtr(false)
 	}
-	return matched
+	return matched, nil
 }
 
 // askKeeping asks question; with a previous answer the prompt shows it in
 // brackets and an empty line keeps it, otherwise enter skips.
-func (a *app) askKeeping(question, previous string) string {
+func (a *app) askKeeping(question, previous string) (string, error) {
 	if previous == "" {
 		return a.ask(question + " (enter to skip)")
 	}
-	if ans := a.ask(fmt.Sprintf("%s [%s]", question, previous)); ans != "" {
-		return ans
+	ans, err := a.ask(fmt.Sprintf("%s [%s]", question, previous))
+	if err != nil || ans != "" {
+		return ans, err
 	}
-	return previous
+	return previous, nil
 }
 
 func boolPtr(b bool) *bool { return &b }

@@ -1200,9 +1200,14 @@ Width:
   the solved banner, in `journal` for ended episodes and in `smoke`.
 - Confirmations (`start` over an active episode, `solution`, `down`) read the
   answer from the terminal.
-- When stdin is a pipe, one line is read and `y` or `yes` accepts.
+- When stdin is a pipe, a file or `/dev/null`, one line is read and `y` or
+  `yes` accepts. Only a real terminal counts as one (the terminal driver
+  answers), so `</dev/null` in a script is not mistaken for a person.
 - With no input at all the command fails with `confirmation needed (stdin is
   not a terminal): rerun with --yes`.
+- One Ctrl-C at any prompt (confirmations, `Start <id> now?`, the debrief
+  questions) ends the command at once with `kubedrill: interrupted`, exit
+  1, and nothing is answered for you.
 
 ## Environment variables
 

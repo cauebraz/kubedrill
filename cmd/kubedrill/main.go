@@ -26,6 +26,7 @@ import (
 	"github.com/cauebraz/kubedrill/internal/grader"
 	"github.com/cauebraz/kubedrill/internal/journal"
 	"github.com/cauebraz/kubedrill/internal/kube"
+	"github.com/cauebraz/kubedrill/internal/render"
 	"github.com/cauebraz/kubedrill/internal/scenario"
 	"github.com/cauebraz/kubedrill/internal/telemetry"
 	"github.com/cauebraz/kubedrill/internal/workstation"
@@ -47,8 +48,8 @@ func main() {
 		Stdin:           os.Stdin,
 		Getenv:          os.Getenv,
 		Getwd:           os.Getwd,
-		IsTerminal:      isTerminal(os.Stdout),
-		IsInputTerminal: isTerminal(os.Stdin),
+		IsTerminal:      render.IsTerminal(os.Stdout),
+		IsInputTerminal: render.IsTerminal(os.Stdin),
 	})
 	stop()
 	os.Exit(code)
@@ -444,12 +445,4 @@ func (w *workstationCluster) WriteInternalKubeconfig(context.Context, string) er
 
 func hostOnly(op string) error {
 	return errors.New(op + " runs on the host, not inside the workstation")
-}
-
-func isTerminal(f *os.File) bool {
-	st, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return st.Mode()&os.ModeCharDevice != 0
 }

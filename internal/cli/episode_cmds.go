@@ -248,7 +248,11 @@ func (a *app) offerWorkedExample(cat Catalog, ep *journal.Episode, rd *scenario.
 	if example == "" {
 		return nil
 	}
-	switch strings.ToLower(a.ask(fmt.Sprintf("First time with %s. See a worked example from another variant before your ticket? [y/N]", conceptsLine(first)))) {
+	ans, err := a.ask(fmt.Sprintf("First time with %s. See a worked example from another variant before your ticket? [y/N]", conceptsLine(first)))
+	if err != nil {
+		return err
+	}
+	switch strings.ToLower(ans) {
 	case "":
 		a.println("worked example skipped")
 		return nil
@@ -772,7 +776,9 @@ func (a *app) printSolvedSolution(s *env.Session, cat Catalog, sc *scenario.Scen
 	a.printf("%s", a.printer().Markdown(splitHeading+"\n"))
 	if ep.Debrief != nil && ep.Debrief.Principle != "" {
 		a.printf("Your principle: %s\n", ep.Debrief.Principle)
-	} else if principle := a.ask("Which principle made this observation necessary? (one line)"); principle != "" {
+	} else if principle, err := a.ask("Which principle made this observation necessary? (one line)"); err != nil {
+		return err
+	} else if principle != "" {
 		d := journal.Debrief{At: a.now()}
 		if ep.Debrief != nil {
 			d = *ep.Debrief

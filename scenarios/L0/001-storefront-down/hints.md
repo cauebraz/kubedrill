@@ -21,7 +21,7 @@ and nothing becomes Ready. An image reference has three parts: registry host,
 repository and tag. Compare each part of the reference in the event with what
 the team runs everywhere else: the `1.27-alpine` tag of the official `nginx`
 image on Docker Hub. A manifest copied from another environment can carry
-that environment's registry with it.
+any of the three parts with it, so check all of them.
 
 ## Hint 4: what to change
 
