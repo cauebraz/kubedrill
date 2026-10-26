@@ -1,0 +1,6 @@
+bin/
+/kubedrill
+*.bak
+.DS_Store
+private/
+.claude/

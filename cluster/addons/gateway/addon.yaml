@@ -1,0 +1,16 @@
+name: gateway
+description: Envoy Gateway v1.9.2 (Gateway API) with the GatewayClass eg, whose EnvoyProxy pins the Envoy v1.39.1 data plane image, plus cloud-provider-kind v0.12.0, which gives LoadBalancer Services an address on the kind network
+manifests:
+  - install.yaml
+  - gatewayclass.yaml
+container:
+  name: kubedrill-cloud-provider-kind
+  image: registry.k8s.io/cloud-provider-kind/cloud-controller-manager:v0.12.0@sha256:1b97632e5dfec8f83c7e970cf18cedb9e6b707e272011d712cabf6ab59d323c9
+  network: kind
+  restart: unless-stopped
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+  security_opt:
+    - no-new-privileges
+  memory: 256m
+  pids_limit: 256

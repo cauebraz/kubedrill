@@ -1,0 +1,3 @@
+kubectl -n {{ .Namespace }} diff -f deploy/app.yaml
+kubectl -n {{ .Namespace }} apply -f deploy/app.yaml
+kubectl -n {{ .Namespace }} rollout status deployment/app --timeout=120s

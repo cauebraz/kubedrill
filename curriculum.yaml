@@ -1,0 +1,759 @@
+levels:
+  - id: L0
+    title: Foundations
+    before: "Has used Docker, never kubectl"
+    after: "Reads any object, explains the pod lifecycle, fixes one-object failures from describe and events"
+    hours: 25
+    capstone: "Fix 5 broken apps in 30 minutes"
+    modules:
+      - id: L0.1
+        title: Reading the cluster
+        summary: "kubectl verbs, namespaces, labels, events, explain"
+        exam: ["CKA:troubleshooting"]
+        concepts: [pod-lifecycle, image-pull, readiness-and-endpoints, labels-and-selectors, troubleshooting-loop, what-changed]
+        scenarios:
+          - id: 000-hello-down
+            ticket: "Dashboard says hello 0/2 ready after the migration"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Find which of 40 pods in shop is restarting and why; label it triage=yes"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Ops wants a one-liner: list every image running in shop into a ConfigMap inventory"
+            type: build
+            feasibility: kind
+          - ticket: "Someone created objects in the wrong namespace; move catalog Deployment and Service to catalog"
+            type: break-fix
+            feasibility: kind
+      - id: L0.2
+        title: Pod lifecycle
+        summary: "Phases, container states, probes, init containers, restart policy, OOM"
+        exam: ["CKA:troubleshooting", "CKAD:design-build", "CKAD:observability"]
+        concepts: [pod-lifecycle, resources-and-qos]
+        scenarios:
+          - ticket: "worker is CrashLoopBackOff since the last deploy; nothing changed in the code"
+            type: break-fix
+            feasibility: kind
+          - ticket: "api never becomes Ready; the dev says it starts in 2s"
+            type: break-fix
+            feasibility: kind
+          - ticket: "migrate init container hangs forever on the new cluster"
+            type: break-fix
+            feasibility: kind
+          - ticket: "report pod is OOMKilled every run; dev insists it uses 50 MB"
+            type: break-fix
+            feasibility: kind
+      - id: L0.3
+        title: Services and labels
+        summary: "Selectors, endpoints, ports, ClusterIP, NodePort, Ingress basics"
+        exam: ["CKA:networking", "CKAD:networking"]
+        scenarios:
+          - ticket: "cart.shop.svc times out but pods are Running"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Ingress 502 after the port rename in the image"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Expose admin on NodePort 30080 for the QA laptop"
+            type: build
+            feasibility: kind
+      - id: L0.4
+        title: Config and secrets basics
+        summary: "ConfigMaps, Secrets, env vars, mounted files, update propagation"
+        exam: ["CKA:workloads", "CKAD:environment"]
+        scenarios:
+          - ticket: "App reads old config after we updated the ConfigMap"
+            type: break-fix
+            feasibility: kind
+          - ticket: "db-password mounted but app says file not found"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Secret committed in plain text; recreate it from a file and rotate"
+            type: build
+            feasibility: kind
+
+  - id: L1
+    title: Application operator
+    before: "Deploys apps given manifests"
+    after: "Authors Deployments, Jobs, probes, config and volumes correctly and debugs an app in a namespace without help"
+    hours: 60
+    capstone: "Ship a 3-tier app from manifests with probes, quotas and a rollback drill"
+    modules:
+      - id: L1.1
+        title: Deployments and rollouts
+        summary: "Rollout strategy, history, rollback, maxSurge and maxUnavailable, canary with two Deployments"
+        exam: ["CKA:workloads", "CKAD:deployment"]
+        scenarios:
+          - ticket: "Rollout of checkout stuck at 3/4 for an hour"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Roll back pricing to yesterday's version without a Git revert"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Release search v2 to 10% of traffic with two Deployments and one Service"
+            type: build
+            feasibility: kind
+          - ticket: "Deploy must never have fewer than 3 pods during a rollout or a node drain; set the rollout strategy and a PodDisruptionBudget and prove it under load"
+            type: build
+            feasibility: addon
+            addons: "metrics-server"
+      - id: L1.2
+        title: Jobs, CronJobs, StatefulSets, DaemonSets
+        summary: "Concurrency policy, backoff, stable identity, volumeClaimTemplates, tolerations for DaemonSets"
+        exam: ["CKAD:design-build"]
+        scenarios:
+          - ticket: "Nightly invoice CronJob ran twice at once and corrupted a file"
+            type: break-fix
+            feasibility: kind
+          - ticket: "kafka StatefulSet pod-1 lost its data after a node restart"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Log agent DaemonSet does not run on the control plane node"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Build a 3-replica redis StatefulSet with stable DNS and a headless Service"
+            type: build
+            feasibility: kind
+      - id: L1.3
+        title: Resources, QoS, autoscaling basics
+        summary: "Requests and limits, QoS classes, eviction, ResourceQuota, LimitRange, HPA and metrics-server"
+        exam: ["CKA:workloads", "CKAD:environment"]
+        scenarios:
+          - ticket: "payments pods evicted every night at 02:00; find why and stop it"
+            type: break-fix
+            feasibility: addon
+            addons: "metrics-server"
+          - ticket: "HPA on api shows unknown and never scales"
+            type: break-fix
+            feasibility: addon
+            addons: "metrics-server"
+          - ticket: "Set requests and limits for shop so every pod is Guaranteed within a 2-CPU quota"
+            type: build
+            feasibility: kind
+      - id: L1.4
+        title: Application configuration and storage
+        summary: "PVCs and StorageClasses, access modes, fsGroup, projected volumes"
+        exam: ["CKA:storage", "CKAD:design-build", "CKAD:environment"]
+        scenarios:
+          - ticket: "uploads PVC Pending on the new cluster"
+            type: break-fix
+            feasibility: kind
+          - ticket: "App cannot write to its volume: permission denied"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Two pods share a RWO volume and one is stuck ContainerCreating"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Mount the TLS cert, the config and the SA token as one projected volume"
+            type: build
+            feasibility: kind
+      - id: L1.5
+        title: Observability for app developers
+        summary: "Logs, previous logs, ephemeral debug containers, kubectl top, events"
+        exam: ["CKA:troubleshooting", "CKAD:observability"]
+        scenarios:
+          - ticket: "Distroless auth image misbehaves and has no shell; find which env var it reads"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Sidecar swallowed the logs; recover them without redeploying"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Which pod in shop is burning CPU? Annotate it with the figure"
+            type: break-fix
+            feasibility: addon
+            addons: "metrics-server"
+      - id: L1.6
+        title: Helm and Kustomize as a consumer
+        summary: "Helm releases, values, upgrade and rollback, Kustomize bases and overlays"
+        exam: ["CKA:architecture", "CKAD:deployment"]
+        scenarios:
+          - ticket: "Helm upgrade failed and the release is stuck pending-upgrade"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Overlay prod must change replicas and image tag only; base is shared"
+            type: build
+            feasibility: kind
+          - ticket: "A chart hardcodes a NodePort that collides; fix with values, not a fork"
+            type: break-fix
+            feasibility: kind
+
+  - id: L2
+    title: Cluster operator
+    before: "On-call for a namespace"
+    after: "On-call for a cluster: scheduling, Services and DNS, Ingress, storage, RBAC, node operations, upgrades, etcd backup"
+    hours: 90
+    capstone: "Rebuild the cluster from an etcd backup, then pass every L2.7 drill"
+    modules:
+      - id: L2.1
+        title: Scheduling
+        summary: "Taints and tolerations, affinity, topology spread, quotas, priority classes and preemption"
+        exam: ["CKA:workloads"]
+        scenarios:
+          - ticket: "ml-trainer Pending for 3 hours; the node is there and idle"
+            type: break-fix
+            feasibility: kind
+          - ticket: "frontend must spread across zones; today all 6 pods sit in zone-a"
+            type: build
+            feasibility: kind
+          - ticket: "Team data says they are blocked by quota but use half of it"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Batch jobs preempt the ingress pods; make that impossible"
+            type: build
+            feasibility: kind
+          - ticket: "Anti-affinity made the 4th replica unschedulable on a 3-node cluster; decide and document the trade-off"
+            type: design
+            feasibility: kind
+      - id: L2.2
+        title: Networking
+        summary: "CoreDNS, NetworkPolicy, Ingress controllers and TLS, Gateway API, LoadBalancer Services, kube-proxy"
+        exam: ["CKA:networking", "CKAD:networking"]
+        concepts: [cluster-dns]
+        scenarios:
+          - ticket: "Pods resolve google.com but not db.shop.svc"
+            type: break-fix
+            feasibility: kind
+          - ticket: "NetworkPolicy rollout broke everything; DNS egress missing"
+            type: break-fix
+            feasibility: addon
+            addons: "cilium"
+          - ticket: "Expose shop on shop.127.0.0.1.nip.io with TLS from a local CA"
+            type: build
+            feasibility: addon
+            addons: "envoy-gateway,cert-manager"
+          - ticket: "Migrate shop Ingress to Gateway API HTTPRoute with header-based canary"
+            type: build
+            feasibility: addon
+            addons: "envoy-gateway"
+          - ticket: "type LoadBalancer Service stuck Pending"
+            type: break-fix
+            feasibility: addon
+            addons: "cloud-provider-kind"
+          - ticket: "Intermittent 1s latency to db after the kube-proxy change"
+            type: incident
+            feasibility: addon
+            addons: "cilium"
+      - id: L2.3
+        title: Storage
+        summary: "PV reclaim policies, StorageClass binding modes, volume expansion, snapshots"
+        exam: ["CKA:storage"]
+        scenarios:
+          - ticket: "Deleted the PVC by mistake; the PV still exists; recover the data"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Build a second StorageClass with Retain and WaitForFirstConsumer and move db to it"
+            type: build
+            feasibility: kind
+          - ticket: "Resize the postgres volume from 1Gi to 5Gi without downtime"
+            type: break-fix
+            feasibility: addon
+            addons: "csi-driver-host-path"
+          - ticket: "Snapshot a volume before an upgrade and restore it"
+            type: build
+            feasibility: addon
+            addons: "csi-driver-host-path,snapshot-controller"
+      - id: L2.4
+        title: Control plane, kubeadm, etcd
+        summary: "Certificates, static pod manifests, etcd snapshot and restore, kubeadm upgrade, API server flags"
+        exam: ["CKA:architecture"]
+        concepts: [control-plane-signals]
+        scenarios:
+          - ticket: "kubectl returns x509: certificate has expired"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Back up etcd, break a namespace, restore from the snapshot"
+            type: build
+            feasibility: kind
+          - ticket: "API server down after someone edited the static pod manifest"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Upgrade the control plane and both workers one minor version with kubeadm"
+            type: build
+            feasibility: kind
+          - ticket: "Enable audit logging and a feature gate on the API server without rebuilding the cluster"
+            type: build
+            feasibility: kind
+      - id: L2.5
+        title: Node operations
+        summary: "Cordon and drain, PodDisruptionBudgets, kubelet, node conditions, image GC, container runtime config"
+        exam: ["CKA:troubleshooting"]
+        scenarios:
+          - ticket: "Drain of worker-2 hangs for 20 minutes"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Node NotReady; kubelet logs say certificate rotation failed"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Node under DiskPressure; images never get garbage collected"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Point the container runtime at a local registry mirror"
+            type: build
+            feasibility: kind
+      - id: L2.6
+        title: RBAC and access
+        summary: "Roles, ClusterRoles, bindings, service accounts, kubeconfig contexts, auth can-i"
+        exam: ["CKA:architecture", "CKAD:environment", "CKS:hardening"]
+        scenarios:
+          - ticket: "CI service account gets forbidden deploying to shop after the RBAC cleanup"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Create a kubeconfig for dev-alice limited to read in shop and exec in shop-debug"
+            type: build
+            feasibility: kind
+          - ticket: "Audit: find every binding that grants cluster-admin and list them in a ConfigMap"
+            type: build
+            feasibility: kind
+          - ticket: "An operator needs to list Secrets cluster-wide; decide the scope and write the minimal role"
+            type: design
+            feasibility: kind
+      - id: L2.7
+        title: Cluster troubleshooting drills
+        summary: "Cluster-wide incidents: image pulls, API latency, endpoint flapping, control plane rebuild"
+        exam: ["CKA:troubleshooting"]
+        concepts: [control-plane-signals]
+        scenarios:
+          - ticket: "Half the pods in the cluster cannot pull images since 09:00"
+            type: incident
+            feasibility: kind
+          - ticket: "Everything is slow; kubectl get takes 8s"
+            type: incident
+            feasibility: kind
+          - ticket: "Services flap: endpoints appear and disappear every 30s"
+            type: incident
+            feasibility: kind
+          - ticket: "Rebuild the cluster from the etcd backup after control plane disk loss"
+            type: incident
+            feasibility: kind
+
+  - id: L3
+    title: Security engineer
+    before: "Passes CKA"
+    after: "Hardens a cluster end to end: admission, Pod Security, supply chain, runtime, audit; passes CKS"
+    hours: 80
+    capstone: "kube-bench clean, signed images only, and an audit-log drill"
+    modules:
+      - id: L3.1
+        title: Cluster setup and hardening
+        summary: "CIS benchmark, kubelet flags, control plane exposure, locking down default resources"
+        exam: ["CKS:cluster-setup"]
+        scenarios:
+          - ticket: "kube-bench fails 11 checks on the control plane; get to zero without downtime"
+            type: break-fix
+            feasibility: addon
+            addons: "kube-bench"
+          - ticket: "Kubelet read-only port is open; close it on every node"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Lock the default namespace: no pods may run there"
+            type: build
+            feasibility: kind
+      - id: L3.2
+        title: Pod Security and admission
+        summary: "Pod Security Admission levels, ValidatingAdmissionPolicy, Kyverno, seccomp, AppArmor"
+        exam: ["CKS:system-hardening", "CKS:microservices"]
+        scenarios:
+          - ticket: "Namespace moved to restricted; 6 of 9 workloads refuse to start"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Write a ValidatingAdmissionPolicy that blocks latest tags and hostPath"
+            type: build
+            feasibility: kind
+          - ticket: "Kyverno must inject a default seccomp profile and deny privileged containers; the CI pipeline breaks; find the exception path"
+            type: build
+            feasibility: addon
+            addons: "kyverno"
+          - ticket: "AppArmor profile blocks nginx from writing its pid file"
+            type: break-fix
+            feasibility: kind
+      - id: L3.3
+        title: RBAC and identity hardening
+        summary: "Least privilege review, token automount, service account token rotation"
+        exam: ["CKS:hardening"]
+        scenarios:
+          - ticket: "Find the service account that can read every Secret and reduce it"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Disable token automount cluster-wide and fix the 3 apps that break"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Rotate a leaked service account token and prove the old one is dead"
+            type: incident
+            feasibility: kind
+      - id: L3.4
+        title: Supply chain
+        summary: "Image signing and verification, vulnerability scanning, digest pinning"
+        exam: ["CKS:supply-chain"]
+        scenarios:
+          - ticket: "Only images signed by the platform key may run in prod"
+            type: build
+            feasibility: addon
+            addons: "kyverno,cosign,registry"
+          - ticket: "Trivy finds a critical CVE in api; patch the base image and record the scan result"
+            type: build
+            feasibility: addon
+            addons: "trivy"
+          - ticket: "The pipeline pushes to a mutable tag; enforce digests cluster-wide"
+            type: build
+            feasibility: kind
+      - id: L3.5
+        title: Runtime security and audit
+        summary: "Audit policy and logs, runtime detection, read-only root filesystems"
+        exam: ["CKS:runtime"]
+        scenarios:
+          - ticket: "Someone exec'd into payments last night; find who, when and what from the audit logs"
+            type: incident
+            feasibility: addon
+            addons: "audit"
+          - ticket: "Alert when a shell spawns in any prod pod; prove it with a drill"
+            type: build
+            feasibility: addon
+            addons: "falco|tetragon"
+          - ticket: "A container tried to write to /etc; make the filesystem read-only without breaking the app"
+            type: break-fix
+            feasibility: kind
+      - id: L3.6
+        title: Network security
+        summary: "Encryption at rest, default-deny NetworkPolicy, egress control"
+        exam: ["CKS:cluster-setup", "CKS:microservices"]
+        scenarios:
+          - ticket: "Enable etcd encryption at rest and re-encrypt existing Secrets"
+            type: build
+            feasibility: kind
+          - ticket: "Default-deny every namespace; only the listed flows work afterwards"
+            type: build
+            feasibility: addon
+            addons: "cilium"
+          - ticket: "Egress to the internet only via proxy; curl from any other pod must fail"
+            type: build
+            feasibility: addon
+            addons: "cilium"
+
+  - id: L4
+    title: Platform builder
+    before: "Runs one cluster"
+    after: "Builds the platform layer: GitOps, policy as code, observability, autoscaling, tenancy, operators"
+    hours: 120
+    capstone: "Bootstrap a platform from Git: ArgoCD manages itself, policies, monitoring and one tenant"
+    modules:
+      - id: L4.1
+        title: GitOps
+        summary: "ArgoCD sync, health and hooks, app-of-apps bootstrap, External Secrets"
+        exam: ["CKA:architecture"]
+        scenarios:
+          - ticket: "ArgoCD app OutOfSync forever; nobody changed Git"
+            type: break-fix
+            feasibility: addon
+            addons: "argocd"
+          - ticket: "Bootstrap the platform: ArgoCD manages itself, Kyverno and metrics-server from a local gitea"
+            type: build
+            feasibility: addon
+            addons: "argocd,gitea"
+          - ticket: "The database must sync before the app; the app CrashLoops on every sync"
+            type: break-fix
+            feasibility: addon
+            addons: "argocd"
+          - ticket: "Secrets live in a vault dev server; wire External Secrets Operator"
+            type: build
+            feasibility: addon
+            addons: "external-secrets,vault"
+      - id: L4.2
+        title: Policy as code and tenancy
+        summary: "Kyverno generate and validate policies, exceptions, namespace-based tenancy models"
+        exam: ["CKS:microservices"]
+        scenarios:
+          - ticket: "Onboard team growth: namespace, quota, RBAC and default NetworkPolicy from one Kyverno generate policy"
+            type: build
+            feasibility: addon
+            addons: "kyverno"
+          - ticket: "A policy blocks every deploy with a cryptic message; write the exception process"
+            type: break-fix
+            feasibility: addon
+            addons: "kyverno"
+          - ticket: "Multi-tenancy for 30 teams: namespaces, vclusters or clusters; write the decision"
+            type: design
+            feasibility: kind
+      - id: L4.3
+        title: Observability platform
+        summary: "Prometheus alerting rules, SLOs and burn rates, cardinality, logs with OTel and Loki"
+        exam: ["CKA:troubleshooting"]
+        scenarios:
+          - ticket: "Alert KubePodCrashLooping fires for a Job that is supposed to fail"
+            type: break-fix
+            feasibility: addon
+            addons: "kube-prometheus"
+          - ticket: "Build an SLO: 99.5% availability for shop with a multi-window burn-rate alert"
+            type: build
+            feasibility: addon
+            addons: "kube-prometheus"
+          - ticket: "Prometheus OOMs every 6 hours; find the cardinality bomb"
+            type: incident
+            feasibility: addon
+            addons: "kube-prometheus"
+          - ticket: "Ship logs from shop to Loki with the OTel collector"
+            type: build
+            feasibility: addon
+            addons: "loki,otel-collector"
+      - id: L4.4
+        title: Autoscaling and capacity
+        summary: "KEDA event-driven scaling, VPA and HPA interaction, Cluster Autoscaler with simulated nodes"
+        exam: ["CKA:workloads"]
+        scenarios:
+          - ticket: "Scale worker on queue depth, not CPU"
+            type: build
+            feasibility: addon
+            addons: "keda,rabbitmq"
+          - ticket: "VPA and HPA fight over api; pods restart every 5 minutes"
+            type: break-fix
+            feasibility: addon
+            addons: "vpa,metrics-server"
+          - ticket: "Cluster Autoscaler would not scale up; reproduce with KWOK nodes and fix the cause"
+            type: break-fix
+            feasibility: simulated
+            addons: "kwok,cluster-autoscaler"
+      - id: L4.5
+        title: Operators and CRDs
+        summary: "Finalizers, writing a controller, CRD versions and conversion, cert-manager internals"
+        exam: ["CKA:architecture", "CKAD:environment"]
+        scenarios:
+          - ticket: "Namespace stuck Terminating for 2 days"
+            type: break-fix
+            feasibility: kind
+          - ticket: "Write a small controller that keeps a Backup CR in sync with a CronJob"
+            type: build
+            feasibility: kind
+          - ticket: "Upgrade a CRD from v1alpha1 to v1 without breaking 200 existing objects"
+            type: build
+            feasibility: kind
+          - ticket: "cert-manager stopped renewing; certificates expire in 3 days"
+            type: break-fix
+            feasibility: addon
+            addons: "cert-manager"
+      - id: L4.6
+        title: Service mesh and advanced traffic
+        summary: "Optional: mTLS, progressive delivery with Argo Rollouts, mesh vs Gateway API trade-offs"
+        exam: ["CKS:microservices"]
+        scenarios:
+          - ticket: "Enable mTLS STRICT in shop; the legacy report pod breaks"
+            type: break-fix
+            feasibility: addon
+            addons: "linkerd|istio"
+          - ticket: "Canary 5% to v2 with automatic rollback on 5xx"
+            type: build
+            feasibility: addon
+            addons: "argo-rollouts,kube-prometheus"
+          - ticket: "Do we need a mesh? Compare mesh vs Gateway API plus NetworkPolicy for our 12 services"
+            type: design
+            feasibility: kind
+      - id: L4.7
+        title: Developer experience
+        summary: "Shared Helm chart for every team, preview environments per pull request"
+        exam: ["CKAD:deployment"]
+        scenarios:
+          - ticket: "Build the platform-service chart used by every team; the grader renders 3 values files"
+            type: build
+            feasibility: kind
+          - ticket: "Preview environment per PR: namespace per branch with TTL cleanup"
+            type: build
+            feasibility: addon
+            addons: "argocd,gitea"
+
+  - id: L5
+    title: Scale and reliability
+    before: "Owns a platform for a handful of teams"
+    after: "Runs 20k+ pods: API server and etcd capacity, controllers at scale, incident command, SLOs, multi-cluster"
+    hours: 120
+    capstone: "Run the Sev1 drill and write the postmortem"
+    modules:
+      - id: L5.1
+        title: API server and etcd at scale
+        summary: "LIST and watch pressure, etcd size and compaction, API Priority and Fairness, cluster sizing"
+        exam: ["CKA:architecture"]
+        scenarios:
+          - ticket: "Cluster with 20k pods: kubectl get pods -A times out; find the client doing full LISTs and fix the controller"
+            type: incident
+            feasibility: simulated
+            addons: "kwok"
+          - ticket: "etcd db at 7 GB; find the object type and the leak"
+            type: incident
+            feasibility: simulated
+            addons: "kwok"
+          - ticket: "Tune API Priority and Fairness so the CI service account cannot starve the kubelets"
+            type: build
+            feasibility: simulated
+            addons: "kwok"
+          - ticket: "Design: 5k pods per cluster or 20k? Cost, blast radius, controller limits"
+            type: design
+            feasibility: kind
+      - id: L5.2
+        title: Scheduler and controllers at scale
+        summary: "Scheduler profiling, descheduler policies, DaemonSet rollout limits on large fleets"
+        exam: ["CKA:workloads"]
+        scenarios:
+          - ticket: "Scheduling 2k pods takes 40 minutes; profile the scheduler"
+            type: incident
+            feasibility: simulated
+            addons: "kwok"
+          - ticket: "Descheduler evicts pods constantly on the 500-node fleet"
+            type: break-fix
+            feasibility: simulated
+            addons: "kwok,descheduler"
+          - ticket: "Roll a DaemonSet across 500 nodes with at most 2% disruption"
+            type: build
+            feasibility: simulated
+            addons: "kwok"
+      - id: L5.3
+        title: Networking at scale
+        summary: "DNS latency, kube-proxy modes, eBPF datapath, NodeLocal DNSCache"
+        exam: ["CKA:networking"]
+        scenarios:
+          - ticket: "DNS p99 is 300ms cluster-wide"
+            type: incident
+            feasibility: addon
+            addons: "cilium"
+          - ticket: "5k Services: iptables sync takes 30s; move to IPVS or eBPF and prove it"
+            type: build
+            feasibility: simulated
+            addons: "kwok,cilium"
+          - ticket: "Deploy NodeLocal DNSCache without breaking NetworkPolicies"
+            type: build
+            feasibility: addon
+            addons: "cilium"
+      - id: L5.4
+        title: Upgrades, DR, multi-cluster
+        summary: "Upgrade failure causes (removed APIs, admission webhooks, addon drift, PDB-blocked drains), Velero and etcd restore, cross-cluster failover, upgrade cadence"
+        exam: ["CKA:architecture"]
+        scenarios:
+          - ticket: "Upgrading 1.36 to 1.37 breaks 3 teams: find the deprecated APIs before, not after"
+            type: build
+            feasibility: kind
+          - ticket: "Lost the control plane: restore from Velero and etcd into a fresh cluster within 30 minutes"
+            type: incident
+            feasibility: addon
+            addons: "velero,minio"
+          - ticket: "Fail shop over to cluster B; DNS and GitOps must follow"
+            type: incident
+            feasibility: addon
+            addons: "multi-cluster,argocd"
+          - ticket: "Design the upgrade cadence for 12 clusters"
+            type: design
+            feasibility: kind
+      - id: L5.5
+        title: Incident command
+        summary: "Compound Sev1 drills, noisy neighbours, silent data loss"
+        exam: ["CKA:troubleshooting"]
+        scenarios:
+          - ticket: "Sev1: checkout error rate 40%, a degraded node pool, a bad Kyverno policy and a cert expiring in 1 hour, all at once"
+            type: incident
+            feasibility: addon
+            addons: "kyverno,cert-manager,kube-prometheus"
+          - ticket: "Noisy neighbour: one tenant's Job storm takes the API server down for everyone"
+            type: incident
+            feasibility: simulated
+            addons: "kwok"
+          - ticket: "Silent data loss: a StatefulSet rescheduled to the wrong zone and a volume was recreated empty"
+            type: incident
+            feasibility: kind
+      - id: L5.6
+        title: Cost and efficiency
+        summary: "Right-sizing from usage data, spot capacity with taints and PDBs"
+        exam: ["CKA:workloads"]
+        scenarios:
+          - ticket: "Requests are 3x usage fleet-wide; produce the right-sizing plan and apply it to shop"
+            type: build
+            feasibility: addon
+            addons: "vpa,metrics-server"
+          - ticket: "Spot nodes: which workloads tolerate them; implement with taints and PDBs"
+            type: design
+            feasibility: simulated
+            addons: "kwok"
+
+  - id: L6
+    title: Staff
+    before: "Senior platform engineer"
+    after: "Sets direction: design reviews, capacity plans, migration strategy, postmortems that change the organization, cost"
+    hours: 80
+    capstone: "Contribute one scenario from a real incident you lived through"
+    modules:
+      - id: L6.1
+        title: Design reviews
+        summary: "RFC review, counter-proposals, platform API shape"
+        exam: ["CKA:architecture"]
+        scenarios:
+          - ticket: "Review this RFC for a multi-region active-active setup; find the 3 failure modes"
+            type: design
+            feasibility: kind
+          - ticket: "A team wants a cluster per microservice; write the counter-proposal"
+            type: design
+            feasibility: kind
+          - ticket: "Platform API for 200 engineers: CRDs, Helm values or templates"
+            type: design
+            feasibility: kind
+      - id: L6.2
+        title: Fleet capacity planning
+        summary: "Fleet-level capacity: per-cluster thresholds against the upstream envelope, blast radius per cluster, CoreDNS and etcd growth; quotas from usage data"
+        exam: ["CKA:architecture"]
+        scenarios:
+          - ticket: "Traffic grows 3x in 6 months across 12 clusters; from the fleet metrics, set per-cluster thresholds for nodes, etcd size and CoreDNS and decide when to add a cluster instead of growing one"
+            type: design
+            feasibility: simulated
+            addons: "kwok,kube-prometheus"
+          - ticket: "Set per-team quotas from 30 days of synthetic usage data"
+            type: design
+            feasibility: addon
+            addons: "kube-prometheus"
+      - id: L6.3
+        title: Postmortems and reliability program
+        summary: "Blameless postmortems, platform SLOs"
+        exam: ["CKA:troubleshooting"]
+        scenarios:
+          - ticket: "Write the postmortem for the Sev1 drill"
+            type: design
+            feasibility: kind
+          - ticket: "Define SLOs for the platform itself: API latency, scheduling latency, deploy success"
+            type: build
+            feasibility: addon
+            addons: "kube-prometheus"
+      - id: L6.4
+        title: Migration and strategy
+        summary: "Ingress to Gateway API migration, kube-proxy replacement on live clusters, build vs buy"
+        exam: ["CKA:networking", "CKS:microservices"]
+        scenarios:
+          - ticket: "Migrate 60 services from Ingress to Gateway API with zero downtime; write the runbook and run it on 6"
+            type: design
+            feasibility: addon
+            addons: "envoy-gateway"
+          - ticket: "Adopt Cilium replacing kube-proxy on a live cluster; run it"
+            type: build
+            feasibility: addon
+            addons: "cilium,multi-cluster"
+          - ticket: "Build vs buy: managed vs self-run control planes, with numbers"
+            type: design
+            feasibility: kind
+
+exams:
+  - id: CKA
+    title: Certified Kubernetes Administrator
+    domains:
+      - {id: architecture, title: "Cluster Architecture, Installation and Configuration", weight: 25}
+      - {id: workloads, title: "Workloads and Scheduling", weight: 15}
+      - {id: networking, title: "Services and Networking", weight: 20}
+      - {id: storage, title: "Storage", weight: 10}
+      - {id: troubleshooting, title: "Troubleshooting", weight: 30}
+  - id: CKAD
+    title: Certified Kubernetes Application Developer
+    domains:
+      - {id: design-build, title: "Application Design and Build", weight: 20}
+      - {id: deployment, title: "Application Deployment", weight: 20}
+      - {id: observability, title: "Application Observability and Maintenance", weight: 15}
+      - {id: environment, title: "Application Environment, Configuration and Security", weight: 25}
+      - {id: networking, title: "Services and Networking", weight: 20}
+  - id: CKS
+    title: Certified Kubernetes Security Specialist
+    domains:
+      - {id: cluster-setup, title: "Cluster Setup", weight: 15}
+      - {id: hardening, title: "Cluster Hardening", weight: 15}
+      - {id: system-hardening, title: "System Hardening", weight: 10}
+      - {id: microservices, title: "Minimize Microservice Vulnerabilities", weight: 20}
+      - {id: supply-chain, title: "Supply Chain Security", weight: 20}
+      - {id: runtime, title: "Monitoring, Logging and Runtime Security", weight: 20}

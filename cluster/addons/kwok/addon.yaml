@@ -1,0 +1,5 @@
+name: kwok
+description: KWOK v0.8.0 controller with the fast stages, for scheduling scenarios on simulated nodes
+manifests:
+  - kwok.yaml
+  - stage-fast.yaml

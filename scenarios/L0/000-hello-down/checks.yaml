@@ -1,0 +1,60 @@
+checks:
+  - id: deploy-exists
+    description: deployment hello exists
+    why: >-
+      The Deployment is the object the team owns; if it is gone, nothing below
+      it (ReplicaSet, pods) can recover and the fix is a redeploy, not a patch.
+    critical: true
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: hello
+    exists: true
+
+  - id: ready-replicas
+    description: deployment hello has 2 ready replicas
+    why: >-
+      readyReplicas counts pods whose Ready condition is true; the same
+      condition is what puts a pod IP into the Service's EndpointSlices, so 0
+      here means an outage even if the pods exist.
+    depends_on: [deploy-exists]
+    weight: 2
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: hello
+    path: "{.status.readyReplicas}"
+    equals: "2"
+
+  - id: image-correct
+    description: deployment hello runs the nginx:1.27-alpine image
+    why: >-
+      The image reference is the contract between the manifest and the
+      registry; one wrong character means no container ever starts, and the
+      pipeline that applied it still reported success.
+    depends_on: [deploy-exists]
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: hello
+    path: "{.spec.template.spec.containers[0].image}"
+    matches: "^(docker\\.io/(library/)?)?nginx:1\\.27-alpine(@sha256:[0-9a-f]{64})?$"
+    spoiler: true
+
+  - id: service-endpoints
+    description: service hello has at least one ready endpoint
+    why: >-
+      A Service is only a selector; EndpointSlices hold the pod IPs that are
+      Ready. With no ready endpoint kube-proxy rejects every connection to
+      the hello Service (connection refused).
+    depends_on: [ready-replicas]
+    resource:
+      apiVersion: discovery.k8s.io/v1
+      kind: EndpointSlice
+      namespace: "{{ .Namespace }}"
+      selector: kubernetes.io/service-name=hello
+    path: "{.items[*].endpoints[?(@.conditions.ready==true)].addresses[*]}"
+    not_empty: true

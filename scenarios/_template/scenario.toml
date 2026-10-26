@@ -1,0 +1,98 @@
+# kubedrill-template: delete the comments in this file in a real scenario.
+# Scenario metadata. One directory per scenario at scenarios/<level>/<id>/.
+# `kubedrill new <level> <id>` copies this template and rewrites id and level.
+#
+# Layout of a scenario directory:
+#   scenario.toml      this file: [scenario] metadata and [[variant]] tables
+#   instruction.md     the ticket the learner reads; needs "## Done when"
+#   hints.md           the hint ladder, 3 or 4 "## Hint N: ..." sections
+#   setup/*.yaml       Go text/template manifests applied on reset, sorted by name
+#   setup/hook.sh      optional, executable, runs after the manifests are applied
+#   checks.yaml        declarative grading, see the comments in that file
+#   solution/README.md the troubleshooting walkthrough, seven fixed sections
+#   solution/solve.sh  executable, non-interactive reference fix for every variant
+#   approaches/<name>/ optional, one directory per valid way to fix:
+#                      snippet.txt (1 to 8 lines) and content.md (trade-offs,
+#                      a short paragraph); shown after a solve, templated like
+#                      instruction.md (write kubectl -n {{ .Namespace }})
+
+[scenario]
+# id matches the directory name: three digits, a hyphen, a kebab-case slug.
+id = "000-template"
+title = "One line in the reporter's words, never the root cause"
+# level matches the parent directory, L0..L6; module is a module id from
+# curriculum.yaml (the linter rejects an unknown one).
+level = "L0"
+module = "L0.1"
+# type: break-fix (repair a broken state), build (create something new),
+# design (written answer graded by rubric), incident (timed, several faults).
+type = "break-fix"
+# Expected minutes for a learner at the target level, > 0.
+minutes = 10
+# Base of the episode namespace: every episode gets a fresh namespace named
+# <namespace>-<5 random characters>. May use template syntax, e.g.
+# "shop-{{ .Seed }}". After rendering it must be a DNS-1123 label of at most
+# 57 characters (the suffix adds 6 to reach the 63-character limit) and must
+# not be default, kube-*, kube-node-lease, kube-public or
+# local-path-storage. The value "template" is a marker the linter rejects.
+namespace = "template"
+# Optional: scenario ids that should be solved first. Parsed, not acted on yet.
+requires = []
+# Optional: names as listed under addons in curriculum.yaml; parsed, not acted
+# on yet.
+addons = []
+# Exam domains touched, shaped <EXAM>:<domain-id> with EXAM in CKA, CKAD, CKS.
+exam = ["CKA:troubleshooting"]
+# Fundamentals the scenario exercises: ids of docs/concepts/<id>.md, lowercase
+# words joined by hyphens. break-fix and build scenarios need at least one;
+# the linter rejects an id without its concept file.
+concepts = ["pod-lifecycle"]
+# Objects a root-cause fix writes, each "group/resource/name" with the core
+# group written "core": "apps/deployments/app", "core/services/app",
+# "core/configmaps/settings". Telemetry gives the verdict root-cause when any
+# learner write hits an entry, and reports the first write separately.
+# break-fix scenarios need at least one entry.
+fix_targets = ["apps/deployments/app"]
+# Optional: kind profile from cluster/profiles when base.yaml is not enough.
+# Parsed, not acted on yet.
+profile = ""
+# Optional, default false. The linter rejects setup manifests that set
+# privileged: true, hostNetwork, hostPID or hostIPC, mount a hostPath, add
+# capabilities or name docker.sock. true lifts that rule; a scenario that sets
+# it needs maintainer review (CODEOWNERS), because smoke applies its setup on
+# the contributor's cluster.
+allow_privileged = false
+
+# Variants: the seed picks index (seed-1) mod len(variants). Names are unique.
+# Variant names are hidden from the learner while the episode is active (the
+# CLI shows them only after it ends), so a descriptive name such as
+# "typo-tag" is fine. Vars are strings reachable as {{ .Vars.<key> }} in
+# setup/*.yaml, in the string fields of checks.yaml, and in instruction.md,
+# hints.md, solution/README.md and approaches/*/. Every variant defines
+# the same keys so every template renders for every seed (the linter renders
+# each one). L1 and above need at least two variants; L0 may ship one. With
+# none, the variant is named "default" and Vars is empty; break-fix scenarios
+# need at least one variant.
+#
+# root_cause is the reference diagnosis for the variant: one concrete
+# sentence, 20 to 300 characters, naming the faulty field and the fact that
+# makes it wrong. Required for every break-fix variant; the learner's
+# `kubedrill diagnose` text is compared with it after the episode.
+#
+# Template data available in setup files, checks, instruction.md, hints.md,
+# solution/README.md and approaches/<name>/snippet.txt and content.md:
+#   {{ .Seed }}       int64 episode seed, >= 1
+#   {{ .Namespace }}  the episode namespace; always write it instead of a
+#                     literal name, the episode namespace carries a suffix
+#   {{ .Variant }}    the selected variant name
+#   {{ .Vars.<key> }} the variant's vars; an undefined key is an error
+
+[[variant]]
+name = "first-root-cause"
+vars = { image = "nginx:1.27-alpnie" }
+root_cause = "The Deployment image tag 1.27-alpnie does not exist in docker.io/library/nginx."
+
+[[variant]]
+name = "second-root-cause"
+vars = { image = "docker.io/library/ngnix:1.27-alpine" }
+root_cause = "The Deployment image names the repository library/ngnix, which does not exist on Docker Hub."

@@ -1,0 +1,5 @@
+name: metrics-server
+description: metrics-server v0.9.0 for kubectl top and the HPA; runs with --kubelet-insecure-tls because kind kubelets serve self-signed certificates
+base: true
+manifests:
+  - components.yaml

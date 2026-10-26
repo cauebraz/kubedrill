@@ -1,0 +1,108 @@
+# kubedrill-template: delete the comments in this file in a real scenario.
+# Grading specification. The grader runs the checks as a DAG: a check whose
+# depends_on failed is skipped, a critical check that does not pass zeroes
+# the score, and the score is the weighted fraction of passed checks.
+#
+# Each check has:
+#   id            unique, lowercase letters, digits and hyphens
+#   description   learner-facing, states the expected outcome; it is also the
+#                 "## Done when" bullet of instruction.md, same order
+#   why           required, 20 to 400 characters, one or two sentences: what a
+#                 pass proves and why it matters in production. Printed under
+#                 the check while it fails or errors; passing checks print no
+#                 why. Starts with a capital letter unless the first word is a
+#                 field name. Not templated.
+#   depends_on    optional list of check ids; no cycles
+#   weight        optional, default 1, never negative
+#   critical      optional; a critical check that does not pass (failed,
+#                 errored or skipped) zeroes the whole score
+#   spoiler       optional; true when the actual value names the root cause
+#                 (an image reference, a selector value). The CLI hides the
+#                 actual value until the first hint or diagnosis.
+#
+# Exactly one source:
+#   resource:  apiVersion, kind, namespace, and name OR selector. With a
+#              selector the value is a List, so `path` starts at {.items...}.
+#   path:      JSONPath applied to the resource (resource source only)
+#   probe:     image (pinned image:tag@sha256:...), command, optional timeout
+#              (a Go duration, at least 1s; default 60s); runs a one-shot pod
+#              in the scenario namespace and exposes exit code and output.
+#              The pod runs as uid 65532 (runAsNonRoot), without a service
+#              account token, with all capabilities dropped and a 64Mi memory
+#              limit, so the image must run as non-root.
+#   script:    local command with kubectl on PATH (escape hatch); the
+#              environment is an allowlist: PATH, HOME, TMPDIR, LANG, LC_ALL,
+#              TERM, USER plus TASK_NS, SEED, VARIANT, VAR_* and KUBECONFIG (a
+#              pinned copy holding only the kind-kubedrill context). Unlike
+#              hook.sh and solve.sh under smoke, script checks do not get
+#              KUBEDRILL_BIN or KUBEDRILL_EPISODE.
+#
+# At least one validator on the extracted value:
+#   exists (resource without path only: true passes when the object or one
+#   selector match exists, false when it does not; lint rejects exists with
+#   path, probe or script; use not_empty for a path), equals, not_equals,
+#   matches (RE2 regexp), contains, gte, lte, not_empty, exit_code (probe and
+#   script only). A path that selects nothing reports "no value at <path>".
+#
+# String fields render as Go templates: description, resource.namespace,
+# resource.name, resource.selector, path, equals, not_equals, matches,
+# contains, gte, lte, script, probe.image, probe.command. Data: .Seed,
+# .Namespace, .Variant, .Vars.<key>.
+checks:
+  - id: deploy-exists
+    description: deployment app exists
+    # why: concrete and learner-facing; name the object, the mechanism and the
+    # production consequence. No templates.
+    why: >-
+      The Deployment is the object the team owns; if it is gone, nothing below
+      it (ReplicaSet, pods) can recover and the fix is a redeploy, not a patch.
+    critical: true
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: app
+    exists: true
+
+  - id: ready-replicas
+    description: deployment app has 2 ready replicas
+    why: >-
+      readyReplicas counts pods whose Ready condition is true; the same
+      condition is what puts a pod IP into the Service's EndpointSlices, so 0
+      here means an outage even if the pods exist.
+    depends_on: [deploy-exists]
+    weight: 2
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: app
+    path: "{.status.readyReplicas}"
+    equals: "2"
+
+  - id: service-endpoints
+    description: service app has at least one ready endpoint
+    why: >-
+      A Service is only a selector; EndpointSlices hold the pod IPs that are
+      Ready. With no ready endpoint kube-proxy rejects every connection to
+      the Service name (connection refused).
+    depends_on: [ready-replicas]
+    resource:
+      apiVersion: discovery.k8s.io/v1
+      kind: EndpointSlice
+      namespace: "{{ .Namespace }}"
+      selector: kubernetes.io/service-name=app
+    path: "{.items[*].endpoints[?(@.conditions.ready==true)].addresses[*]}"
+    not_empty: true
+
+  - id: http-answers
+    description: the service answers HTTP 200 from inside the cluster
+    why: >-
+      Ready endpoints prove the pods accepted traffic, not that the application
+      answers; an in-cluster request is what the users' clients actually do.
+    depends_on: [service-endpoints]
+    probe:
+      image: curlimages/curl:8.14.1@sha256:9a1ed35addb45476afa911696297f8e115993df459278ed036182dd2cd22b67b
+      command: ["curl", "-fsS", "-o", "/dev/null", "http://app.{{ .Namespace }}.svc/"]
+      timeout: 30s
+    exit_code: 0

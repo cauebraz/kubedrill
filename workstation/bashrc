@@ -1,0 +1,156 @@
+# shellcheck shell=bash
+case $- in
+  *i*) ;;
+  *) return ;;
+esac
+
+export KUBE_EDITOR=vim
+export KUBECONFIG="${KUBECONFIG:-/home/learner/.kube/config}"
+export KUBEDRILL_WORKSTATION="${KUBEDRILL_WORKSTATION:-1}"
+
+if [ "${KUBEDRILL_EXAM:-}" = 1 ]; then
+  export PATH=/opt/exam/bin:/usr/bin:/bin
+fi
+
+if [ -f /usr/share/bash-completion/bash_completion ]; then
+  # shellcheck source=/dev/null
+  . /usr/share/bash-completion/bash_completion
+fi
+
+if command -v kubectl >/dev/null 2>&1; then
+  eval "$(kubectl completion bash)"
+  alias k=kubectl
+  complete -o default -F __start_kubectl k
+fi
+if command -v helm >/dev/null 2>&1; then
+  eval "$(helm completion bash)"
+fi
+if command -v kubedrill >/dev/null 2>&1; then
+  eval "$(kubedrill completion bash 2>/dev/null)" 2>/dev/null || true
+fi
+
+__kubedrill_ns() {
+  local ns
+  ns=$(kubectl config view --minify --output 'jsonpath={..namespace}' 2>/dev/null)
+  printf '%s' "${ns:-default}"
+}
+
+__kubedrill_ns_cached=
+
+__kubedrill_enter_namespace() {
+  local ns=${1:-} writable=${KUBEDRILL_WRITABLE_KUBECONFIG:-/tmp/kubeconfig}
+  command -v kubedrill >/dev/null 2>&1 || return 0
+  if [ -z "$ns" ]; then
+    ns=$(kubedrill namespace 2>/dev/null) || return 0
+  fi
+  [ -n "$ns" ] || return 0
+  if [ ! -s "$writable" ]; then
+    cp "$KUBECONFIG" "$writable" 2>/dev/null || return 0
+    chmod 0600 "$writable" 2>/dev/null || true
+  fi
+  export KUBECONFIG="$writable"
+  kubectl config set-context --current --namespace="$ns" >/dev/null 2>&1 || true
+  __kubedrill_ns_cached=$ns
+}
+
+__kubedrill_sync_namespace() {
+  local status=$? ns
+  ns=$(kubedrill namespace 2>/dev/null) || return "$status"
+  if [ -n "$ns" ] && [ "$ns" != "$__kubedrill_ns_cached" ]; then
+    __kubedrill_enter_namespace "$ns"
+  fi
+  return "$status"
+}
+
+__kubedrill_enter_namespace
+if command -v kubedrill >/dev/null 2>&1; then
+  PROMPT_COMMAND="__kubedrill_sync_namespace${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+fi
+
+PS1='\[\e[1;34m\]\u@\h\[\e[0m\] \[\e[1;32m\]\w\[\e[0m\] \[\e[0;33m\][ns:$(__kubedrill_ns)]\[\e[0m\]\n\$ '
+
+__kubedrill_json() {
+  local s=$1
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//$'\n'/\\n}
+  s=${s//$'\r'/\\r}
+  s=${s//$'\t'/\\t}
+  s=${s//[$'\001'-$'\037']/}
+  printf '%s' "$s"
+}
+
+__kubedrill_log_file="${KUBEDRILL_SHELL_LOG:-${KUBEDRILL_DATA:-/data}/shell/commands.jsonl}"
+__kubedrill_log_armed=0
+__kubedrill_log_cmd=
+__kubedrill_log_start=
+
+__kubedrill_log_debug() {
+  [ "$__kubedrill_log_armed" = 1 ] || return 0
+  case "$BASH_COMMAND" in
+    __kubedrill_*) return 0 ;;
+  esac
+  __kubedrill_log_armed=0
+  local line
+  line=$(HISTTIMEFORMAT='' builtin history 1)
+  if [[ $line =~ ^[[:space:]]*[0-9]+\*?[[:space:]]+(.*)$ ]]; then
+    __kubedrill_log_cmd=${BASH_REMATCH[1]}
+  else
+    __kubedrill_log_cmd=$BASH_COMMAND
+  fi
+  __kubedrill_log_start=$EPOCHREALTIME
+}
+
+__kubedrill_log_prompt() {
+  local status=$? end=$EPOCHREALTIME ts ms
+  if [ -n "$__kubedrill_log_cmd" ] && [ -n "$__kubedrill_log_start" ]; then
+    ms=$(( (10#${end/./} - 10#${__kubedrill_log_start/./}) / 1000 ))
+    TZ=UTC printf -v ts '%(%Y-%m-%dT%H:%M:%S)T.%sZ' "${__kubedrill_log_start%.*}" "${__kubedrill_log_start#*.}"
+    printf '{"ts":"%s","cmd":"%s","exit":%d,"ms":%d}\n' "$ts" "$(__kubedrill_json "$__kubedrill_log_cmd")" "$status" "$ms" >>"$__kubedrill_log_file" 2>/dev/null || true
+  fi
+  __kubedrill_log_cmd=
+  __kubedrill_log_start=
+  return "$status"
+}
+
+__kubedrill_log_arm() {
+  local status=$?
+  __kubedrill_log_armed=1
+  return "$status"
+}
+
+__kubedrill_log_init() {
+  local dir=${__kubedrill_log_file%/*}
+  (umask 077 && mkdir -p "$dir" && : >>"$__kubedrill_log_file") 2>/dev/null || return 1
+  chmod 0700 "$dir" 2>/dev/null || true
+  chmod 0600 "$__kubedrill_log_file" 2>/dev/null || true
+}
+
+if [ -n "${EPOCHREALTIME:-}" ] && __kubedrill_log_init; then
+  HISTCONTROL=ignoredups
+  trap '__kubedrill_log_debug' DEBUG
+  PROMPT_COMMAND="__kubedrill_log_prompt${PROMPT_COMMAND:+; $PROMPT_COMMAND}; __kubedrill_log_arm"
+fi
+
+__kubedrill_motd() {
+  printf 'kubedrill workstation: cluster %s\n' "${KUBEDRILL_CLUSTER:-kubedrill}"
+  if [ "${KUBEDRILL_EXAM:-}" = 1 ]; then
+    printf 'EXAM MODE: use kubectl (k), helm, yq, jq and vim, as in the real exam. No hints, no solution, no watch pane.\n'
+    printf 'Allowed documentation: https://kubernetes.io/docs, https://kubernetes.io/blog, https://helm.sh/docs, https://gateway-api.sigs.k8s.io\n'
+    if [ -n "${KUBEDRILL_DEADLINE:-}" ]; then
+      printf 'Deadline: %s. Run "kubedrill submit" when done.\n' "$KUBEDRILL_DEADLINE"
+    fi
+  else
+    printf 'tools: kubectl (alias k), helm, k9s, stern, kubectx, kubens, yq, jq, vim. Type "kubedrill --help" for the trainer.\n'
+  fi
+  if [ "${KUBEDRILL_TICKET_PANE:-}" = 1 ]; then
+    printf 'ticket: the pane above (mouse wheel scrolls it; kubedrill ticket prints it here)\n'
+  elif command -v kubedrill >/dev/null 2>&1; then
+    kubedrill ticket 2>/dev/null || true
+  fi
+}
+
+if [ -z "${KUBEDRILL_MOTD_SHOWN:-}" ]; then
+  KUBEDRILL_MOTD_SHOWN=1
+  __kubedrill_motd
+fi

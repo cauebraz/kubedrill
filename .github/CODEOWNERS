@@ -1,0 +1,6 @@
+* @cauebraz
+scenarios/** @cauebraz
+cluster/addons/** @cauebraz
+workstation/** @cauebraz
+.github/** @cauebraz
+internal/faults/** @cauebraz

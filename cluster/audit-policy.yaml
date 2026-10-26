@@ -1,0 +1,29 @@
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages:
+  - RequestReceived
+rules:
+  - level: None
+    verbs: ["watch", "create", "update", "patch", "delete", "deletecollection"]
+    resources:
+      - group: ""
+        resources: ["events"]
+      - group: events.k8s.io
+        resources: ["events"]
+  - level: None
+    resources:
+      - group: coordination.k8s.io
+        resources: ["leases"]
+      - group: authentication.k8s.io
+        resources: ["tokenreviews"]
+      - group: authorization.k8s.io
+        resources: ["subjectaccessreviews", "selfsubjectaccessreviews", "localsubjectaccessreviews"]
+  - level: None
+    users: ["system:kube-scheduler", "system:kube-controller-manager", "system:kube-proxy", "system:apiserver"]
+    verbs: ["get", "list", "watch"]
+  - level: None
+    userGroups: ["system:nodes"]
+    verbs: ["get", "list", "watch"]
+  - level: None
+    nonResourceURLs: ["/healthz*", "/livez*", "/readyz*", "/version", "/openapi*", "/api*"]
+  - level: Metadata

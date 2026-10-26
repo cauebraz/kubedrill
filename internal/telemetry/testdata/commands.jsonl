@@ -1,0 +1,7 @@
+{"ts": "2026-10-25T10:00:04.512345678Z", "cmd": "kubectl get pods", "exit": 0, "ms": 180}
+{"ts": "2026-10-25T10:00:19.000000000Z", "cmd": "k describe pod hello-7d9f8b6c5-x2x9q", "exit": 0, "ms": 220}
+{"ts": "2026-10-25T10:00:35.000000000Z", "cmd": "cat /etc/hosts", "exit": 0, "ms": 2}
+{"ts": "2026-10-25T10:00:39.000000000Z", "cmd": "kubectl logs hello-7d9f8b6c5-x2x9q | grep error", "exit": 1, "ms": 150}
+{"ts": "2026-10-25T10:01:59.000000000Z", "cmd": "kubectl set image deployment/hello hello=nginx:1.27.2", "exit": 0, "ms": 140}
+{"ts": "2026-10-25T11:40:00.000000000Z", "cmd": "kubectl get deploy", "exit": 0, "ms": 100}
+{"ts":"2026-10-25T10:02

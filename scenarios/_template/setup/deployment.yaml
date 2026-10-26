@@ -1,0 +1,42 @@
+# Setup files are Go text/template documents applied in file-name order after
+# the namespace is reset. Set metadata.namespace to {{ .Namespace }}: an
+# object without a namespace lands in the scenario namespace, an object that
+# names another namespace or a cluster-scoped kind (Namespace, ClusterRole,
+# CRD) is refused, because a scenario owns only its namespace.
+# Pin images as image:tag@sha256:<digest> except when the tag is the bug.
+# Every Deployment sets terminationGracePeriodSeconds: 1 in its pod spec so a
+# reset does not wait 30 seconds for old pods; the linter rejects other values.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  namespace: {{ .Namespace }}
+  labels:
+    app: app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: app
+          image: {{ .Vars.image }}
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi

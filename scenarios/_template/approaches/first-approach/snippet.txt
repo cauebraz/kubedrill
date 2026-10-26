@@ -1,0 +1,2 @@
+kubectl -n {{ .Namespace }} set image deployment/app app=nginx:1.27-alpine
+kubectl -n {{ .Namespace }} rollout status deployment/app --timeout=120s

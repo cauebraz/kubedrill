@@ -1,0 +1,36 @@
+name: workstation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - workstation/**
+      - internal/workstation/**
+      - .github/workflows/workstation.yml
+      - .github/workflows/ci.yml
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workstation-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  workstation:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker build -t kubedrill-workstation:ci workstation/
+      - run: docker run --rm kubedrill-workstation:ci bash -lc 'kubectl version --client && helm version && k9s version && stern --version && yq --version && kubectx --help >/dev/null && kubens --help >/dev/null && tmux -V && asciinema --version && test "$(id -u)" = 1000 && echo OK'
+      - run: docker run --rm kubedrill-workstation:ci tmux 2>&1 | grep -F 'starting a plain shell'
