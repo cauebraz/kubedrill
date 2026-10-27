@@ -63,7 +63,8 @@ stays the same, and the root cause usually changes.
 
 `kubedrill start` opens a tmux session with three panes:
 
-- Top left: the ticket. Scroll it with the mouse wheel while you type.
+- Top left: the ticket. Scroll it with the mouse wheel while you type;
+  click it and press `s` for the story when the scenario has one.
 - Bottom left: a shell with `kubectl` (alias `k`), `helm`, `k9s` and `stern`,
   already pointed at the episode namespace.
 - Right: `kubedrill watch`, re-grading every 5 seconds.
@@ -90,8 +91,11 @@ Expected: 10 min (yours: 7.2 min median over 3 solves)
 `Expected` is the time for someone at that level who has seen the problem
 before. A first attempt that takes three times longer is normal.
 
-If the vocabulary is new, `kubedrill learn` prints the concept pages this
-scenario uses. Otherwise read them after the solve, to name what you did.
+If Kubernetes itself is new, start with `kubedrill story` (or `s` in the
+ticket pane) when the ticket names it: it tells this ticket from
+zero, explains each object as it appears and walks the read-only commands
+that follow the trail. If only the vocabulary is new, `kubedrill learn`
+prints the concept pages this scenario uses. Otherwise read them after the solve, to name what you did.
 `kubedrill concepts` lists every page.
 
 ## How grading works

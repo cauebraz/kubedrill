@@ -12,7 +12,7 @@ and exam mode are in [docs/workstation.md](../docs/workstation.md).
 | `versions.env`   | The one place a tool version is written; the Dockerfile reads it                         |
 | `checksums.txt`  | `<sha256>  <filename>` for every downloaded file, amd64 and arm64                        |
 | `bashrc`         | Login shell: aliases, completion, prompt, episode namespace, `ssh <node>`, shell log, banner |
-| `tmux.conf`      | tmux settings: mouse on, 20000 lines of history, status line with the cluster name       |
+| `tmux.conf`      | tmux settings: mouse on, `C-b m` mouse toggle for copying, OSC 52 clipboard, 20000 lines of history, status line with the mouse state and the cluster name |
 | `entrypoint.sh`  | Takes `shell` or `tmux`, builds the pane layout and starts the asciinema recording       |
 
 The runtime behavior of `bashrc` and `entrypoint.sh` is described in

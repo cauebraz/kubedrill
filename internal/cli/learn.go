@@ -123,6 +123,73 @@ func (a *app) learnActive() error {
 	return nil
 }
 
+func (a *app) storyCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "story [ref]",
+		Short: "Read the ticket told from zero: the objects involved, the trail of commands and why the fix works",
+		Long: "story prints the story of a scenario: what happened in plain words, the\n" +
+			"Kubernetes objects involved explained from zero, the read-only commands that\n" +
+			"follow the trail and what each output means, then why the fix works. Without\n" +
+			"an argument it prints the story of the active episode, with its namespace;\n" +
+			"with a ref it prints that scenario's. In the workstation the ticket pane shows\n" +
+			"it with s. It is refused during an exam.",
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if err := a.refuseInExam("story"); err != nil {
+				return err
+			}
+			ref := ""
+			if len(args) == 1 {
+				ref = args[0]
+			}
+			return a.printStory(ref)
+		},
+	}
+}
+
+// printStory prints the story of the scenario ref names, or of the active
+// episode when ref is empty, rendered for that episode when it runs the
+// scenario.
+func (a *app) printStory(ref string) error {
+	j, err := a.getJournal()
+	if err != nil {
+		return err
+	}
+	cur, err := j.Current()
+	if err != nil {
+		return fmt.Errorf("read current episode: %w", err)
+	}
+	if ref == "" && cur == nil {
+		return errors.New("no active episode; kubedrill story <id> prints the story of one scenario")
+	}
+	if ref == "" {
+		ref = cur.ScenarioID
+	}
+	cat, err := a.getCatalog()
+	if err != nil {
+		return err
+	}
+	sc, err := cat.Find(ref)
+	if err != nil {
+		return err
+	}
+	var ep *journal.Episode
+	if cur != nil && cur.ScenarioID == sc.Meta.ID {
+		ep = cur
+	}
+	rd, err := renderFor(sc, ep)
+	if err != nil {
+		return err
+	}
+	if rd.Story == "" {
+		a.printf("%s has no story yet; kubedrill learn prints its fundamentals\n", sc.Meta.ID)
+		return nil
+	}
+	a.printf("%s\n\n", a.printer().Style(render.StyleBold, fmt.Sprintf("Story of %s (%s)", sc.Meta.Title, sc.Meta.ID)))
+	a.printf("%s", a.printer().Markdown(rd.Story))
+	return nil
+}
+
 // printConcept prints the header line and the rendered page of c.
 func (a *app) printConcept(c concepts.Concept) {
 	a.printf("%s  %s\n", a.printer().Style(render.StyleAccent, c.ID), a.printer().Style(render.StyleBold, c.Title))

@@ -111,7 +111,7 @@ func TestStartOpensWorkstationInOrder(t *testing.T) {
 	if f.ws.root != f.root || f.ws.dataDir != f.journal.dir {
 		t.Errorf("workstation wired with root %q data %q; want %q and /data/kubedrill", f.ws.root, f.ws.dataDir, f.root)
 	}
-	mustContain(t, out, "started 001-hello-down (seed 1) in namespace task-hello-abcde\n\nFirst time with pods, deployments. See a worked example from another variant before your ticket? [y/N] worked example skipped\nticket shown in the workstation (kubedrill ticket reprints it)\nFundamentals: kubedrill learn (pods, deployments)\nChecked by 1 check: kubedrill check --explain\nExpected: 15 min\nback on the host; kubedrill check grades from here too\n")
+	mustContain(t, out, "started 001-hello-down (seed 1) in namespace task-hello-abcde\n\nFirst time with pods, deployments. See a worked example from another variant before your ticket? [y/N] worked example skipped\nticket shown in the workstation (kubedrill ticket reprints it)\nNew to Kubernetes? kubedrill story tells this ticket from zero\nFundamentals: kubedrill learn (pods, deployments)\nChecked by 1 check: kubedrill check --explain\nExpected: 15 min\nback on the host; kubedrill check grades from here too\n")
 	mustNotContain(t, out, "The hello app returns 503", "Next: kubedrill watch")
 	mustContain(t, errOut, "preparing the workstation...")
 }

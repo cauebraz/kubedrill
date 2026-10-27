@@ -158,3 +158,50 @@ func TestConceptsSummaryWrapped(t *testing.T) {
 		t.Errorf("wrapped summary text:\n got %q\nwant %q", got, long)
 	}
 }
+
+func TestStory(t *testing.T) {
+	tests := []struct {
+		name   string
+		start  bool
+		args   []string
+		code   int
+		out    []string
+		notOut []string
+		errOut string
+	}{
+		{name: "no episode and no ref", args: []string{"story"}, code: 1, errOut: "kubedrill: no active episode; kubedrill story <id> prints the story of one scenario"},
+		{name: "ref without episode", args: []string{"story", "001"}, out: []string{"Story of Hello app is down (001-hello-down)", "The hello pods in task-hello never start."}},
+		{name: "active episode", start: true, args: []string{"story"}, out: []string{"Story of Hello app is down (001-hello-down)", "The hello pods in task-hello-abcde never start."}},
+		{name: "scenario without story", start: true, args: []string{"story", "002"}, out: []string{"002-service-dns has no story yet; kubedrill learn prints its fundamentals"}, notOut: []string{"Story of"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			if tc.start {
+				f.run(t, "", "start", "001", "--seed", "1")
+			}
+			before := len(f.kube.calls)
+			code, out, errOut := f.run(t, "", tc.args...)
+			if code != tc.code {
+				t.Fatalf("exit: got %d, want %d (%s)", code, tc.code, errOut)
+			}
+			mustContain(t, out, tc.out...)
+			mustNotContain(t, out, tc.notOut...)
+			if tc.errOut != "" {
+				mustContain(t, errOut, tc.errOut)
+			}
+			if len(f.kube.calls) != before {
+				t.Errorf("story touched the cluster: %v", f.kube.calls[before:])
+			}
+		})
+	}
+}
+
+func TestTicketPointsAtStory(t *testing.T) {
+	f := newFixture(t)
+	_, out, _ := f.run(t, "", "start", "001", "--seed", "1")
+	mustContain(t, out, "New to Kubernetes? kubedrill story tells this ticket from zero")
+	_, out, _ = f.run(t, "", "start", "002", "--seed", "1", "--yes")
+	mustContain(t, out, "started 002-service-dns")
+	mustNotContain(t, out, "kubedrill story")
+}

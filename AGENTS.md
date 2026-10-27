@@ -20,7 +20,7 @@ stays on the learner's machine.
 
 ```
 cmd/kubedrill/            composition root and main; telemetry reads the cluster audit log and the journal's shell log and recordings
-internal/scenario/        on-disk scenario format: scenario.toml, instruction.md, hints.md, setup/, checks.yaml, solution/, approaches/
+internal/scenario/        on-disk scenario format: scenario.toml, instruction.md, hints.md, story.md, setup/, checks.yaml, solution/, approaches/
 internal/grader/          runs checks.yaml as a DAG against the cluster, produces Grade with Results; script checks get an env allowlist (PATH, HOME, TMPDIR, LANG, LC_ALL, TERM, USER plus TASK_NS, SEED, VARIANT, VAR_*, KUBECONFIG) shared with hook.sh and solve.sh through internal/scriptrun; wrapper.go puts a kubectl tagged kubedrill-check first on PATH for them
 internal/kube/            the Kubernetes API client (dynamic client, server-side apply, probes, namespace GC, APIService health); cluster/ uses clientcmd, grader/ uses client-go jsonpath
 internal/yamldoc/         one YAML document splitter (Split) shared by kube, scenario lint and the addon loader
@@ -38,7 +38,7 @@ internal/workstation/     the workstation container: image tag, linux binary and
 internal/cli/             cobra commands, Factories/Options, session assembly and command handlers
 internal/render/          terminal text: width resolution, wrap and truncate, markdown, styles, check result lines, Printer, progress line
 internal/tui/watch/       Bubble Tea model of kubedrill watch (Session, Options, Run)
-internal/tui/ticket/      Bubble Tea model of kubedrill ticket --follow (Loader, Run)
+internal/tui/ticket/      Bubble Tea model of kubedrill ticket --follow (Loader, Run); s switches to the story
 scenarios/<level>/<id>/   one directory per scenario, id = NNN-kebab-slug
 cluster/profiles/         kind configurations as Go templates over the audit paths (base.yaml is the default)
 cluster/addons/<name>/    addon.yaml plus vendored upstream manifests: metrics-server (base), gateway, kwok; README.md lists sources and local changes
@@ -103,6 +103,10 @@ private/                  git-ignored local notes (research, reviews); never lin
 - hints.md is the four-rung ladder (`## Hint 1: where to look`, `## Hint 2:
   what to observe`, `## Hint 3: what it means`, optional `## Hint 4: what to
   change`); no hint contains a mutating kubectl command.
+- story.md is optional (recommended for L0): exactly `## What happened`,
+  `## The pieces`, `## Following the trail`, `## The fix and why it works`,
+  `## Check your work`, in order, written for someone who has never used
+  Kubernetes and true for every variant.
 - solution/README.md has exactly `## Symptom`, `## Candidate causes`, `##
   Observation that splits them`, `## Change`, `## Verify`, `## In the real
   world`, `## Go deeper`, in order.

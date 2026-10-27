@@ -110,13 +110,13 @@ func TestExamHidesPracticeAids(t *testing.T) {
 	done.Debrief = &journal.Debrief{NextTimeFirst: "the pod events"}
 	f.journal.episodes = []journal.Episode{done}
 	_, out, _ := f.run(t, "", "start", "001", "--seed", "1", "--exam")
-	mustNotContain(t, out, "Fundamentals:", "Last time you said")
+	mustNotContain(t, out, "Fundamentals:", "Last time you said", "kubedrill story")
 	_, out, _ = f.run(t, "", "ticket")
-	mustNotContain(t, out, "Fundamentals:")
+	mustNotContain(t, out, "Fundamentals:", "kubedrill story")
 	_, out, _ = f.run(t, "", "diagnose", "the image tag does not exist")
 	mustContain(t, out, "Next: change one thing, then kubedrill submit\n")
 	mustNotContain(t, out, "kubedrill hint")
-	for _, args := range [][]string{{"learn"}, {"learn", "pods"}, {"watch"}} {
+	for _, args := range [][]string{{"learn"}, {"learn", "pods"}, {"story"}, {"story", "001"}, {"watch"}} {
 		code, _, errOut := f.run(t, "", args...)
 		if code != 1 || !strings.Contains(errOut, args[0]+" is not available in exam mode") {
 			t.Errorf("%v in exam without a terminal: exit %d err %q", args, code, errOut)

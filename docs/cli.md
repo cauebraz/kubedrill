@@ -59,6 +59,7 @@ Conventions shared by every command:
 | [`status`](#status) | Cluster, active episode, solved count | no (reads kind) |
 | [`exam`](#exam) | Exam domains and coverage | no |
 | [`learn`](#learn) | Concept pages of the active scenario | no |
+| [`story`](#story) | The ticket told from zero for a newcomer | no |
 | [`concepts`](#concepts) | Every concept page | no |
 | [`replay`](#replay) | Play a recording of an episode | no (docker) |
 | **Cluster and nodes** | | |
@@ -179,7 +180,10 @@ Prints the ticket of the active episode again.
 - The footer is `Checked by N checks: kubedrill check --explain` and
   `Expected: M min (yours: 0.8 min median over K solves)`; the part in
   parentheses appears only after a solve.
-- An exam ticket leaves out the `Fundamentals:` line and adds `Exam
+- When the scenario has a `story.md`, the line `New to Kubernetes?
+  kubedrill story tells this ticket from zero` comes before the
+  `Fundamentals:` line.
+- An exam ticket leaves out the story and `Fundamentals:` lines and adds `Exam
   deadline: HH:MM:SS (M min time box); no hints, no solution, no watch`.
 
 `--follow` keeps the ticket on screen instead, in the alternate screen:
@@ -187,8 +191,12 @@ Prints the ticket of the active episode again.
 - A header `<id> (seed N), namespace <ns>`, the ticket wrapped to the pane
   width, and the footer `lines A-B of N  wheel scrolls; click here for j/k
   space b g G` (`all N lines shown` when it fits).
+- When the scenario has a story, the footer names `s (story)`; `s` shows the
+  story from the top under the header `story of <id> ...`, with `s (ticket)`
+  in the footer, and `s` again returns to the ticket. A reset or a new start
+  returns to the ticket. Exam mode has no story.
 - Keys: the mouse wheel scrolls 3 lines, `j`/`k` one, `space`/`f`/`b` a
-  page, `g`/`G` top and end, `q` quits.
+  page, `g`/`G` top and end, `s` story or ticket, `q` quits.
 - It re-reads the active episode every 2 s, keeps the scroll position for
   the same episode and goes back to the top after a reset or a new start.
 - Without an episode it shows `no active episode; kubedrill start <ref>
@@ -574,6 +582,25 @@ kubedrill learn [id]
   learn <id> prints one concept: <id>, <id>, ...`.
 - In exam mode, with or without an id: `learn is not available in exam mode;
   kubedrill submit grades once`, exit 1.
+
+### story
+
+```
+kubedrill story [ref]
+```
+
+- Without `ref`: `Story of <title> (<id>)`, then the rendered `story.md` of
+  the active episode's scenario, with the episode namespace.
+- With `ref`: the story of that scenario, rendered with the active episode
+  when it runs that scenario, with seed 1 and the scenario namespace
+  otherwise.
+- A scenario without `story.md`: `<id> has no story yet; kubedrill learn
+  prints its fundamentals`, exit 0.
+- No active episode and no ref: exit 1 with `no active episode; kubedrill
+  story <id> prints the story of one scenario`.
+- In exam mode, with or without a ref: `story is not available in exam mode;
+  kubedrill submit grades once`, exit 1.
+- It reads no cluster state.
 
 ### concepts
 
@@ -1035,9 +1062,9 @@ Ticket and commands:
 
 - The ticket shows the deadline and `Next: kubedrill submit (grade once,
   ends the exam) | kubedrill check --explain (what is graded)`.
-- It leaves out the `Fundamentals:` line and the "Last time you said"
-  reminder.
-- `check`, `hint`, `watch`, `learn` and `solution` refuse with `<command> is
+- It leaves out the story line, the `Fundamentals:` line and the "Last time
+  you said" reminder.
+- `check`, `hint`, `watch`, `learn`, `story` and `solution` refuse with `<command> is
   not available in exam mode; kubedrill submit grades once`.
 - `reset` and the watch `x` key refuse with `reset is not available in exam
   mode; kubedrill submit ends the exam`.

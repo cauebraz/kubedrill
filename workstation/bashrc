@@ -157,6 +157,10 @@ __kubedrill_motd() {
     fi
   else
     printf 'tools: kubectl (alias k), helm, k9s, stern, kubectx, kubens, yq, jq, vim. Type "kubedrill --help" for the trainer.\n'
+    printf 'names: TAB completes them (k describe pod <TAB>); new to Kubernetes? kubedrill story\n'
+  fi
+  if [ -n "${TMUX:-}" ]; then
+    printf 'copy: Ctrl-b m turns the tmux mouse off, then drag selects and Cmd-c copies; Ctrl-b m again turns it on\n'
   fi
   if [ "${KUBEDRILL_TICKET_PANE:-}" = 1 ]; then
     printf 'ticket: the pane above (mouse wheel scrolls it; kubedrill ticket prints it here)\n'

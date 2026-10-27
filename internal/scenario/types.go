@@ -1,6 +1,6 @@
 // Package scenario owns the on-disk format of a training scenario: the
-// scenario.toml metadata, instruction.md, hints.md, the setup templates and
-// the checks.yaml grading specification. Other packages consume the parsed
+// scenario.toml metadata, instruction.md, hints.md, story.md, the setup
+// templates and the checks.yaml grading specification. Other packages consume the parsed
 // Scenario value and never read the directory themselves.
 package scenario
 
@@ -136,15 +136,18 @@ type Scenario struct {
 	SolveScript string
 	HookScript  string
 	Approaches  []Approach
+	// Story is the raw story.md, empty when the scenario has none: the
+	// ticket told from zero for a learner new to the objects it involves.
+	Story string
 
 	hintsDoc string
 }
 
 // Rendered is a Scenario specialised for one seed: the variant is chosen,
 // templates in setup files, checks, instruction.md, hints.md,
-// solution/README.md and the approaches are expanded, and Vars carries the
-// values the templates saw. Instruction, Hints, Solution and Approaches are
-// the learner-facing texts for this episode; the raw fields on Scenario keep
+// solution/README.md, story.md and the approaches are expanded, and Vars
+// carries the values the templates saw. Instruction, Hints, Solution, Story
+// and Approaches are the learner-facing texts for this episode; the raw fields on Scenario keep
 // the templates.
 type Rendered struct {
 	Scenario    *Scenario
@@ -157,5 +160,6 @@ type Rendered struct {
 	Instruction string
 	Hints       []string
 	Solution    string
+	Story       string
 	Approaches  []Approach
 }

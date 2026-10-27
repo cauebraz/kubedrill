@@ -16,6 +16,7 @@ scenarios/L0/001-storefront-down/
 |-- scenario.toml        metadata, concepts, fix_targets and [[variant]] tables
 |-- instruction.md       the ticket: symptom, environment, "## Done when", constraints
 |-- hints.md             the hint ladder: 3 or 4 "## Hint N: <rung>" sections
+|-- story.md             optional: the ticket told from zero for a learner new to its objects
 |-- setup/
 |   |-- configmap.yaml   Go text/template manifests, applied in file-name order
 |   |-- deployment.yaml
@@ -133,7 +134,7 @@ so an undefined key fails the render instead of printing an empty string:
 
 - the setup manifests
 - the string fields of `checks.yaml` (listed under [checks.yaml](#checksyaml))
-- `instruction.md`, `hints.md` and `solution/README.md`
+- `instruction.md`, `hints.md`, `solution/README.md` and `story.md`
 - `approaches/*/snippet.txt` and `approaches/*/content.md`
 
 | Field | Value |
@@ -167,6 +168,37 @@ Sections, in order:
    with the same text as the check `description`. Lint compares them
    trimmed and ignoring case, and names the first mismatch.
 6. `## Constraints`: names to keep, things not to delete.
+
+## story.md
+
+Optional, and recommended for L0 and for any scenario that introduces an
+object for the first time. The ticket told as a story for a learner who has
+never used Kubernetes: what happened in plain words, every object the ticket
+involves explained from zero, the read-only commands that follow the trail
+and what each output means, then the fix and why it works. `kubedrill story`
+prints it, `s` in the workstation ticket pane shows it, and the ticket points
+at it with `New to Kubernetes? kubedrill story tells this ticket from zero`.
+Exam mode hides it.
+
+Sections, in order, with exactly these headings (lint checks them):
+
+1. `# <title>`
+2. `## What happened`: the incident in the reporter's terms, and why the
+   reported success did not mean it worked.
+3. `## The pieces`: each object the ticket involves, top to bottom, with one
+   ASCII diagram of the chain from the request to the outcome.
+4. `## Following the trail`: the read-only commands in the order of the
+   troubleshooting loop, what each output field means, and how to get an
+   object name without typing it (TAB completion, `-l` selectors, copy).
+5. `## The fix and why it works`: the change, the chain of effects that makes
+   it work, and why the tempting wrong moves do not.
+6. `## Check your work`: the verification commands and the habit to keep.
+
+The story must hold for every variant: it names the observation that tells
+the variants apart (an Event message, a status reason) and lets the
+learner's cluster answer which one this episode runs. Unlike `hints.md` it
+may show the mutating command of the fix, so a learner who reads it before
+the ticket gets the method and the vocabulary, and still has to observe.
 
 ## hints.md
 
@@ -553,6 +585,8 @@ Files:
   `path` parses as a JSONPath and `gte`/`lte` parse as finite numbers
 - `solution/`: `README.md` with the seven sections in order, `solve.sh`
   executable
+- `story.md` (when present): the five sections in order; it parses as a
+  template
 - `approaches/`: only directories, each named in lowercase words joined by
   hyphens, holding exactly a 1 to 8 line `snippet.txt` and a non-empty
   `content.md`; both parse as templates
@@ -566,7 +600,7 @@ Across the tree:
   iterations plus `template` calls, even ones that print nothing), so a
   template cannot hang lint or start
 - every variant seed (1 to n) renders setup, checks, `instruction.md`,
-  `hints.md`, `solution/README.md` and `approaches/`, so an undefined
+  `hints.md`, `solution/README.md`, `story.md` and `approaches/`, so an undefined
   `.Vars` key shows up before a learner hits it
 - every page under `docs/concepts/` loads (id, title, intro, the four
   sections in order), and every concept a `curriculum.yaml` module lists

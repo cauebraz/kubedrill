@@ -71,6 +71,8 @@ const fixtureHints = "# Hints\n\n## Hint 1: where to look\n\nLook at pods in {{ 
 
 const fixtureSolution = "# Solution\n\n## Symptom\n\nDown in {{ .Namespace }}.\n\n## Candidate causes\n\n- image\n\n## Observation that splits them\n\n```sh\n## not a heading inside a fence\n```\n\n## Change\n\nFix {{ .Vars.image }}.\n\n## Verify\n\nrollout status\n\n## In the real world\n\n- pin\n\n## Go deeper\n\n- docs\n"
 
+const fixtureStory = "# Story\n\n## What happened\n\nDown in {{ .Namespace }}.\n\n## The pieces\n\nPods.\n\n## Following the trail\n\nget pods\n\n## The fix and why it works\n\nSet {{ .Vars.image }}.\n\n## Check your work\n\nrollout status\n"
+
 func writeFixture(t *testing.T, root, level, id string, f fixture) string {
 	t.Helper()
 	dir := filepath.Join(root, "scenarios", level, id)
@@ -108,6 +110,9 @@ func TestLoadRealScenario(t *testing.T) {
 	}
 	if got, want := s.Meta.Type, TypeBreakFix; got != want {
 		t.Errorf("Meta.Type = %q, want %q", got, want)
+	}
+	if !strings.Contains(s.Story, "## Following the trail") {
+		t.Errorf("Story lacks the trail section:\n%s", s.Story)
 	}
 	if got, want := s.Meta.Namespace, "shop"; got != want {
 		t.Errorf("Meta.Namespace = %q, want %q", got, want)
@@ -280,6 +285,27 @@ func TestLoadErrors(t *testing.T) {
 			want: []string{"setup/deployment.yaml: template:", "check \"image\": equals: template:"},
 		},
 		{
+			name: "story sections missing and unknown",
+			mutate: func(f fixture) {
+				f["story.md"] = "# Story\n\n## What happened\n\nDown.\n\n## The plot\n\nTwist.\n"
+			},
+			want: []string{"story.md: heading \"## The plot\" is not one of the story sections", "story.md: missing sections ## The pieces, ## Following the trail, ## The fix and why it works, ## Check your work"},
+		},
+		{
+			name: "story sections out of order",
+			mutate: func(f fixture) {
+				f["story.md"] = strings.Replace(fixtureStory, "## The pieces\n\nPods.\n\n## Following the trail\n\nget pods\n", "## Following the trail\n\nget pods\n\n## The pieces\n\nPods.\n", 1)
+			},
+			want: []string{"story.md: sections are in the order ## What happened, ## Following the trail, ## The pieces"},
+		},
+		{
+			name: "story template error",
+			mutate: func(f fixture) {
+				f["story.md"] = fixtureStory + "{{ .Vars.image "
+			},
+			want: []string{"story.md: template:"},
+		},
+		{
 			name: "unknown toml key",
 			mutate: func(f fixture) {
 				f["scenario.toml"] = strings.Replace(f["scenario.toml"], "minutes = 5\n", "minutes = 5\nminuets = 5\n", 1)
@@ -324,6 +350,47 @@ func TestLoadValidFixture(t *testing.T) {
 	}
 	if got, want := s.Hints[1], "Read events."; got != want {
 		t.Errorf("Hints[1] = %q, want %q", got, want)
+	}
+}
+
+func TestRenderStory(t *testing.T) {
+	tests := []struct {
+		name  string
+		story string
+		want  string
+	}{
+		{name: "no story.md", want: ""},
+		{name: "story.md rendered", story: fixtureStory, want: "Down in fx-2."},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := validFixture()
+			if tc.story != "" {
+				f["story.md"] = tc.story
+			}
+			s, err := Load(writeFixture(t, t.TempDir(), "L1", "001-fixture", f))
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if got := s.Story; got != tc.story {
+				t.Errorf("Story = %q, want %q", got, tc.story)
+			}
+			r, err := s.Render(2)
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			if tc.want == "" {
+				if r.Story != "" {
+					t.Errorf("Rendered.Story = %q, want empty", r.Story)
+				}
+				return
+			}
+			for _, w := range []string{tc.want, "Set nginx:b."} {
+				if !strings.Contains(r.Story, w) {
+					t.Errorf("Rendered.Story lacks %q:\n%s", w, r.Story)
+				}
+			}
+		})
 	}
 }
 

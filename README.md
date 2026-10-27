@@ -36,7 +36,10 @@ minute in:
 The ticket sits at the top left; the mouse wheel scrolls it while you type.
 Your shell below already points at the scenario namespace. The checks on
 the right re-grade every 5 seconds and turn to `[pass]` as you fix things.
-When you are stuck:
+New to Kubernetes? `kubedrill story` (or `s` in the ticket pane) tells the
+ticket from zero: what each object is, which commands follow the trail and
+why the fix works. To copy a pod name, `Ctrl-b m` turns the tmux mouse off
+so the terminal can select; TAB also completes names. When you are stuck:
 
 ```sh
 kubedrill hint                   # the next hint: where to look, what to observe, what it means

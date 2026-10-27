@@ -15,6 +15,7 @@ import (
 type fakeTicket struct {
 	episode string
 	lines   int
+	story   string
 	err     error
 	widths  []int
 }
@@ -28,7 +29,7 @@ func (f *fakeTicket) load(width int) (Doc, error) {
 	for i := range body {
 		body[i] = fmt.Sprintf("line %d of %s", i+1, f.episode)
 	}
-	return Doc{Episode: f.episode, Header: "header " + f.episode, Body: strings.Join(body, "\n") + "\n"}, nil
+	return Doc{Episode: f.episode, Header: "header " + f.episode, Body: strings.Join(body, "\n") + "\n", Story: f.story}, nil
 }
 
 func loadedTicketModel(t *testing.T, f *fakeTicket, width, height int) Model {
@@ -164,4 +165,49 @@ func firstCmd(t *testing.T, cmd tea.Cmd) tea.Cmd {
 		t.Fatalf("got %T, want a batch starting with a load", cmd())
 	}
 	return batch[0]
+}
+
+func TestTicketViewStoryToggle(t *testing.T) {
+	f := &fakeTicket{episode: "ep1", lines: 30, story: "story line 1\nstory line 2\n"}
+	var m tea.Model = loadedTicketModel(t, f, 80, 12)
+	if view := m.(Model).render(); !strings.Contains(view, "s (story)") {
+		t.Errorf("ticket footer lacks the s key:\n%s", view)
+	}
+	m, _ = m.Update(key("G"))
+	m, _ = m.Update(key("s"))
+	tm := m.(Model)
+	view := tm.render()
+	for _, want := range []string{"story of header ep1", "story line 2", "all 2 lines shown", "s (ticket)"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("story view lacks %q:\n%s", want, view)
+		}
+	}
+	if tm.offset != 0 {
+		t.Errorf("offset after s: got %d, want 0", tm.offset)
+	}
+	m, cmd := m.Update(tickMsg(time.Now()))
+	m, _ = m.Update(runCmd(t, firstCmd(t, cmd)))
+	if view := m.(Model).render(); !strings.Contains(view, "story line 1") {
+		t.Errorf("reload of the same Episode left the story:\n%s", view)
+	}
+	f.episode = "ep2"
+	m, cmd = m.Update(tickMsg(time.Now()))
+	m, _ = m.Update(runCmd(t, firstCmd(t, cmd)))
+	if view := m.(Model).render(); !strings.Contains(view, "line 1 of ep2") || strings.Contains(view, "story of") {
+		t.Errorf("a new Episode did not return to the ticket:\n%s", view)
+	}
+	m, _ = m.Update(key("s"))
+	m, _ = m.Update(key("s"))
+	if view := m.(Model).render(); !strings.Contains(view, "line 1 of ep2") {
+		t.Errorf("s twice did not return to the ticket:\n%s", view)
+	}
+}
+
+func TestTicketViewWithoutStoryIgnoresS(t *testing.T) {
+	var m tea.Model = loadedTicketModel(t, &fakeTicket{episode: "ep1", lines: 30}, 80, 12)
+	m, _ = m.Update(key("s"))
+	view := m.(Model).render()
+	if !strings.Contains(view, "line 1 of ep1") || strings.Contains(view, "s (") {
+		t.Errorf("s without a story changed the view:\n%s", view)
+	}
 }

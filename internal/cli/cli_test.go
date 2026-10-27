@@ -374,6 +374,7 @@ func scenarios() []*scenario.Scenario {
 				{Name: "fix-manifest", Snippet: "kubectl edit deploy/hello", Body: "# Fix the manifest\n\nEdit the source of truth.\n"},
 				{Name: "set-image", Snippet: "kubectl set image deploy/hello app=nginx:1.27", Body: "# Set image\n\nFast, but drifts from git.\n"},
 			},
+			Story:       "## What happened\n\nThe hello pods in {{ .Namespace }} never start.\n",
 			Checks:      []scenario.Check{{ID: "ready", Description: "deployment hello has 2 ready replicas"}},
 			SolveScript: "/scenarios/L0/001-hello-down/solution/solve.sh",
 		},

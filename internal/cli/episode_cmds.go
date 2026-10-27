@@ -360,10 +360,17 @@ func writeTicketFooter(p render.Printer, ep *journal.Episode, rd *scenario.Rende
 	}
 }
 
-// writeFundamentals points at the concept pages of sc when it lists any,
-// outside exam mode, where learn is refused.
+// writeFundamentals points at the story of sc when it has one and at its
+// concept pages when it lists any, outside exam mode, where story and learn
+// are refused.
 func writeFundamentals(p render.Printer, ep *journal.Episode, sc *scenario.Scenario) {
-	if len(sc.Meta.Concepts) == 0 || ep.Mode == journal.ModeExam {
+	if ep.Mode == journal.ModeExam {
+		return
+	}
+	if sc.Story != "" {
+		p.Println(p.WrapLine(fmt.Sprintf("New to Kubernetes? %s tells this ticket from zero", p.Style(render.StyleBold, "kubedrill story")), "  "))
+	}
+	if len(sc.Meta.Concepts) == 0 {
 		return
 	}
 	p.Println(p.WrapLine(fmt.Sprintf("Fundamentals: %s (%s)", p.Style(render.StyleBold, "kubedrill learn"), conceptsLine(sc.Meta.Concepts)), "  "))

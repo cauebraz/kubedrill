@@ -8,13 +8,15 @@ import (
 	"time"
 
 	"github.com/cauebraz/kubedrill/internal/env"
+	"github.com/cauebraz/kubedrill/internal/journal"
 	"github.com/cauebraz/kubedrill/internal/tui/ticket"
 )
 
 // ticketLoaderFor renders the ticket of the active episode of s the way
-// kubedrill ticket prints it, wrapped at the pane width. The rendering is
-// kept until the episode or the width changes, so a tick on the same
-// episode reads only the active episode, not the whole journal.
+// kubedrill ticket prints it, and the story the way kubedrill story prints
+// it, wrapped at the pane width. The rendering is kept until the episode or
+// the width changes, so a tick on the same episode reads only the active
+// episode, not the whole journal.
 func (a *app) ticketLoaderFor(s *env.Session) ticket.Loader {
 	var (
 		mu        sync.Mutex
@@ -35,10 +37,15 @@ func (a *app) ticketLoaderFor(s *env.Session) ticket.Loader {
 		p := a.term.PrinterAt(width)
 		p.Out = &buf
 		writeTicket(p, ep, rd, a.expectedLine(ep, rd.Scenario))
+		var story string
+		if rd.Story != "" && ep.Mode != journal.ModeExam {
+			story = p.Markdown(rd.Story)
+		}
 		last, lastWidth = ticket.Doc{
 			Episode: ep.ID,
 			Header:  fmt.Sprintf("%s (seed %d), namespace %s", ep.ScenarioID, ep.Seed, rd.Namespace),
 			Body:    buf.String(),
+			Story:   story,
 		}, width
 		return last, nil
 	}

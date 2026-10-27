@@ -18,6 +18,14 @@ var solutionSections = []string{
 	"## Go deeper",
 }
 
+var storySections = []string{
+	"## What happened",
+	"## The pieces",
+	"## Following the trail",
+	"## The fix and why it works",
+	"## Check your work",
+}
+
 func loadInstruction(dir string, s *Scenario, fail failFunc) {
 	b, err := os.ReadFile(filepath.Join(dir, fileInstruction))
 	if err != nil {
@@ -48,7 +56,7 @@ func loadSolution(dir string, s *Scenario, fail failFunc) {
 		if _, err := parseTemplate(readme, s.Solution); err != nil {
 			fail(readme, "%v", err)
 		}
-		validateSolutionSections(s.Solution, func(format string, args ...any) { fail(readme, format, args...) })
+		validateSections(s.Solution, solutionSections, "solution", func(format string, args ...any) { fail(readme, format, args...) })
 	}
 	solve := filepath.Join(dir, dirSolution, fileSolve)
 	if err := mustBeExecutable(solve); err != nil {
@@ -58,19 +66,35 @@ func loadSolution(dir string, s *Scenario, fail failFunc) {
 	s.SolveScript = solve
 }
 
-func validateSolutionSections(doc string, fail func(format string, args ...any)) {
-	got := level2Headings(doc)
-	if strings.Join(got, "\n") == strings.Join(solutionSections, "\n") {
+func loadStory(dir string, s *Scenario, fail failFunc) {
+	b, err := os.ReadFile(filepath.Join(dir, fileStory))
+	if errors.Is(err, os.ErrNotExist) {
 		return
 	}
-	known := make(map[string]bool, len(solutionSections))
-	for _, h := range solutionSections {
+	if err != nil {
+		fail(fileStory, "%v", err)
+		return
+	}
+	s.Story = string(b)
+	if _, err := parseTemplate(fileStory, s.Story); err != nil {
+		fail(fileStory, "%v", err)
+	}
+	validateSections(s.Story, storySections, "story", func(format string, args ...any) { fail(fileStory, format, args...) })
+}
+
+func validateSections(doc string, want []string, kind string, fail func(format string, args ...any)) {
+	got := level2Headings(doc)
+	if strings.Join(got, "\n") == strings.Join(want, "\n") {
+		return
+	}
+	known := make(map[string]bool, len(want))
+	for _, h := range want {
 		known[h] = true
 	}
 	present := map[string]bool{}
 	for _, h := range got {
 		if !known[h] {
-			fail("heading %q is not one of the solution sections: %s", h, strings.Join(solutionSections, ", "))
+			fail("heading %q is not one of the %s sections: %s", h, kind, strings.Join(want, ", "))
 			continue
 		}
 		if present[h] {
@@ -79,7 +103,7 @@ func validateSolutionSections(doc string, fail func(format string, args ...any))
 		present[h] = true
 	}
 	var missing []string
-	for _, h := range solutionSections {
+	for _, h := range want {
 		if !present[h] {
 			missing = append(missing, h)
 		}
@@ -93,8 +117,8 @@ func validateSolutionSections(doc string, fail func(format string, args ...any))
 			order = append(order, h)
 		}
 	}
-	if len(missing) == 0 && strings.Join(order, "\n") != strings.Join(solutionSections, "\n") {
-		fail("sections are in the order %s, want %s", strings.Join(order, ", "), strings.Join(solutionSections, ", "))
+	if len(missing) == 0 && strings.Join(order, "\n") != strings.Join(want, "\n") {
+		fail("sections are in the order %s, want %s", strings.Join(order, ", "), strings.Join(want, ", "))
 	}
 }
 

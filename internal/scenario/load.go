@@ -23,6 +23,7 @@ const (
 	dirApproaches   = "approaches"
 	fileSnippet     = "snippet.txt"
 	fileContent     = "content.md"
+	fileStory       = "story.md"
 
 	headingDone   = "## Done when"
 	headingBefore = "## Before you start"
@@ -79,6 +80,7 @@ func load(dir string, checkLayout bool) (*Scenario, error) {
 	loadChecks(abs, s, fail)
 	loadSolution(abs, s, fail)
 	loadApproaches(abs, s, fail)
+	loadStory(abs, s, fail)
 
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("load scenario %s: %w", dir, errors.Join(errs...))

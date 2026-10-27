@@ -1,7 +1,7 @@
 // Package ticket is the Bubble Tea model of kubedrill ticket --follow: the
-// ticket of the active episode in its own scrollable screen, re-read every
-// interval through a Loader so a reset or a new start in another pane shows
-// up without a keystroke.
+// ticket of the active episode in its own scrollable screen, and with s the
+// scenario's story, re-read every interval through a Loader so a reset or a
+// new start in another pane shows up without a keystroke.
 package ticket
 
 import (
@@ -28,11 +28,14 @@ const (
 
 // Doc is one rendering of the active episode's ticket at a width: Episode
 // is the journal ID of the episode, so a reset or a new start scrolls back
-// to the top; Header is the line above the scrolled Body.
+// to the top; Header is the line above the scrolled Body. Story is the
+// rendered story of the scenario, empty when it has none; the s key
+// switches the pane between Body and Story.
 type Doc struct {
 	Episode string
 	Header  string
 	Body    string
+	Story   string
 }
 
 // Loader renders the ticket of the active episode at width columns; an
@@ -61,6 +64,7 @@ type Model struct {
 	err      error
 	loading  bool
 	loaded   bool
+	story    bool
 }
 
 // New is the ticket model reading the ticket through load every interval.
@@ -127,9 +131,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.doc.Episode != m.doc.Episode {
 			m.offset = 0
+			m.story = false
 		}
 		m.doc = msg.doc
-		m.lines = strings.Split(strings.TrimRight(msg.doc.Body, "\n"), "\n")
+		m.setLines()
 		m.loaded = true
 		m.clamp()
 		return m, nil
@@ -164,8 +169,28 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.offset = 0
 	case "G", "end":
 		m.offset = m.maxOffset()
+	case "s":
+		if m.doc.Story != "" {
+			m.story = !m.story
+			m.offset = 0
+			m.setLines()
+		}
 	}
 	return m, nil
+}
+
+// setLines splits the text on screen into lines: the story when it is
+// selected and the doc has one, the ticket otherwise.
+func (m *Model) setLines() {
+	if m.doc.Story == "" {
+		m.story = false
+	}
+	text := m.doc.Body
+	if m.story {
+		text = m.doc.Story
+	}
+	m.lines = strings.Split(strings.TrimRight(text, "\n"), "\n")
+	m.clamp()
 }
 
 // bodyHeight is the number of ticket lines on screen: the pane height less
@@ -208,7 +233,11 @@ func (m Model) render() string {
 	case !m.loaded:
 		return "loading the ticket..."
 	}
-	b.WriteString(render.Truncate(render.StyleBold.Render(m.doc.Header), m.width))
+	header := m.doc.Header
+	if m.story {
+		header = "story of " + header
+	}
+	b.WriteString(render.Truncate(render.StyleBold.Render(header), m.width))
 	b.WriteByte('\n')
 	end := min(m.offset+m.bodyHeight(), len(m.lines))
 	shown := 0
@@ -224,8 +253,9 @@ func (m Model) render() string {
 	return b.String()
 }
 
-// footer names the visible lines and the scroll keys; the shell pane keeps
-// the keyboard, so the wheel is the first way named.
+// footer names the visible lines, the scroll keys and s when the doc has a
+// story; the shell pane keeps the keyboard, so the wheel is the first way
+// named.
 func (m Model) footer(end int) string {
 	pos := fmt.Sprintf("lines %d-%d of %d", min(m.offset+1, len(m.lines)), end, len(m.lines))
 	if m.maxOffset() == 0 {
@@ -233,6 +263,12 @@ func (m Model) footer(end int) string {
 	}
 	if m.err != nil {
 		pos += "; reload failed: " + m.err.Error()
+	}
+	switch {
+	case m.story:
+		return pos + "  wheel scrolls; click here for s (ticket) j/k space b g G"
+	case m.doc.Story != "":
+		return pos + "  wheel scrolls; click here for s (story) j/k space b g G"
 	}
 	return pos + "  wheel scrolls; click here for j/k space b g G"
 }

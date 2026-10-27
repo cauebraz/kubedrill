@@ -50,6 +50,7 @@ func (a *app) rootCommand() *cobra.Command {
 		a.hintCommand(),
 		a.namespaceCommand(),
 		a.learnCommand(),
+		a.storyCommand(),
 		a.conceptsCommand(),
 		a.solutionCommand(),
 		a.diagnoseCommand(),

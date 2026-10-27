@@ -55,8 +55,8 @@ const maxScenarioNamespaceLen = 57
 // not wait for the default 30 second grace period. It rejects a rendered
 // scenario.namespace longer than 57 characters, since the episode namespace
 // appends a hyphen and 5 characters. Rendering every variant covers
-// instruction.md, hints.md, solution/README.md and the approaches as well as
-// the setup files and checks. Unless scenario.toml sets allow_privileged, it
+// instruction.md, hints.md, solution/README.md, story.md and the approaches
+// as well as the setup files and checks. Unless scenario.toml sets allow_privileged, it
 // rejects setup manifests that set privileged: true, hostNetwork, hostPID,
 // hostIPC or a hostPort, mount a hostPath, add capabilities, set procMount:
 // Unmasked or an Unconfined seccompProfile or appArmorProfile, declare a

@@ -69,8 +69,8 @@ func (s *Scenario) VariantFor(seed int64) Variant {
 
 // Render specialises the scenario for seed: it picks the variant with index
 // (seed-1) mod len(Variants), expands the setup templates, the string fields
-// of every check, instruction.md, hints.md, solution/README.md and every
-// approach's snippet.txt and content.md, and returns the result. Seed must be at least 1. Every template error is
+// of every check, instruction.md, hints.md, solution/README.md, story.md and
+// every approach's snippet.txt and content.md, and returns the result. Seed must be at least 1. Every template error is
 // returned at once, each one naming its file.
 func (s *Scenario) Render(seed int64, opts ...RenderOption) (*Rendered, error) {
 	if seed < 1 {
@@ -145,6 +145,12 @@ func (s *Scenario) Render(seed int64, opts ...RenderOption) (*Rendered, error) {
 	if err != nil {
 		errs = append(errs, err)
 	}
+	var story string
+	if s.Story != "" {
+		if story, err = execute(fileStory, s.Story, data); err != nil {
+			errs = append(errs, err)
+		}
+	}
 
 	approaches := make([]Approach, 0, len(s.Approaches))
 	for _, a := range s.Approaches {
@@ -174,6 +180,7 @@ func (s *Scenario) Render(seed int64, opts ...RenderOption) (*Rendered, error) {
 		Instruction: instruction,
 		Hints:       hints,
 		Solution:    solution,
+		Story:       story,
 		Approaches:  approaches,
 	}, nil
 }

@@ -54,7 +54,10 @@ the path from idea to pull request. Every file and field is described in
    loop headings, a `solve.sh` that passes every variant, and optionally
    one directory per valid fix.
    [Format](docs/scenario-format.md#solution).
-8. **Finish.** Delete the template's comments and marker lines, add the id
+8. **`story.md`** (optional, recommended for L0 and for a first object). The
+   ticket told from zero for a newcomer, under five fixed headings, true for
+   every variant. [Sections](docs/scenario-format.md#storymd).
+9. **Finish.** Delete the template's comments and marker lines, add the id
    to its module in `curriculum.yaml`, add the row to the scenario table in
    `README.md`, then run the checks below.
 

@@ -32,7 +32,8 @@ workstation opens a tmux session with three panes:
   the shell below.
 - Right column, 40%: `kubedrill watch`. Its keys are in
   [cli.md](cli.md#watch-keys).
-- Status line: the cluster name.
+- Status line: the mouse state (`C-b m: mouse off to copy` or `mouse off:
+  C-b m turns it on`) and the cluster name.
 
 Read on the top, work on the bottom, glance at the right.
 
@@ -45,9 +46,19 @@ Read on the top, work on the bottom, glance at the right.
   again.
 - Zoom one pane to the full window: `Ctrl-b z`, and again to restore.
 - Resize panes: drag the border with the mouse.
-- Copy text from the ticket: hold Option (macOS terminals) or Shift
-  (elsewhere) while you select, or run `kubedrill ticket` in the shell to
-  print a copy.
+- Read the story: click the ticket pane and press `s` when its footer names
+  `s (story)`; `s` again returns to the ticket. `kubedrill story` prints it
+  in the shell.
+- Copy text (a pod name, an error line): press `Ctrl-b` then `m` to turn the
+  tmux mouse off. The terminal then selects with a drag and copies with its
+  own shortcut (`Cmd-c` on macOS). `Ctrl-b m` again turns the mouse back on
+  for the wheel and the pane borders. With the mouse on, a drag selects into
+  the tmux buffer; tmux also sends that selection to the system clipboard
+  through OSC 52 (`set-clipboard on`), which reaches it only in terminals
+  that accept OSC 52 writes; Terminal.app does not.
+- Skip the copy: TAB completes object names (`k describe pod <TAB>`), and a
+  label selector names every pod of the app (`k describe pods -l
+  app.kubernetes.io/name=storefront`).
 
 The ticket pane follows the episode. After `x` twice in the watch pane, or
 `kubedrill reset`, it shows the new ticket from the top. The shell switches
@@ -74,6 +85,10 @@ On login the shell:
 - prints the banner `kubedrill workstation: cluster kubedrill` and `tools:
   kubectl (alias k), helm, k9s, stern, kubectx, kubens, yq, jq, vim. Type
   "kubedrill --help" for the trainer.`;
+- outside exam mode, prints `names: TAB completes them (k describe pod
+  <TAB>); new to Kubernetes? kubedrill story`;
+- inside tmux, prints `copy: Ctrl-b m turns the tmux mouse off, then drag
+  selects and Cmd-c copies; Ctrl-b m again turns it on`;
 - prints `ticket: the pane above (mouse wheel scrolls it; kubedrill ticket
   prints it here)` when the ticket pane is open (`KUBEDRILL_TICKET_PANE=1`),
   and the full ticket (`kubedrill ticket`) otherwise;
@@ -325,7 +340,10 @@ No capability is added back. The image strips the file capability of `ping`
   episode is active and the terminal has at least 30 lines, in exam mode
   too.
 
-The shell pane gets `KUBEDRILL_TICKET_PANE` (1 or 0) and the keyboard. A
+The shell pane gets `KUBEDRILL_TICKET_PANE` (1 or 0) and the keyboard.
+`workstation/tmux.conf` turns the mouse on, sets `set-clipboard on` with
+the `clipboard` terminal feature for every terminal, and binds `prefix m` to
+toggle the mouse with a message naming the new state. A
 `pane-exited` hook ends the session only when the exited pane is the shell
 pane. The container exits 0 when the shell ends.
 
