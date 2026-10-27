@@ -483,3 +483,24 @@ func TestApplyKeepsIntentWhenOutcomeUnknown(t *testing.T) {
 		})
 	}
 }
+
+func TestForgetDropsRecordsWithoutDocker(t *testing.T) {
+	fd := &fakeDocker{}
+	m, _ := newManager(t, fd)
+	if err := m.Apply(context.Background(), Pause, "worker", NetemOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	fd.calls = nil
+	if err := m.Forget(context.Background()); err != nil {
+		t.Fatalf("Forget: %v", err)
+	}
+	if len(fd.calls) != 0 {
+		t.Errorf("Forget ran docker: %v", fd.calls)
+	}
+	if active, err := m.Active(context.Background()); err != nil || len(active) != 0 {
+		t.Errorf("Active after Forget: %v, %v, want none", active, err)
+	}
+	if err := m.Apply(context.Background(), Pause, "worker", NetemOptions{}); err != nil {
+		t.Errorf("Apply after Forget: %v, want the pause recorded again", err)
+	}
+}

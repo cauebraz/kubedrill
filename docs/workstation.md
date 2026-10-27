@@ -327,7 +327,8 @@ No capability is added back. The image strips the file capability of `ping`
 - `EnsureBinary` cross-compiles `cmd/kubedrill` with `GOOS=linux
   CGO_ENABLED=0 -trimpath -buildvcs=false` for the host architecture on
   every run; the Go build cache makes an unchanged tree a no-op of about
-  0.2 s, and a deleted source file is never left in a stale binary.
+  0.2 s, and a deleted source file is never left in a stale binary. It then
+  removes the binaries of other checkouts last built more than 7 days ago.
 
 ### tmux layout
 
@@ -367,6 +368,8 @@ pane. The container exits 0 when the shell ends.
   `cloud-provider-kind` as a docker container with `/var/run/docker.sock`
   mounted, because it assigns LoadBalancer addresses through the docker
   daemon that runs the kind nodes. That container has the same power over
-  the host's docker as you. It is an upstream requirement, pinned by image
-  digest, started only by `kubedrill up --addons gateway`, and not reachable
+  the host's docker as you. It is an upstream requirement, declared with
+  `host_access: true` (the addon loader refuses a host path without it),
+  pinned by image digest, started only by `kubedrill up --addons gateway`,
+  and not reachable
   from the workstation container.

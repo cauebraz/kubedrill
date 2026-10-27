@@ -522,6 +522,20 @@ func TestPreWriteReadRules(t *testing.T) {
 			t.Errorf("%s: got reads %d before-write %d, want %d", tc.name, got.Reads, got.ReadsBeforeFirstWrite, tc.wantReads)
 		}
 	}
+	writes := []struct {
+		name      string
+		write     func(AuditEvent) AuditEvent
+		wantReads int
+	}{
+		{"a rejected write keeps the read and counts as one", func(e AuditEvent) AuditEvent { e.Code = 422; return e }, 2},
+		{"an exec keeps the read and counts as one", func(e AuditEvent) AuditEvent { e.Verb = "create"; e.Subresource = "exec"; return e }, 2},
+	}
+	for _, tc := range writes {
+		got := Summarize([]AuditEvent{get, tc.write(patch)}, true, nil, nil)
+		if got.Reads != tc.wantReads || got.ReadsBeforeFirstWrite != tc.wantReads {
+			t.Errorf("%s: got reads %d before-write %d, want %d", tc.name, got.Reads, got.ReadsBeforeFirstWrite, tc.wantReads)
+		}
+	}
 }
 
 func TestReadAuditStageTimestampAndEmptyNamespace(t *testing.T) {
@@ -545,5 +559,61 @@ func TestMatchTargetThroughParseFixTarget(t *testing.T) {
 	}
 	if MatchTarget("core/services/web", []string{"services/web"}) {
 		t.Errorf("MatchTarget: a two part target matched")
+	}
+}
+
+func TestMetadataOnly(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"no body", ``, false},
+		{"null body", `null`, false},
+		{"annotate", `{"metadata":{"annotations":{"team":"shop"}}}`, true},
+		{"rollout restart", `{"spec":{"template":{"metadata":{"annotations":{"kubectl.kubernetes.io/restartedAt":"2026-10-27T12:00:00Z"}}}}}`, true},
+		{"set image", `{"spec":{"template":{"spec":{"containers":[{"name":"web","image":"nginx:1.27-alpine"}]}}}}`, false},
+		{"replicas", `{"spec":{"replicas":3}}`, false},
+		{"full object update", `{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"s"},"spec":{"replicas":3,"template":{"metadata":{},"spec":{}}}}`, false},
+		{"configmap data", `{"data":{"index.html":"x"}}`, false},
+		{"json patch on labels", `[{"op":"add","path":"/metadata/labels/x","value":"y"}]`, true},
+		{"json patch on the image", `[{"op":"replace","path":"/spec/template/spec/containers/0/image","value":"nginx"}]`, false},
+		{"empty json patch", `[]`, false},
+		{"not json", `{`, false},
+	}
+	for _, tc := range tests {
+		if got := metadataOnly([]byte(tc.body)); got != tc.want {
+			t.Errorf("%s: metadataOnly = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestMetadataOnlyWriteIsNotRootCause(t *testing.T) {
+	restart := `{"kind":"Event","apiVersion":"audit.k8s.io/v1","stage":"ResponseComplete","verb":"patch","user":{"username":"kubernetes-admin"},"userAgent":"kubectl/v1.37.0","objectRef":{"resource":"deployments","namespace":"` + fixtureNS + `","name":"hello","apiGroup":"apps"},"responseStatus":{"code":200},"requestObject":{"spec":{"template":{"metadata":{"annotations":{"kubectl.kubernetes.io/restartedAt":"x"}}}}},"requestReceivedTimestamp":"2026-10-25T10:00:05Z"}`
+	setImage := strings.Replace(restart, `{"metadata":{"annotations":{"kubectl.kubernetes.io/restartedAt":"x"}}}`, `{"spec":{"containers":[{"name":"web","image":"nginx"}]}}`, 1)
+	setImage = strings.Replace(setImage, "10:00:05Z", "10:00:09Z", 1)
+	tests := []struct {
+		name         string
+		lines        []string
+		wantVerdict  journal.Verdict
+		wantMetaOnly bool
+	}{
+		{"rollout restart only", []string{restart}, journal.VerdictSymptomOnly, true},
+		{"rollout restart then set image", []string{restart, setImage}, journal.VerdictRootCause, true},
+		{"set image", []string{setImage}, journal.VerdictRootCause, false},
+	}
+	for _, tc := range tests {
+		path := filepath.Join(t.TempDir(), "audit.log")
+		if err := os.WriteFile(path, []byte(strings.Join(tc.lines, "\n")+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		events, err := ReadAudit(path, at("10:00:00"), at("10:30:00"), fixtureNS, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := Summarize(events, true, nil, []string{"apps/deployments/hello"})
+		if got.Verdict != tc.wantVerdict || got.FirstWriteMetadataOnly != tc.wantMetaOnly {
+			t.Errorf("%s: verdict %q first write metadata only %v, want %q %v", tc.name, got.Verdict, got.FirstWriteMetadataOnly, tc.wantVerdict, tc.wantMetaOnly)
+		}
 	}
 }

@@ -63,7 +63,7 @@ func (a *app) runList(level string, recommend bool) error {
 		if level != "" && !strings.EqualFold(sc.Meta.Level, level) {
 			continue
 		}
-		m := progress.ScenarioMastery(episodesOf(eps, sc.Meta.ID), sc.Meta.Minutes)
+		m := progress.ScenarioMastery(episodesOf(eps, sc.Meta.ID), scenarioInfo(sc))
 		active := current != nil && current.ScenarioID == sc.Meta.ID
 		rows = append(rows, []string{sc.Meta.ID, sc.Meta.Title, sc.Meta.Level, string(sc.Meta.Type), strconv.Itoa(sc.Meta.Minutes), render.Minutes(m.MedianSolve), lastCell(m), statusOf(m, active)})
 	}
@@ -181,7 +181,7 @@ func (a *app) statusCommand() *cobra.Command {
 			solved, mastered := 0, 0
 			all := cat.All()
 			for _, sc := range all {
-				m := progress.ScenarioMastery(episodesOf(eps, sc.Meta.ID), sc.Meta.Minutes)
+				m := progress.ScenarioMastery(episodesOf(eps, sc.Meta.ID), scenarioInfo(sc))
 				if m.Solved > 0 {
 					solved++
 				}
@@ -274,7 +274,7 @@ func (a *app) runJournal(ref string, last int) error {
 			strconv.FormatInt(e.Seed, 10),
 			modeCell(e),
 			variant,
-			string(e.Outcome),
+			outcomeWord(e.Outcome),
 			render.Minutes(e.DurationAt(a.now())),
 			strconv.Itoa(e.HintsUsed),
 		})

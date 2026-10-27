@@ -40,6 +40,35 @@ const approachMarker = "kubedrill-template"
 // and must fit the 63-character DNS label limit.
 const maxScenarioNamespaceLen = 57
 
+// Refs are the ids a scenario may name, read from curriculum.yaml and
+// docs/concepts. A nil list or map is not checked. Modules are the module
+// ids, Concepts the concept page ids, ExamDomains the exam domains written
+// EXAM:domain (CKA:troubleshooting), and Planned maps every scenario id that
+// curriculum.yaml lists to the module that lists it.
+type Refs struct {
+	Modules     []string
+	Concepts    []string
+	ExamDomains []string
+	Planned     map[string]string
+}
+
+// lintRefs is Refs as sets.
+type lintRefs struct {
+	modules, concepts, exams map[string]bool
+	planned                  map[string]string
+}
+
+func setOf(ids []string) map[string]bool {
+	if ids == nil {
+		return nil
+	}
+	out := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out
+}
+
 // Lint loads every scenario directory under root/scenarios and the template
 // at root/scenarios/_template and returns one error per problem, each
 // prefixed with the directory relative to root. Beyond Load it renders every
@@ -63,7 +92,10 @@ const maxScenarioNamespaceLen = 57
 // PersistentVolume with spec.local, or name docker.sock. Setup files are cut
 // into documents with yamldoc.Split, so a "--- # comment" separator starts a
 // new document as it does for kubectl.
-func Lint(root string, moduleIDs, conceptIDs []string) []error {
+//
+// refs cross-checks the scenarios with the curriculum and the concept
+// library; see Refs.
+func Lint(root string, refs Refs) []error {
 	var out []error
 	report := func(dir string, err error) {
 		rel, rerr := filepath.Rel(root, dir)
@@ -74,17 +106,7 @@ func Lint(root string, moduleIDs, conceptIDs []string) []error {
 			out = append(out, fmt.Errorf("%s: %s", rel, e.Error()))
 		}
 	}
-	modules := make(map[string]bool, len(moduleIDs))
-	for _, id := range moduleIDs {
-		modules[id] = true
-	}
-	var concepts map[string]bool
-	if conceptIDs != nil {
-		concepts = make(map[string]bool, len(conceptIDs))
-		for _, id := range conceptIDs {
-			concepts[id] = true
-		}
-	}
+	lr := lintRefs{modules: setOf(refs.Modules), concepts: setOf(refs.Concepts), exams: setOf(refs.ExamDomains), planned: refs.Planned}
 
 	dirs, err := scenarioDirs(root)
 	if err != nil {
@@ -96,7 +118,7 @@ func Lint(root string, moduleIDs, conceptIDs []string) []error {
 	} else if s, err := load(tpl, false); err != nil {
 		report(tpl, err)
 	} else {
-		report(tpl, lintScenario(s, false, nil, nil))
+		report(tpl, lintScenario(s, false, lintRefs{}))
 	}
 
 	seen := map[string]string{}
@@ -110,47 +132,71 @@ func Lint(root string, moduleIDs, conceptIDs []string) []error {
 			report(dir, fmt.Errorf("%s: scenario.id %q is also defined in %s", fileMeta, s.Meta.ID, other))
 		}
 		seen[s.Meta.ID] = dir
-		report(dir, lintScenario(s, true, modules, concepts))
+		report(dir, lintScenario(s, true, lr))
+	}
+	if lr.planned != nil {
+		ids := make([]string, 0, len(lr.planned))
+		for id := range lr.planned {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			if _, ok := seen[id]; !ok {
+				out = append(out, fmt.Errorf("curriculum.yaml: module %s lists scenario %q, which has no directory under %s", lr.planned[id], id, dirScenarios))
+			}
+		}
 	}
 	return out
 }
 
-func lintScenario(s *Scenario, real bool, modules, concepts map[string]bool) error {
+func lintScenario(s *Scenario, real bool, lr lintRefs) error {
 	var errs []error
 	if real && s.Meta.Level != "L0" && len(s.Variants) < 2 {
 		errs = append(errs, fmt.Errorf("%s: level %s requires at least two [[variant]] entries, got %d", fileMeta, s.Meta.Level, len(s.Variants)))
 	}
-	if real && len(modules) > 0 && !modules[s.Meta.Module] {
+	if real && len(lr.modules) > 0 && !lr.modules[s.Meta.Module] {
 		errs = append(errs, fmt.Errorf("%s: module %q is not in curriculum.yaml", fileMeta, s.Meta.Module))
 	}
-	if real && concepts != nil {
+	if real && lr.concepts != nil {
 		for _, id := range s.Meta.Concepts {
-			if !concepts[id] {
+			if !lr.concepts[id] {
 				errs = append(errs, fmt.Errorf("%s: concept %q has no docs/concepts/%s.md", fileMeta, id, id))
 			}
+		}
+	}
+	if real && lr.exams != nil {
+		for _, e := range s.Meta.Exam {
+			if !lr.exams[e] {
+				errs = append(errs, fmt.Errorf("%s: exam %q is not a domain of curriculum.yaml exams", fileMeta, e))
+			}
+		}
+	}
+	if real && lr.planned != nil {
+		switch module, ok := lr.planned[s.Meta.ID]; {
+		case !ok:
+			errs = append(errs, fmt.Errorf("%s: curriculum.yaml lists no scenario %q; add id: %s to a planned scenario of module %s", fileMeta, s.Meta.ID, s.Meta.ID, s.Meta.Module))
+		case module != s.Meta.Module:
+			errs = append(errs, fmt.Errorf("%s: scenario.module is %q but curriculum.yaml lists %s under module %s", fileMeta, s.Meta.Module, s.Meta.ID, module))
 		}
 	}
 	if real {
 		errs = append(errs, lintMarkers(s)...)
 	}
-	if err := lintDoneWhen(s); err != nil {
-		errs = append(errs, err)
-	}
-	n := int64(len(s.Variants))
-	if n == 0 {
-		n = 1
+	errs = append(errs, lintDoneWhen(s)...)
+	seeds := s.VariantSeeds()
+	if len(s.Variants) > 0 && len(seeds) != len(s.Variants) {
+		errs = append(errs, fmt.Errorf("%s: %d variants but only %d are picked by a seed up to %d; rename the variants", fileMeta, len(s.Variants), len(seeds), maxSeedSearch))
 	}
 	seen := map[string]bool{}
-	for seed := int64(1); seed <= n; seed++ {
-		variant := "default"
-		if len(s.Variants) > 0 {
-			variant = s.Variants[seed-1].Name
-		}
+	for _, seed := range seeds {
+		variant := s.VariantFor(seed).Name
 		r, err := s.Render(seed)
 		problems := flatten(err)
 		if err == nil {
 			problems = lintGracePeriod(s, r)
 			problems = append(problems, lintCheckValues(r.Checks)...)
+			problems = append(problems, lintRenderedHints(s, r)...)
+			problems = append(problems, lintSetupImages(s, r)...)
 			if !s.Meta.AllowPrivileged {
 				problems = append(problems, lintPrivileged(s, r)...)
 			}
@@ -328,7 +374,7 @@ func lintMarkers(s *Scenario) []error {
 	return errs
 }
 
-func lintDoneWhen(s *Scenario) error {
+func lintDoneWhen(s *Scenario) []error {
 	body, ok := section(s.Instruction, headingDone)
 	if !ok {
 		return nil
@@ -341,15 +387,19 @@ func lintDoneWhen(s *Scenario) error {
 		}
 		bullets = append(bullets, strings.TrimSpace(doneBullet.ReplaceAllString(line, "")))
 	}
+	var errs []error
 	if len(bullets) != len(s.Checks) {
-		return fmt.Errorf("%s: %q has %d bullets, %s has %d checks; one bullet per check in order", fileInstruction, headingDone, len(bullets), fileChecks, len(s.Checks))
+		errs = append(errs, fmt.Errorf("%s: %q has %d bullets, %s has %d checks; one bullet per check in order", fileInstruction, headingDone, len(bullets), fileChecks, len(s.Checks)))
 	}
 	for i, c := range s.Checks {
+		if i >= len(bullets) {
+			break
+		}
 		if !strings.EqualFold(bullets[i], strings.TrimSpace(c.Description)) {
-			return fmt.Errorf("%s: %q bullet %d is %q, check %q description is %q", fileInstruction, headingDone, i+1, bullets[i], c.ID, c.Description)
+			errs = append(errs, fmt.Errorf("%s: %q bullet %d is %q, check %q description is %q", fileInstruction, headingDone, i+1, bullets[i], c.ID, c.Description))
 		}
 	}
-	return nil
+	return errs
 }
 
 func flatten(err error) []error {
@@ -468,4 +518,56 @@ func copyFile(src, dst string, perm os.FileMode) error {
 		return err
 	}
 	return os.Chmod(dst, perm)
+}
+
+// lintRenderedHints applies the hint ladder and the mutating command rule
+// to hints.md as rendered for r, so a variable cannot carry a heading or a
+// kubectl write the raw file does not show.
+func lintRenderedHints(s *Scenario, r *Rendered) []error {
+	if s.hintsDoc == "" {
+		return nil
+	}
+	doc, err := execute(fileHints, s.hintsDoc, templateData{Seed: r.Seed, Namespace: r.Namespace, Variant: r.Variant.Name, Vars: r.Vars})
+	if err != nil {
+		return nil
+	}
+	sections, err := parseHintSections(doc)
+	if err != nil {
+		return []error{fmt.Errorf("%s: rendered: %w", fileHints, err)}
+	}
+	var errs []error
+	validateHintLadder(sections, func(file, format string, args ...any) {
+		errs = append(errs, fmt.Errorf("%s: rendered: %s", file, fmt.Sprintf(format, args...)))
+	})
+	for _, h := range sections {
+		if cmd := mutatingKubectl(h.body); cmd != "" {
+			errs = append(errs, fmt.Errorf("%s: rendered: %q contains the mutating command %q; hints describe where to look and what to change, the learner types the change", fileHints, h.heading, cmd))
+		}
+	}
+	return errs
+}
+
+// lintSetupImages requires every container image of the rendered setup to
+// be pinned by digest, except an image that is the value of a variant
+// variable: that one is the bug the variant plants (a wrong tag, registry
+// or repository) and cannot carry a digest.
+func lintSetupImages(s *Scenario, r *Rendered) []error {
+	planted := map[string]bool{}
+	for _, v := range r.Vars {
+		planted[v] = true
+	}
+	var errs []error
+	for i, m := range r.Manifests {
+		rel := fmt.Sprintf("manifest %d", i)
+		if i < len(s.SetupFiles) {
+			rel = relTo(s.Dir, s.SetupFiles[i])
+		}
+		for _, ci := range manifestImages(m) {
+			if strings.Contains(ci.image, "@sha256:") || planted[ci.image] {
+				continue
+			}
+			errs = append(errs, fmt.Errorf("%s: %s %q container %q: image %q is not pinned; write image:tag@sha256:<digest>, or set it from a variant variable when the image is the bug", rel, ci.kind, ci.name, ci.container, ci.image))
+		}
+	}
+	return errs
 }

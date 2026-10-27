@@ -241,6 +241,6 @@ func TestProfileRenderNeverExpiresAnExam(t *testing.T) {
 	if f.journal.current == nil || f.journal.current.Outcome != journal.OutcomeActive {
 		t.Errorf("profile render ended the exam: %+v", f.journal.current)
 	}
-	_, stdout, _ = f.run(t, "", "status")
-	mustContain(t, stdout, "exam time box of 001-hello-down expired at")
+	_, _, errOut = f.run(t, "", "status")
+	mustContain(t, errOut, "exam time box of 001-hello-down expired at")
 }

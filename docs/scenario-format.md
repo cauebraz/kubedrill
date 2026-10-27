@@ -53,6 +53,7 @@ namespace = "shop"
 exam = ["CKA:troubleshooting"]
 concepts = ["pod-lifecycle", "image-pull", "readiness-and-endpoints"]
 fix_targets = ["apps/deployments/storefront"]
+images = ["nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10"]
 
 [[variant]]
 name = "old-registry"
@@ -81,12 +82,18 @@ root_cause = "The Deployment image tag 1.27-alpnie does not exist in docker.io/l
 | `exam` | no | Entries shaped `CKA:domain`, `CKAD:domain` or `CKS:domain` |
 | `profile` | no | A kind profile under `cluster/profiles/` when `base.yaml` is not enough |
 | `allow_privileged` | no | Default `false`. `true` lifts the sandbox rule of [setup/](#setup-and-hooksh) and needs maintainer review |
+| `images` | no | Images the fix needs that no setup manifest or probe names with a digest, each `name:tag@sha256:<64 hex>`, for example the image the fixed Deployment runs |
 
 Notes:
 
 - Unknown keys are rejected.
 - `requires`, `addons` and `profile` are parsed but not validated or acted
   on yet (see `docs/roadmap.md`).
+- `images`: `kubedrill up` preloads these, every probe image and every
+  setup image pinned by digest on the nodes. An image written
+  `name:tag@sha256:...` is pulled by digest and tagged `name:tag` on the
+  node, so a fix that writes only the tag (`nginx:1.27-alpine`) starts
+  without the registry.
 - `namespace`: each episode runs in `<namespace>-<5 random lowercase
   alphanumerics>`. It may use template syntax (`shop-{{ .Seed }}`).
   Rendered, it must be a DNS-1123 label of at most 57 characters, so the
@@ -115,7 +122,15 @@ Each `[[variant]]` is a named root cause or parameter set.
 - Names are unique. The learner sees the name only after the episode ends,
   so a descriptive name such as `typo-tag` is fine.
 - `vars` is a string-to-string table, reachable as `{{ .Vars.<key> }}`.
-- The seed picks `variants[(seed-1) mod len(variants)]`. Seeds start at 1.
+- The seed picks the variant by a rendezvous hash of the seed and each
+  variant name. Reordering the variants changes no pick, and adding one
+  moves only the seeds the new variant wins. Seeds start at 1.
+- An episode records its variant name and always renders with it, so a
+  variant added or reordered later does not change an episode in progress.
+  Removing a variant makes the episodes that ran it fail to render; the
+  learner starts a new one.
+- Lint and `kubedrill smoke` render each variant with the smallest seed
+  that picks it, so the seeds they print are not 1, 2, 3.
 - Without any variant the name is `default` and `Vars` is empty.
 - L1 and above need at least two variants; L0 may ship one.
 - Lint renders every variant, so every variant defines every key a template
@@ -166,7 +181,9 @@ Sections, in order:
    what the learner has access to.
 5. `## Done when` (required): one bullet per check, in `checks.yaml` order,
    with the same text as the check `description`. Lint compares them
-   trimmed and ignoring case, and names the first mismatch.
+   trimmed and ignoring case, and names every mismatch. A `#` line inside a
+   fenced code block is a comment, not a heading, so it does not end the
+   section.
 6. `## Constraints`: names to keep, things not to delete.
 
 ## story.md
@@ -217,14 +234,18 @@ this order. The fourth is optional.
   observe)`).
 - The last hint waits for a recorded diagnosis (`kubedrill diagnose`),
   because it names what to change.
-- No hint contains `kubectl` followed by a mutating verb: `set`, `edit`,
+- No hint contains `kubectl` (or its workstation alias `k`) followed by a
+  mutating verb: `set`, `edit`,
   `patch`, `apply`, `create`, `replace`, `delete`, `scale`, `label`,
   `annotate`, `expose`, `run`, `autoscale`, `cordon`, `uncordon`, `drain`,
   `taint`, or `rollout` with `undo`, `restart`, `pause` or `resume`. The
   loader rejects one (`"## Hint 4: what to change" contains the mutating
   command "kubectl set"`). Read commands (`get`, `describe`, `logs`,
   `events`, `explain`, `top`, `diff`, `exec`, `debug`) are fine. The
-  learner types the change.
+  learner types the change. Lint applies the rule and the ladder headings
+  to hints.md as rendered for every variant too, so a variable cannot carry
+  a mutating command. A `## Hint N` line inside a fenced code block is not
+  a hint.
 
 ## checks.yaml
 
@@ -560,6 +581,7 @@ template and reports every problem.
 - `concepts` present for `break-fix` and `build`, every id matching
   `^[a-z0-9]+(-[a-z0-9]+)*$` with a file `docs/concepts/<id>.md`
 - `allow_privileged` is a boolean
+- every `images` entry is `name:tag@sha256:<64 hex>`
 - `namespace`, rendered for every seed: a DNS-1123 label of at most 57
   characters and not a reserved name
 - at least two variants for L1 and above
@@ -569,10 +591,12 @@ Files:
 - `instruction.md`: `## Done when` with one bullet per check, equal to the
   check descriptions in order; `## Before you start` at most 8 lines
 - `hints.md`: 3 or 4 non-empty sections with the ladder headings in order,
-  no mutating `kubectl` command
+  no mutating `kubectl` or `k` command, raw and rendered for every variant
 - `setup/`: only `*.yaml`, `*.yml` and an executable `hook.sh`; every
   template parses; every Deployment sets `terminationGracePeriodSeconds:
-  1`; the sandbox rule unless `allow_privileged = true`. Lint cuts setup
+  1`; the sandbox rule unless `allow_privileged = true`; every container
+  image pinned as `image:tag@sha256:<digest>`, except an image that is the
+  value of a variant variable (the bug the variant plants). Lint cuts setup
   files with `yamldoc.Split`, the splitter `kube` and the addon loader use,
   so it sees the same documents the start applies. Text after `--- ` that
   is not a comment starts the next document.
@@ -599,7 +623,7 @@ Across the tree:
   above 100000 is refused, and a render stops after 1000000 steps (range
   iterations plus `template` calls, even ones that print nothing), so a
   template cannot hang lint or start
-- every variant seed (1 to n) renders setup, checks, `instruction.md`,
+- one seed per variant (the smallest seed that picks it) renders setup, checks, `instruction.md`,
   `hints.md`, `solution/README.md`, `story.md` and `approaches/`, so an undefined
   `.Vars` key shows up before a learner hits it
 - every page under `docs/concepts/` loads (id, title, intro, the four
@@ -607,6 +631,10 @@ Across the tree:
   has a page
 - `curriculum.yaml`: level and module ids, exam references, no scenario
   listed twice
+- every scenario `exam` entry is a domain of the `curriculum.yaml` exams
+- every scenario is listed in `curriculum.yaml` (an `id:` on a planned
+  scenario) under the module its `scenario.module` names, and every `id:`
+  in `curriculum.yaml` has a scenario directory
 
 `kubedrill smoke [refs...]` needs the cluster (`just smoke 000`, or `just
 check-ci` for all). For each scenario and each variant seed it:

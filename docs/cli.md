@@ -537,6 +537,7 @@ Table of episodes, newest first.
 - `--last N`: number of episodes to show, default 20; `--last 0` shows all;
   a negative value is `--last must be >= 0, got -1`, exit 1.
 - Columns: started, scenario, seed, mode, variant, outcome, duration, hints.
+  Outcomes print as words: `timed_out` in the journal file is `timed out`.
 - Mode is `practice`, `review` (a practice episode on a review seed) or
   `exam`.
 - Variant is `-` while the episode is active, with the footer `- : hidden
@@ -686,7 +687,8 @@ there is no detail).
 kubedrill up [--profile base] [--addons a,b]
 ```
 
-Creates the cluster when it is missing, then installs the addons.
+Creates the cluster when it is missing, installs the addons, then preloads
+images on every node.
 
 - `--profile`: kind profile under `cluster/profiles`, default `base`.
 - `--addons`: comma-separated addons to install besides metrics-server, for
@@ -698,7 +700,13 @@ Cluster:
   as a new cluster: an `up` started while another one is still creating
   the cluster does not continue early. A stopped node container (for
   example after a Docker restart) fails at once with the `docker start`
-  command that brings it back.
+  command that brings it back. A removed node container (a `docker rm`
+  that took one node) fails at once with `node containers missing: ...`
+  and the `kubedrill down --yes && kubedrill up` remedy.
+- When `up` has to create the cluster (missing, or every node container
+  removed), it also drops the fault records of the old one.
+- kind always uses the docker provider, the same runtime every other
+  kubedrill call uses, even when podman or nerdctl is installed.
 - Otherwise it creates it from `cluster/profiles/<profile>.yaml` (about 2
   minutes), then prints `waiting up to 2m0s for the nodes to be Ready...`
   and waits. A second `up` that loses the race to create the same cluster
@@ -713,6 +721,12 @@ Cluster:
   `~/.local/state/kubedrill/kubedrill`, created with mode 0700.
 - On an existing cluster it still runs the idempotent ensure step: the
   kubeconfig context check and the best-effort audit log permissions.
+- Preload: prints `preloading N images on the nodes`, then pulls the node
+  debug image and every scenario image (`images` in `scenario.toml`, probe
+  images and setup images pinned by digest) into each node's containerd. A
+  `name:tag@sha256:...` image is also tagged `name:tag`, so a fix that
+  writes only the tag needs no registry. A failed pull is a `warning:` on
+  stderr; the node then pulls the image when a pod first needs it.
 - A changed profile or `cluster/audit-policy.yaml` applies only to a new
   cluster: `kubedrill down --yes && kubedrill up`.
 - When the running cluster's audit policy differs from the repository file,
@@ -748,6 +762,10 @@ Deletes the kind cluster after confirmation.
 
 - `--yes`, `-y`: skip the confirmation.
 - A declined confirmation prints `kept the cluster` and exits 0.
+- It also removes what described the deleted cluster from the state
+  directory: the audit policy record, `kubeconfig-internal`,
+  `kubeconfig-scripts` and the fault records in `faults.json`, so the next
+  `kubedrill fault` on a new cluster is not refused as already active.
 
 ### fault
 
@@ -1103,15 +1121,16 @@ Workstation (`KUBEDRILL_EXAM=1`, `KUBEDRILL_DEADLINE`):
 Deadline:
 
 - Any command run at or after the deadline first grades the episode one last
-  time and prints `exam time box of <id> expired at HH:MM: outcome timed_out
-  (N of M checks passed)`.
+  time and prints `exam time box of <id> expired at HH:MM: outcome timed out
+  (N of M checks passed)` on stderr, so `$(kubedrill namespace)` in a script
+  never captures it.
 - At or after means 12:15:00 for a 12:15:00 deadline; 12:14:59 is still
   inside it.
 - The exceptions are `doctor`, `up`, `down`, `lint`, `new`, `smoke`,
   `version`, `help`, `fault`, `heal` and `profile render`. Bare `kubedrill`
   is an exception too, except on a terminal, where it finishes an expired
   exam before it reopens the workstation.
-- The outcome stays `timed_out` when that grade passes, except within 30
+- The outcome stays `timed_out` (printed `timed out`) when that grade passes, except within 30
   seconds after the deadline, when a pass counts as `solved` (`env.Expire`).
 - Both the deadline and the 30 seconds are judged at the moment the command
   starts, before grading: a `submit` started before the deadline counts
@@ -1165,6 +1184,18 @@ How it is computed:
   and counts.
 - The shell log and the recordings need the workstation: `kubedrill start`
   on a terminal, or `kubedrill shell`.
+- The audit policy records the request body of the learner's `patch` and
+  `update` on workloads, pods, services, ConfigMaps, PVCs, service accounts,
+  Ingresses and NetworkPolicies (user group `kubeadm:cluster-admins`), never
+  of Secrets. A write whose body changes only labels or annotations, of the
+  object or of its pod template (`kubectl annotate`, `label`, `rollout
+  restart`), does not make the verdict `root-cause`, and the debrief says
+  `a fix target, but only its labels or annotations changed`. On a cluster
+  created with the older policy no body is recorded and every write to a
+  fix target counts.
+- A get by the same client less than a second before a write that counts
+  is the client's own read and is left out. A rejected write (code 400 or
+  more) or an `exec` keeps that get as an observation.
 
 ## Scripts
 

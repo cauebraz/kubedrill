@@ -26,4 +26,16 @@ rules:
     verbs: ["get", "list", "watch"]
   - level: None
     nonResourceURLs: ["/healthz*", "/livez*", "/readyz*", "/version", "/openapi*", "/api*"]
+  - level: Request
+    userGroups: ["kubeadm:cluster-admins", "system:masters"]
+    verbs: ["patch", "update"]
+    resources:
+      - group: apps
+        resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+      - group: batch
+        resources: ["jobs", "cronjobs"]
+      - group: ""
+        resources: ["pods", "services", "configmaps", "persistentvolumeclaims", "serviceaccounts"]
+      - group: networking.k8s.io
+        resources: ["ingresses", "networkpolicies"]
   - level: Metadata

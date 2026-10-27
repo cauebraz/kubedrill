@@ -323,7 +323,7 @@ func (h *harness) start(t *testing.T, mode journal.Mode, seed int64) *journal.Ep
 
 func TestStartHappyPath(t *testing.T) {
 	h := newHarness(t, testScenario(), "", 0)
-	ep, rd, err := h.s.Reset(context.Background(), "001", 2)
+	ep, rd, err := h.s.Reset(context.Background(), "001", 3)
 	if err != nil {
 		t.Fatalf("Reset: got err %v, want nil", err)
 	}
@@ -334,7 +334,7 @@ func TestStartHappyPath(t *testing.T) {
 	wantLabels := map[string]string{
 		"app.kubernetes.io/managed-by": "kubedrill",
 		"kubedrill.io/scenario":        "001-hello",
-		"kubedrill.io/seed":            "2",
+		"kubedrill.io/seed":            "3",
 		"kubedrill.io/journal":         "0123abcd",
 	}
 	if !reflect.DeepEqual(h.kube.labels, wantLabels) {
@@ -348,7 +348,7 @@ func TestStartHappyPath(t *testing.T) {
 		t.Errorf("apply namespace: got %q, want %q", h.kube.applyNS, testNS)
 	}
 	want := journal.Episode{
-		ID: "001-hello-" + strconv.FormatInt(t0.Unix(), 10) + "-abcde", ScenarioID: "001-hello", Seed: 2, Variant: "probe",
+		ID: "001-hello-" + strconv.FormatInt(t0.Unix(), 10) + "-abcde", ScenarioID: "001-hello", Seed: 3, Variant: "probe",
 		StartedAt: t0, Outcome: journal.OutcomeActive, Namespace: testNS, Mode: journal.ModePractice,
 	}
 	if !reflect.DeepEqual(*ep, want) {
@@ -580,7 +580,7 @@ func TestStartExam(t *testing.T) {
 
 func TestCurrentRerendersWithStoredNamespace(t *testing.T) {
 	h := newHarness(t, testScenario(), "", 0)
-	_, started, err := h.s.Reset(context.Background(), "001-hello", 4)
+	_, started, err := h.s.Reset(context.Background(), "001-hello", 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -589,8 +589,8 @@ func TestCurrentRerendersWithStoredNamespace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Current: %v", err)
 	}
-	if ep.Seed != 4 || rd.Variant.Name != "probe" || rd.Namespace != testNS {
-		t.Errorf("got seed %d variant %q ns %q, want 4 probe %s", ep.Seed, rd.Variant.Name, rd.Namespace, testNS)
+	if ep.Seed != 3 || rd.Variant.Name != "probe" || rd.Namespace != testNS {
+		t.Errorf("got seed %d variant %q ns %q, want 3 probe %s", ep.Seed, rd.Variant.Name, rd.Namespace, testNS)
 	}
 	if rd.Instruction != started.Instruction || !reflect.DeepEqual(rd.Hints, started.Hints) || rd.Solution != started.Solution {
 		t.Errorf("Current renders differently from Start:\ngot  %q %q\nwant %q %q", rd.Instruction, rd.Hints, started.Instruction, started.Hints)
@@ -1264,6 +1264,25 @@ func TestGradeReturnsEpisodeEndedElsewhere(t *testing.T) {
 	}
 }
 
+func TestCurrentRendersStoredVariant(t *testing.T) {
+	h := newHarness(t, testScenario(), "", 0)
+	if _, _, err := h.s.Reset(context.Background(), "001-hello", 3); err != nil {
+		t.Fatal(err)
+	}
+	h.journal.current.Variant = "image"
+	_, rd, err := h.s.Current()
+	if err != nil {
+		t.Fatalf("Current: %v", err)
+	}
+	if rd.Variant.Name != "image" {
+		t.Errorf("Current renders variant %q, want the stored image", rd.Variant.Name)
+	}
+	h.journal.current.Variant = "removed"
+	if _, _, err := h.s.Current(); !errors.Is(err, scenario.ErrVariantGone) {
+		t.Errorf("Current with a removed variant: err %v, want ErrVariantGone", err)
+	}
+}
+
 func TestGradeStampsSessionClock(t *testing.T) {
 	h := newHarness(t, testScenario(), "", 0)
 	h.start(t, journal.ModePractice, 1)
@@ -1280,7 +1299,7 @@ func TestGradeStampsSessionClock(t *testing.T) {
 
 func TestStartRedrawsRepeatedVariant(t *testing.T) {
 	h := newHarness(t, testScenario(), "", 0)
-	draws := []int64{1, 3, 5, 2}
+	draws := []int64{1, 2, 4, 3}
 	n := 0
 	h.s.d.Rand = func() int64 { d := draws[n%len(draws)]; n++; return d }
 	h.journal.ended = []journal.Episode{{ID: "old", ScenarioID: "001-hello", Variant: "image", Outcome: journal.OutcomeSolved}}
@@ -1288,8 +1307,8 @@ func TestStartRedrawsRepeatedVariant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ep.Seed != 2 || ep.Variant != "probe" || n != 4 {
-		t.Errorf("redraw: got seed %d variant %s after %d draws, want seed 2 variant probe after 4", ep.Seed, ep.Variant, n)
+	if ep.Seed != 3 || ep.Variant != "probe" || n != 4 {
+		t.Errorf("redraw: got seed %d variant %s after %d draws, want seed 3 variant probe after 4", ep.Seed, ep.Variant, n)
 	}
 
 	h = newHarness(t, testScenario(), "", 1)

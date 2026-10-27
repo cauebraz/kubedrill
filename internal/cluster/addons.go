@@ -49,7 +49,10 @@ type addon struct {
 
 // addonContainer is a container an addon runs next to the kind nodes.
 // SecurityOpt, Memory and PidsLimit map to docker run --security-opt,
-// --memory and --pids-limit; zero values add no flag.
+// --memory and --pids-limit; zero values add no flag. A volume whose source
+// is a host path (the docker socket gives root on the host) needs
+// HostAccess true, which needs maintainer review like allow_privileged in a
+// scenario; named volumes need nothing.
 type addonContainer struct {
 	Name        string   `json:"name"`
 	Image       string   `json:"image"`
@@ -60,6 +63,7 @@ type addonContainer struct {
 	SecurityOpt []string `json:"security_opt,omitempty"`
 	Memory      string   `json:"memory,omitempty"`
 	PidsLimit   int      `json:"pids_limit,omitempty"`
+	HostAccess  bool     `json:"host_access,omitempty"`
 }
 
 // specHash is the first 12 hex digits of a sha256 over the JSON of c; a
@@ -261,6 +265,11 @@ func (m *Manager) loadAddon(name string) (*addon, error) {
 		if !strings.Contains(c.Image, "@sha256:") {
 			problems = append(problems, fmt.Sprintf("container.image %q is not pinned by digest", c.Image))
 		}
+		for _, v := range c.Volumes {
+			if source, _, _ := strings.Cut(v, ":"); hostPathSource(source) && !c.HostAccess {
+				problems = append(problems, fmt.Sprintf("container.volumes %q mounts a host path; set container.host_access: true, which needs maintainer review", v))
+			}
+		}
 	}
 	if len(problems) > 0 {
 		return nil, fmt.Errorf("addon %q: %s", name, strings.Join(problems, "; "))
@@ -327,4 +336,10 @@ func (m *Manager) runContainer(ctx context.Context, c *addonContainer) error {
 		return dockerError("run container "+c.Name, err)
 	}
 	return nil
+}
+
+// hostPathSource reports whether a docker volume source names a path on
+// the host rather than a named volume.
+func hostPathSource(source string) bool {
+	return strings.ContainsAny(source, "/~") || strings.HasPrefix(source, ".")
 }

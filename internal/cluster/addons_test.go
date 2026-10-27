@@ -69,7 +69,9 @@ func addonFixture(t *testing.T) *Manager {
 	t.Helper()
 	root := t.TempDir()
 	writeAddon(t, root, "alpha", "name: alpha\ndescription: a\nbase: true\nmanifests: [one.yaml, two.yaml]\n", map[string]string{"one.yaml": "kind: A\n", "two.yaml": "kind: B\n"})
-	writeAddon(t, root, "beta", "name: beta\ndescription: b\ncontainer:\n  name: ccm\n  image: "+pinnedImage+"\n  network: kind\n  restart: unless-stopped\n  volumes: [/var/run/docker.sock:/var/run/docker.sock]\n", nil)
+	writeAddon(t, root, "beta", "name: beta\ndescription: b\ncontainer:\n  name: ccm\n  image: "+pinnedImage+"\n  network: kind\n  restart: unless-stopped\n  host_access: true\n  volumes: [/var/run/docker.sock:/var/run/docker.sock]\n", nil)
+	writeAddon(t, root, "hostpath", "name: hostpath\ncontainer:\n  name: h\n  image: "+pinnedImage+"\n  volumes: [/var/run/docker.sock:/var/run/docker.sock, cache:/cache]\n", nil)
+	writeAddon(t, root, "named", "name: named\ncontainer:\n  name: n\n  image: "+pinnedImage+"\n  volumes: [cache:/cache]\n", nil)
 	if err := os.MkdirAll(filepath.Join(root, "not-an-addon"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +83,7 @@ func addonFixture(t *testing.T) *Manager {
 
 func TestAddonsLists(t *testing.T) {
 	m := addonFixture(t)
-	want := []string{"alpha", "badname", "beta", "escape", "unpinned"}
+	want := []string{"alpha", "badname", "beta", "escape", "hostpath", "named", "unpinned"}
 	if got := m.Addons(); !reflect.DeepEqual(got, want) {
 		t.Errorf("Addons: got %v, want %v", got, want)
 	}
@@ -99,7 +101,8 @@ func TestEnsureAddonsValidation(t *testing.T) {
 		names []string
 		want  []string
 	}{
-		{name: "unknown", names: []string{"nope"}, want: []string{`addon "nope" not found`, "available: alpha, badname, beta, escape, unpinned"}},
+		{name: "unknown", names: []string{"nope"}, want: []string{`addon "nope" not found`, "available: alpha, badname, beta, escape, hostpath, named, unpinned"}},
+		{name: "host path without host_access", names: []string{"hostpath"}, want: []string{`container.volumes "/var/run/docker.sock:/var/run/docker.sock" mounts a host path; set container.host_access: true, which needs maintainer review`}},
 		{name: "name mismatch", names: []string{"badname"}, want: []string{`name "other" does not match the directory`}},
 		{name: "unpinned image", names: []string{"unpinned"}, want: []string{`container.image "example.com/u:v1" is not pinned by digest`}},
 		{name: "path escape", names: []string{"escape"}, want: []string{`manifest "../alpha/one.yaml" must be a file name`}},
@@ -146,7 +149,7 @@ func TestEnsureAddonsAppliesManifests(t *testing.T) {
 }
 
 func TestEnsureAddonsContainer(t *testing.T) {
-	spec := &addonContainer{Name: "ccm", Image: pinnedImage, Network: "kind", Restart: "unless-stopped", Volumes: []string{"/var/run/docker.sock:/var/run/docker.sock"}}
+	spec := &addonContainer{Name: "ccm", Image: pinnedImage, Network: "kind", Restart: "unless-stopped", Volumes: []string{"/var/run/docker.sock:/var/run/docker.sock"}, HostAccess: true}
 	hash := spec.specHash()
 	runArgs := dockerCall{"docker", "run", "-d", "--name", "ccm", "--label", "app.kubernetes.io/managed-by=kubedrill", "--label", "kubedrill.io/spec-hash=" + hash, "--network", "kind", "--restart", "unless-stopped", "-v", "/var/run/docker.sock:/var/run/docker.sock", pinnedImage}
 	inspect := dockerCall{"docker", "inspect", "-f", `{{index .Config.Labels "kubedrill.io/spec-hash"}}|{{.State.Running}}`, "ccm"}

@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cauebraz/kubedrill/internal/concepts"
+	"github.com/cauebraz/kubedrill/internal/env"
 	"github.com/cauebraz/kubedrill/internal/journal"
 	"github.com/cauebraz/kubedrill/internal/render"
 	"github.com/cauebraz/kubedrill/internal/scenario"
@@ -89,7 +90,7 @@ func (a *app) learnActive() error {
 		if err != nil {
 			return err
 		}
-		return fmt.Errorf("no active episode; kubedrill learn <id> prints one concept: %s", strings.Join(lib.IDs(), ", "))
+		return fmt.Errorf("%w; kubedrill learn <id> prints one concept: %s", env.ErrNoActiveEpisode, strings.Join(lib.IDs(), ", "))
 	}
 	cat, err := a.getCatalog()
 	if err != nil {
@@ -160,7 +161,7 @@ func (a *app) printStory(ref string) error {
 		return fmt.Errorf("read current episode: %w", err)
 	}
 	if ref == "" && cur == nil {
-		return errors.New("no active episode; kubedrill story <id> prints the story of one scenario")
+		return fmt.Errorf("%w; kubedrill story <id> prints the story of one scenario", env.ErrNoActiveEpisode)
 	}
 	if ref == "" {
 		ref = cur.ScenarioID

@@ -135,7 +135,7 @@ func (a *app) smokeTargets(refs []string) ([]*scenario.Scenario, error) {
 func (a *app) smokeRuns(ctx context.Context, s *env.Session, targets []*scenario.Scenario, kubeconfig string, namespaces map[string]bool, verbose bool) (int, error) {
 	failures := 0
 	for _, sc := range targets {
-		for seed := int64(1); seed <= int64(seedCount(sc)); seed++ {
+		for _, seed := range sc.VariantSeeds() {
 			if err := ctx.Err(); err != nil {
 				return failures, fmt.Errorf("smoke: %w", err)
 			}
@@ -181,17 +181,10 @@ func (a *app) smokeGuard(targets []*scenario.Scenario) error {
 	return nil
 }
 
-func seedCount(sc *scenario.Scenario) int {
-	if len(sc.Variants) == 0 {
-		return 1
-	}
-	return len(sc.Variants)
-}
-
 func countRuns(targets []*scenario.Scenario) int {
 	n := 0
 	for _, sc := range targets {
-		n += seedCount(sc)
+		n += len(sc.VariantSeeds())
 	}
 	return n
 }

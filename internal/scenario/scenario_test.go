@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -360,7 +361,7 @@ func TestRenderStory(t *testing.T) {
 		want  string
 	}{
 		{name: "no story.md", want: ""},
-		{name: "story.md rendered", story: fixtureStory, want: "Down in fx-2."},
+		{name: "story.md rendered", story: fixtureStory, want: "Down in fx-3."},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -375,7 +376,7 @@ func TestRenderStory(t *testing.T) {
 			if got := s.Story; got != tc.story {
 				t.Errorf("Story = %q, want %q", got, tc.story)
 			}
-			r, err := s.Render(2)
+			r, err := s.Render(3)
 			if err != nil {
 				t.Fatalf("Render: %v", err)
 			}
@@ -404,10 +405,9 @@ func TestRenderVariantCycling(t *testing.T) {
 		name  string
 		image string
 	}{
-		{1, "old-registry", "registry.old-dc.example/mirror/nginx:1.27-alpine"},
-		{2, "typo-tag", "nginx:1.27-alpnie"},
-		{3, "wrong-repo", "docker.io/library/ngnix:1.27-alpine"},
-		{4, "old-registry", "registry.old-dc.example/mirror/nginx:1.27-alpine"},
+		{seedOf(t, s, "old-registry"), "old-registry", "registry.old-dc.example/mirror/nginx:1.27-alpine"},
+		{seedOf(t, s, "typo-tag"), "typo-tag", "nginx:1.27-alpnie"},
+		{seedOf(t, s, "wrong-repo"), "wrong-repo", "docker.io/library/ngnix:1.27-alpine"},
 	}
 	for _, tc := range tests {
 		r, err := s.Render(tc.seed)
@@ -449,14 +449,14 @@ func TestRenderTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := s.Render(2)
+	r, err := s.Render(3)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
-	if got, want := r.Namespace, "fx-2"; got != want {
+	if got, want := r.Namespace, "fx-3"; got != want {
 		t.Errorf("Namespace = %q, want %q", got, want)
 	}
-	if got, want := r.Checks[0].Resource.Namespace, "fx-2"; got != want {
+	if got, want := r.Checks[0].Resource.Namespace, "fx-3"; got != want {
 		t.Errorf("check namespace = %q, want %q", got, want)
 	}
 	if got, want := *r.Checks[1].Equals, "nginx:b"; got != want {
@@ -468,7 +468,7 @@ func TestRenderTemplates(t *testing.T) {
 	if got, want := *s.Checks[1].Equals, "{{ .Vars.image }}"; got != want {
 		t.Errorf("source check mutated: Equals = %q, want %q", got, want)
 	}
-	if !strings.Contains(r.Manifests[0], "namespace: fx-2") || !strings.Contains(r.Manifests[0], "image: nginx:b") {
+	if !strings.Contains(r.Manifests[0], "namespace: fx-3") || !strings.Contains(r.Manifests[0], "image: nginx:b") {
 		t.Errorf("manifest not rendered:\n%s", r.Manifests[0])
 	}
 	r.Vars["image"] = "changed"
@@ -638,7 +638,7 @@ func TestLintRealTree(t *testing.T) {
 	concepts := []string{"pod-lifecycle", "image-pull", "readiness-and-endpoints"}
 	for _, modules := range [][]string{nil, {"L0.1", "L0.2"}} {
 		for _, ids := range [][]string{nil, concepts} {
-			for _, e := range Lint("../..", modules, ids) {
+			for _, e := range Lint("../..", Refs{Modules: modules, Concepts: ids}) {
 				t.Errorf("lint(modules=%v, concepts=%v): %v", modules, ids, e)
 			}
 		}
@@ -650,7 +650,7 @@ func TestLintReportsProblems(t *testing.T) {
 	f := validFixture()
 	f["scenario.toml"] = strings.Replace(strings.SplitN(f["scenario.toml"], "[[variant]]", 2)[0], `type = "break-fix"`, `type = "build"`, 1)
 	writeFixture(t, root, "L1", "001-fixture", f)
-	errs := Lint(root, nil, nil)
+	errs := Lint(root, Refs{})
 	if len(errs) == 0 {
 		t.Fatal("Lint returned no errors, want template missing and variant problems")
 	}
@@ -839,7 +839,7 @@ func TestLintRules(t *testing.T) {
 			f := validFixture()
 			tc.mutate(f)
 			writeFixture(t, root, "L1", "001-fixture", f)
-			errs := Lint(root, tc.modules, tc.concepts)
+			errs := Lint(root, Refs{Modules: tc.modules, Concepts: tc.concepts})
 			joined := make([]string, 0, len(errs))
 			for _, e := range errs {
 				joined = append(joined, e.Error())
@@ -876,7 +876,7 @@ func TestScaffold(t *testing.T) {
 	if s.Meta.ID != "042-new-thing" || s.Meta.Level != "L2" {
 		t.Errorf("Meta = %q/%q, want 042-new-thing/L2", s.Meta.ID, s.Meta.Level)
 	}
-	errs := Lint(root, nil, nil)
+	errs := Lint(root, Refs{})
 	if len(errs) == 0 {
 		t.Error("Lint after scaffold returned no errors, want template marker errors")
 	}
@@ -1207,6 +1207,83 @@ func TestWhyLengthBounds(t *testing.T) {
 	}
 }
 
+func seedOf(t *testing.T, s *Scenario, name string) int64 {
+	t.Helper()
+	seed, ok := s.SeedFor(name)
+	if !ok {
+		t.Fatalf("SeedFor(%q): no seed", name)
+	}
+	return seed
+}
+
+func TestVariantForIsStable(t *testing.T) {
+	s, err := Load(realScenario)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reversed := &Scenario{Meta: s.Meta}
+	for i := len(s.Variants) - 1; i >= 0; i-- {
+		reversed.Variants = append(reversed.Variants, s.Variants[i])
+	}
+	grown := &Scenario{Meta: s.Meta, Variants: append(append([]Variant(nil), s.Variants...), Variant{Name: "added"})}
+	counts := map[string]int{}
+	moved := 0
+	for seed := int64(1); seed <= 3000; seed++ {
+		got := s.VariantFor(seed).Name
+		counts[got]++
+		if r := reversed.VariantFor(seed).Name; r != got {
+			t.Fatalf("seed %d: reordered variants pick %q, want %q", seed, r, got)
+		}
+		if g := grown.VariantFor(seed).Name; g != got {
+			if g != "added" {
+				t.Fatalf("seed %d: adding a variant moved it to %q, want %q or added", seed, g, got)
+			}
+			moved++
+		}
+	}
+	for _, v := range s.Variants {
+		if counts[v.Name] < 800 {
+			t.Errorf("variant %s picked %d times in 3000 seeds, want about 1000", v.Name, counts[v.Name])
+		}
+	}
+	if moved < 500 || moved > 1000 {
+		t.Errorf("adding a fourth variant moved %d of 3000 seeds, want about 750", moved)
+	}
+	seeds := s.VariantSeeds()
+	if len(seeds) != len(s.Variants) {
+		t.Fatalf("VariantSeeds = %v, want one per variant", seeds)
+	}
+	for i, seed := range seeds {
+		if got := s.VariantFor(seed).Name; got != s.Variants[i].Name {
+			t.Errorf("VariantSeeds[%d] = %d picks %q, want %q", i, seed, got, s.Variants[i].Name)
+		}
+	}
+	if _, ok := s.SeedFor("missing"); ok {
+		t.Error("SeedFor(missing) found a seed")
+	}
+}
+
+func TestRenderWithVariant(t *testing.T) {
+	s, err := Load(realScenario)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := seedOf(t, s, "old-registry")
+	r, err := s.Render(seed, WithVariant("typo-tag"))
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if r.Variant.Name != "typo-tag" || r.Vars["image"] != "nginx:1.27-alpnie" {
+		t.Errorf("Render(WithVariant typo-tag) = %s %s, want typo-tag nginx:1.27-alpnie", r.Variant.Name, r.Vars["image"])
+	}
+	if r, err := s.Render(seed, WithVariant("")); err != nil || r.Variant.Name != "old-registry" {
+		t.Errorf("Render(WithVariant empty) = %v, %v, want the seed's variant", r, err)
+	}
+	if _, err := s.Render(seed, WithVariant("gone")); !errors.Is(err, ErrVariantGone) {
+		t.Errorf("Render(WithVariant gone) err = %v, want ErrVariantGone", err)
+	}
+}
+
 func TestVariantForMatchesRender(t *testing.T) {
 	s, err := Load(realScenario)
 	if err != nil {
@@ -1216,11 +1293,10 @@ func TestVariantForMatchesRender(t *testing.T) {
 		seed int64
 		want string
 	}{
-		{1, "old-registry"},
-		{2, "typo-tag"},
-		{3, "wrong-repo"},
-		{4, "old-registry"},
-		{1_000_000, s.Variants[(1_000_000-1)%int64(len(s.Variants))].Name},
+		{seedOf(t, s, "old-registry"), "old-registry"},
+		{seedOf(t, s, "typo-tag"), "typo-tag"},
+		{seedOf(t, s, "wrong-repo"), "wrong-repo"},
+		{1_000_000, s.VariantFor(1_000_000).Name},
 	}
 	for _, tc := range tests {
 		if got := s.VariantFor(tc.seed).Name; got != tc.want {
@@ -1237,5 +1313,60 @@ func TestVariantForMatchesRender(t *testing.T) {
 	empty := &Scenario{}
 	if got, want := empty.VariantFor(3).Name, "default"; got != want {
 		t.Errorf("VariantFor without variants = %q, want %q", got, want)
+	}
+}
+
+func TestRealScenarioImages(t *testing.T) {
+	s, err := Load(realScenario)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Images()
+	if err != nil {
+		t.Fatalf("Images: %v", err)
+	}
+	want := []string{
+		"curlimages/curl:8.14.1@sha256:9a1ed35addb45476afa911696297f8e115993df459278ed036182dd2cd22b67b",
+		"nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("Images:\ngot  %q\nwant %q", got, want)
+	}
+}
+
+func TestManifestImages(t *testing.T) {
+	manifest := `apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tick
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          initContainers:
+            - name: init
+              image: busybox:1.37
+          containers:
+            - name: main
+              image: alpine:3.20@sha256:aaaa
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: solo
+spec:
+  containers:
+    - name: c
+      image: nginx
+`
+	got := manifestImages(manifest)
+	want := []containerImage{
+		{kind: "CronJob", name: "tick", container: "main", image: "alpine:3.20@sha256:aaaa"},
+		{kind: "CronJob", name: "tick", container: "init", image: "busybox:1.37"},
+		{kind: "Pod", name: "solo", container: "c", image: "nginx"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("manifestImages:\ngot  %+v\nwant %+v", got, want)
 	}
 }

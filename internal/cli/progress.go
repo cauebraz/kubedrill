@@ -18,9 +18,14 @@ func scenarioInfos(cat Catalog) []progress.ScenarioInfo {
 	all := sortedScenarios(cat)
 	out := make([]progress.ScenarioInfo, 0, len(all))
 	for _, sc := range all {
-		out = append(out, progress.ScenarioInfo{ID: sc.Meta.ID, Level: sc.Meta.Level, Concepts: sc.Meta.Concepts, Minutes: sc.Meta.Minutes})
+		out = append(out, scenarioInfo(sc))
 	}
 	return out
+}
+
+// scenarioInfo is sc as progress sees it.
+func scenarioInfo(sc *scenario.Scenario) progress.ScenarioInfo {
+	return progress.ScenarioInfo{ID: sc.Meta.ID, Level: sc.Meta.Level, Concepts: sc.Meta.Concepts, Minutes: sc.Meta.Minutes, Variants: len(sc.Variants)}
 }
 
 // allEpisodes reads every recorded episode, oldest first.

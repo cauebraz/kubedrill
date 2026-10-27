@@ -23,8 +23,9 @@ scenario you were on, or offers the next one.
 
 The first run downloads the kind node image (about 1 GB). The first
 `kubedrill start` also builds the workstation image (about 800 MB). Both
-take a few minutes, once. `kubedrill up --addons gateway,kwok` adds Envoy
-Gateway and KWOK to the cluster.
+take a few minutes, once. `up` also preloads the images the scenarios need,
+so practice after it works without a registry. `kubedrill up --addons
+gateway,kwok` adds Envoy Gateway and KWOK to the cluster.
 
 ## Your first scenario
 

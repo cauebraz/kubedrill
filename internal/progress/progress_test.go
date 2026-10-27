@@ -147,10 +147,66 @@ func TestScenarioMastery(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ScenarioMastery(tc.eps, 10)
+			got := ScenarioMastery(tc.eps, ScenarioInfo{Minutes: 10})
 			got.LastSolved, got.MedianSolve = nil, 0
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("mastery:\ngot  %+v\nwant %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestScenarioMasteryNeedsDistinctVariants(t *testing.T) {
+	day := 24 * time.Hour
+	variant := func(name string) epOpt {
+		return func(e *journal.Episode) { e.Variant = name }
+	}
+	tests := []struct {
+		name     string
+		variants int
+		eps      []journal.Episode
+		want     bool
+	}{
+		{
+			name:     "three seeds of one variant out of three",
+			variants: 3,
+			eps:      []journal.Episode{ep("s", 1, 0, variant("a")), ep("s", 4, day, variant("a")), ep("s", 7, 2*day, variant("a"))},
+		},
+		{
+			name:     "two variants out of three",
+			variants: 3,
+			eps:      []journal.Episode{ep("s", 1, 0, variant("a")), ep("s", 2, day, variant("b")), ep("s", 4, 2*day, variant("a"))},
+		},
+		{
+			name:     "three variants out of three",
+			variants: 3,
+			eps:      []journal.Episode{ep("s", 1, 0, variant("a")), ep("s", 2, day, variant("b")), ep("s", 3, 2*day, variant("c"))},
+			want:     true,
+		},
+		{
+			name:     "two variants is every variant of the scenario",
+			variants: 2,
+			eps:      []journal.Episode{ep("s", 1, 0, variant("a")), ep("s", 2, day, variant("b")), ep("s", 3, 2*day, variant("a"))},
+			want:     true,
+		},
+		{
+			name:     "one variant needs only distinct seeds",
+			variants: 1,
+			eps:      []journal.Episode{ep("s", 1, 0, variant("a")), ep("s", 2, day, variant("a")), ep("s", 3, 2*day, variant("a"))},
+			want:     true,
+		},
+		{
+			name:     "episodes without a variant count by seed",
+			variants: 3,
+			eps:      []journal.Episode{ep("s", 1, 0), ep("s", 2, day), ep("s", 3, 2*day)},
+			want:     true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ScenarioMastery(tc.eps, ScenarioInfo{Minutes: 10, Variants: tc.variants})
+			if got.Mastered != tc.want {
+				t.Errorf("mastered: got %v, want %v (%+v)", got.Mastered, tc.want, got)
 			}
 		})
 	}
@@ -164,7 +220,7 @@ func TestScenarioMasteryTimes(t *testing.T) {
 		ep("s", 4, 3*time.Hour, took(10*time.Minute)),
 		ep("s", 5, 4*time.Hour, took(2*time.Minute)),
 	}
-	m := ScenarioMastery(eps, 10)
+	m := ScenarioMastery(eps, ScenarioInfo{Minutes: 10})
 	if m.MedianSolve != 6*time.Minute {
 		t.Errorf("median of 4, 8, 10, 2 min: got %v, want 6m", m.MedianSolve)
 	}
@@ -172,11 +228,11 @@ func TestScenarioMasteryTimes(t *testing.T) {
 	if m.LastSolved == nil || !m.LastSolved.Equal(want) {
 		t.Errorf("LastSolved: got %v, want %v", m.LastSolved, want)
 	}
-	odd := ScenarioMastery(eps[:2], 10)
+	odd := ScenarioMastery(eps[:2], ScenarioInfo{Minutes: 10})
 	if odd.MedianSolve != 6*time.Minute {
 		t.Errorf("median of 4 and 8 min: got %v, want 6m", odd.MedianSolve)
 	}
-	if one := ScenarioMastery(eps[:1], 10); one.MedianSolve != 4*time.Minute {
+	if one := ScenarioMastery(eps[:1], ScenarioInfo{Minutes: 10}); one.MedianSolve != 4*time.Minute {
 		t.Errorf("median of one: got %v, want 4m", one.MedianSolve)
 	}
 }

@@ -83,7 +83,7 @@ type hintSection struct {
 }
 
 func parseHintSections(doc string) ([]hintSection, error) {
-	locs := hintPattern.FindAllStringIndex(doc, -1)
+	locs := outsideFences(doc, hintPattern.FindAllStringIndex(doc, -1))
 	if len(locs) == 0 {
 		return nil, errors.New("no \"## Hint N\" section found, at least one is required")
 	}
@@ -113,7 +113,7 @@ func mutatingKubectl(text string) string {
 	for _, line := range strings.Split(text, "\n") {
 		fields := strings.Fields(line)
 		for i, f := range fields {
-			if f != "kubectl" {
+			if f != "kubectl" && f != "k" {
 				continue
 			}
 			if verb := kubectlVerb(fields[i+1:]); verb != "" {

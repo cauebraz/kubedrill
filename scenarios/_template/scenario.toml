@@ -53,6 +53,10 @@ concepts = ["pod-lifecycle"]
 # learner write hits an entry, and reports the first write separately.
 # break-fix scenarios need at least one entry.
 fix_targets = ["apps/deployments/app"]
+# Optional: images the fix needs that no setup manifest or probe names with a
+# digest, each name:tag@sha256:<digest>. kubedrill up preloads them, so a
+# learner who writes only the tag starts the pod without the registry.
+images = ["nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10"]
 # Optional: kind profile from cluster/profiles when base.yaml is not enough.
 # Parsed, not acted on yet.
 profile = ""

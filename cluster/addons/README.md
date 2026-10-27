@@ -28,3 +28,9 @@ None of these upstream projects ships a `NOTICE` file for these releases.
    `addon.yaml`.
 3. Keep or update the notice line at the top of each modified file.
 4. Update the table above.
+5. An addon container that mounts a host path (`volumes` with a source
+   such as `/var/run/docker.sock`) must set `host_access: true`; the loader
+   refuses it otherwise. The docker socket gives root on the host, so the
+   flag needs maintainer review. The gateway addon sets it because
+   cloud-provider-kind creates its load balancer containers through
+   docker.

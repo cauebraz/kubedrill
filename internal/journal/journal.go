@@ -133,21 +133,24 @@ const (
 // audit log and the workstation shell log. Source names which of the two
 // were available; Verdict is one of the Verdict constants, VerdictUnknown
 // without an audit log. FirstWriteTarget is group/resource/name with the
-// core group written "core".
+// core group written "core"; FirstWriteMetadataOnly says that write changed
+// only labels or annotations (of the object or its pod template), as the
+// request body in the audit log shows.
 type Telemetry struct {
-	Source                string     `json:"source"`
-	FirstKubectlAt        *time.Time `json:"first_kubectl_at,omitempty"`
-	FirstWriteAt          *time.Time `json:"first_write_at,omitempty"`
-	FirstWriteTarget      string     `json:"first_write_target,omitempty"`
-	ReadsBeforeFirstWrite int        `json:"reads_before_first_write"`
-	Reads                 int        `json:"reads"`
-	Writes                int        `json:"writes"`
-	CommandsTotal         int        `json:"commands_total"`
-	KubectlCommands       int        `json:"kubectl_commands"`
-	FailedCommands        int        `json:"failed_commands"`
-	Verdict               Verdict    `json:"verdict"`
-	Recordings            []string   `json:"recordings,omitempty"`
-	Commands              []string   `json:"commands,omitempty"`
+	Source                 string     `json:"source"`
+	FirstKubectlAt         *time.Time `json:"first_kubectl_at,omitempty"`
+	FirstWriteAt           *time.Time `json:"first_write_at,omitempty"`
+	FirstWriteTarget       string     `json:"first_write_target,omitempty"`
+	FirstWriteMetadataOnly bool       `json:"first_write_metadata_only,omitempty"`
+	ReadsBeforeFirstWrite  int        `json:"reads_before_first_write"`
+	Reads                  int        `json:"reads"`
+	Writes                 int        `json:"writes"`
+	CommandsTotal          int        `json:"commands_total"`
+	KubectlCommands        int        `json:"kubectl_commands"`
+	FailedCommands         int        `json:"failed_commands"`
+	Verdict                Verdict    `json:"verdict"`
+	Recordings             []string   `json:"recordings,omitempty"`
+	Commands               []string   `json:"commands,omitempty"`
 }
 
 // Episode is one attempt at a scenario. Grades holds every grading run in

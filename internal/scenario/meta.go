@@ -68,6 +68,11 @@ func loadMeta(dir string, s *Scenario, checkLayout bool, fail failFunc) {
 			fail(fileMeta, "scenario.exam[%d] %q must look like CKA:domain-id, CKAD:domain-id or CKS:domain-id", i, e)
 		}
 	}
+	for i, image := range m.Images {
+		if !pinnedImageRe.MatchString(image) {
+			fail(fileMeta, "scenario.images[%d] %q must be name:tag@sha256:<64 hex>", i, image)
+		}
+	}
 	for i, id := range m.Concepts {
 		if !conceptIDRe.MatchString(id) {
 			fail(fileMeta, "scenario.concepts[%d] %q must match %s", i, id, conceptIDRe)

@@ -41,8 +41,9 @@ import (
 const Name = "kubedrill"
 
 // DebugImage is the image of the node debugging pods (kubectl debug node)
-// that kubedrill node uses where docker is not available. PullDebugImage
-// loads it on every node so the first node shell needs no registry.
+// that kubedrill node uses where docker is not available. kubedrill up
+// loads it on every node with PullImages so the first node shell needs no
+// registry.
 const DebugImage = "busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e"
 
 const (
@@ -273,7 +274,7 @@ func New(profilesDir string, opts ...Option) *Manager {
 	for _, o := range opts {
 		o(m)
 	}
-	m.provider = kindcluster.NewProvider(kindcluster.ProviderWithLogger(newWriterLogger(m.out)))
+	m.provider = kindcluster.NewProvider(kindcluster.ProviderWithDocker(), kindcluster.ProviderWithLogger(newWriterLogger(m.out)))
 	return m
 }
 
@@ -388,48 +389,57 @@ func (m *Manager) ensure(ctx context.Context, profile string, data ProfileData) 
 	return nil
 }
 
-// PullDebugImage pulls DebugImage into the containerd of every kind node
-// with crictl, one docker exec per node bounded by 60 seconds. It returns
-// every failure at once, each naming its node.
-func (m *Manager) PullDebugImage(ctx context.Context) error {
-	var errs []error
-	for _, n := range nodeNames {
-		node := Name + "-" + n
-		if _, err := m.runFor(ctx, pullTimeout, "docker", "exec", node, "crictl", "pull", DebugImage); err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", node, dockerError("docker exec "+node, err)))
-		}
-	}
-	if len(errs) > 0 {
-		return fmt.Errorf("pull %s: %w", DebugImage, errors.Join(errs...))
-	}
-	return nil
-}
-
 // checkNodesRunning fails when docker reports a kind node container as
-// stopped, so an existing cluster left stopped (for example after a Docker
-// restart) gets a remedy instead of the full readiness wait. An inspect
-// that fails is ignored; the readiness wait reports what is wrong.
+// stopped or missing, so an existing cluster left stopped (for example after
+// a Docker restart) or with a node container removed (docker rm) gets a
+// remedy instead of the full readiness wait. An inspect that fails for
+// another reason is ignored; the readiness wait reports what is wrong.
 func (m *Manager) checkNodesRunning(ctx context.Context) error {
 	names := make([]string, len(nodeNames))
 	for i, n := range nodeNames {
 		names[i] = Name + "-" + n
 	}
 	out, err := m.runFor(ctx, existsTimeout, "docker", append([]string{"inspect", "-f", "{{.Name}}={{.State.Running}}"}, names...)...)
-	if err != nil {
+	if err != nil && !noSuchObject(err) {
 		return nil
 	}
+	seen := map[string]bool{}
 	var stopped []string
 	for _, line := range strings.Split(string(out), "\n") {
 		name, running, ok := strings.Cut(strings.TrimSpace(line), "=")
-		if ok && running == "false" {
-			stopped = append(stopped, strings.TrimPrefix(name, "/"))
+		if !ok {
+			continue
 		}
+		name = strings.TrimPrefix(name, "/")
+		seen[name] = true
+		if running == "false" {
+			stopped = append(stopped, name)
+		}
+	}
+	var missing []string
+	if err != nil {
+		for _, n := range names {
+			if !seen[n] {
+				missing = append(missing, n)
+			}
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("node containers missing: %s; the cluster is incomplete (a docker rm removed them), recreate it with kubedrill down --yes && kubedrill up",
+			strings.Join(missing, ", "))
 	}
 	if len(stopped) == 0 {
 		return nil
 	}
 	return fmt.Errorf("node containers stopped: %s; start them with docker start %s, or recreate the cluster with kubedrill down --yes && kubedrill up",
 		strings.Join(stopped, ", "), strings.Join(stopped, " "))
+}
+
+// noSuchObject reports whether a failed docker inspect says one of the
+// named objects does not exist.
+func noSuchObject(err error) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && strings.Contains(strings.ToLower(string(exitErr.Stderr)), "no such object")
 }
 
 // waitNodesReady polls the nodes from inside the control plane node every
@@ -702,11 +712,7 @@ func (m *Manager) Delete(ctx context.Context) error {
 	if err := m.provider.Delete(Name, kubeconfig); err != nil {
 		return fmt.Errorf("delete cluster %s: %w", Name, err)
 	}
-	if record, err := m.auditPolicyHashPath(); err == nil {
-		if err := os.Remove(record); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			fmt.Fprintf(m.out, "warning: remove %s: %v\n", record, err)
-		}
-	}
+	m.removeClusterRecords()
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("delete cluster %s: %w", Name, err)
 	}
@@ -722,6 +728,22 @@ func (m *Manager) Delete(ctx context.Context) error {
 		return fmt.Errorf("delete cluster %s: remove addon containers %s: %w", Name, strings.Join(ids, " "), dockerError("docker rm", err))
 	}
 	return nil
+}
+
+// removeClusterRecords removes the files of the cluster state directory
+// that describe the deleted cluster: the audit policy record and the two
+// kubeconfigs that hold its credentials. A failure is a warning.
+func (m *Manager) removeClusterRecords() {
+	dir, err := m.state()
+	if err != nil {
+		return
+	}
+	files := []string{filepath.Join(dir, auditPolicyHashName), InternalKubeconfigPathIn(dir), ScriptKubeconfigPathIn(dir)}
+	for _, f := range files {
+		if err := os.Remove(f); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			fmt.Fprintf(m.out, "warning: remove %s: %v\n", f, err)
+		}
+	}
 }
 
 // Kubeconfig returns the kubeconfig path and the context name for the

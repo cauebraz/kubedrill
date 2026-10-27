@@ -411,7 +411,7 @@ func (w *workstationCluster) EnsureAddons(context.Context, cluster.AddonApplier,
 	return hostOnly("kubedrill up")
 }
 
-func (w *workstationCluster) PullDebugImage(context.Context) error {
+func (w *workstationCluster) PullImages(context.Context, []string) error {
 	return hostOnly("kubedrill up")
 }
 

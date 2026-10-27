@@ -253,7 +253,7 @@ Every episode ends with one outcome:
 | `solved` | Every check passed |
 | `abandoned` | You surrendered and saw the solution |
 | `failed` | You left without solving: another `start`, a `reset`, or a failing `submit` |
-| `timed_out` | An exam time box ran out without a passing grade |
+| `timed out` | An exam time box ran out without a passing grade (`timed_out` in the journal file) |
 
 A failed, abandoned or timed-out episode has its namespace deleted at once.
 A solved one keeps it until your next `start`, so you can still look around.
@@ -263,7 +263,8 @@ audit log covers the episode, a clean solve also has at least one read
 before the first write.
 
 A scenario, or a concept, is **mastered** after 3 clean solves among your
-last 4 attempts. Those solves must use 3 different seeds and span at least 2
+last 4 attempts. Those solves must use 3 different seeds, cover 3 different
+variants (or every variant when the scenario has fewer) and span at least 2
 sessions; a new session starts after a 3-hour gap. A hinted or failed attempt
 takes a slot in those 4. It does not reset your count to zero.
 
@@ -313,7 +314,7 @@ target of that first write, and a verdict:
 
 | Verdict | Meaning |
 |---------|---------|
-| `root-cause` | A successful write touched an object the scenario names as a fix target |
+| `root-cause` | A successful write changed more than the labels or annotations of an object the scenario names as a fix target |
 | `symptom-only` | You wrote, but only to other objects, for example deleting pods instead of fixing the Deployment |
 | `no-writes` | No successful write in the episode namespace |
 | `unknown` | No audit log for this episode |
@@ -344,7 +345,7 @@ minutes, and the ticket footer shows it.
 - The workstation has the ticket pane but no watch pane. `k9s`, `stern`,
   `kubectx` and `kubens` are off the `PATH`, as in the real exam.
 - If the deadline passes, the next kubedrill command grades one last time and
-  records `timed_out`. A pass within 30 seconds of the deadline still counts
+  records `timed out`. A pass within 30 seconds of the deadline still counts
   as `solved`. Time is taken when the command starts, so a `submit` you
   started in time counts even if grading finishes late.
 

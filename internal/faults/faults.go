@@ -438,6 +438,22 @@ func netemMissing(msg string) bool {
 		strings.Contains(lower, "unknown qdisc")
 }
 
+// Forget removes every fault record without touching the nodes, for a
+// cluster that was deleted or recreated: its nodes carry none of the
+// recorded faults, and a stale record would refuse the next Apply with
+// ErrAlreadyActive.
+func (m *Manager) Forget(ctx context.Context) error {
+	unlock, err := m.lock(ctx)
+	if err != nil {
+		return fmt.Errorf("forget faults: %w", err)
+	}
+	defer unlock()
+	if err := m.save(nil); err != nil {
+		return fmt.Errorf("forget faults: %w", err)
+	}
+	return nil
+}
+
 func (m *Manager) path() string {
 	return filepath.Join(m.stateDir, stateFile)
 }

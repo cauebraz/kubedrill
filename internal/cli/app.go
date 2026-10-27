@@ -56,14 +56,16 @@ type Cluster interface {
 	Addons() []string
 	BaseAddons() []string
 	EnsureAddons(ctx context.Context, k cluster.AddonApplier, names []string) error
-	PullDebugImage(ctx context.Context) error
+	PullImages(ctx context.Context, images []string) error
 }
 
-// Faults is what fault, heal and start need from the fault manager.
+// Faults is what fault, heal, start, up and down need from the fault
+// manager.
 type Faults interface {
 	Apply(ctx context.Context, action faults.Action, node string, netem faults.NetemOptions) error
 	Heal(ctx context.Context) error
 	Active(ctx context.Context) ([]faults.Fault, error)
+	Forget(ctx context.Context) error
 }
 
 // TelemetryFunc summarizes the learner's trajectory for one episode; see
@@ -142,7 +144,7 @@ type Factories struct {
 	Connect          func(kubeconfig, contextName, scriptKubeconfig string) (Kube, Grader, error)
 	ScriptKubeconfig func(journalDir, kubeconfig, contextName string) (string, error)
 	Curriculum       func(path string) (*curriculum.Curriculum, error)
-	Lint             func(root string, moduleIDs, conceptIDs []string) []error
+	Lint             func(root string, refs scenario.Refs) []error
 	Scaffold         func(root, level, id string) (string, error)
 	Run              func(ctx context.Context, script string, env []string, out io.Writer) error
 	TempDir          func() (string, error)
@@ -298,6 +300,8 @@ func newApp(o Options) *app {
 func (a *app) explain(err error) string {
 	var notFound *scenario.NotFoundError
 	switch {
+	case errors.Is(err, env.ErrNoActiveEpisode) && err.Error() != env.ErrNoActiveEpisode.Error():
+		return err.Error()
 	case errors.Is(err, env.ErrNoActiveEpisode):
 		return "no active episode; start one with: kubedrill start <id> (see kubedrill list)"
 	case errors.As(err, &notFound):

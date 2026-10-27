@@ -308,12 +308,20 @@ func TestAuditPolicyLevels(t *testing.T) {
 		{"create", "", "events", "None"},
 		{"patch", "events.k8s.io", "events", "None"},
 		{"get", "", "pods", "Metadata"},
-		{"patch", "apps", "deployments", "Metadata"},
+		{"patch", "apps", "deployments", "Request"},
+		{"update", "", "configmaps", "Request"},
+		{"create", "apps", "deployments", "Metadata"},
+		{"patch", "", "secrets", "Metadata"},
+		{"update", "", "secrets", "Metadata"},
 		{"get", "coordination.k8s.io", "leases", "None"},
 	}
 	for _, tc := range tests {
 		if got := level("kubernetes-admin", learner, tc.verb, tc.group, tc.resource); got != tc.want {
 			t.Errorf("learner %s %s/%s: got level %s, want %s", tc.verb, tc.group, tc.resource, got, tc.want)
 		}
+	}
+	controller := []string{"system:serviceaccounts", "system:authenticated"}
+	if got := level("system:serviceaccount:kube-system:deployment-controller", controller, "update", "apps", "replicasets"); got != "Metadata" {
+		t.Errorf("controller update apps/replicasets: got level %s, want Metadata (request bodies only for the learner)", got)
 	}
 }

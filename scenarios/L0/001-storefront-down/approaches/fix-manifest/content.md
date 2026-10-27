@@ -1,12 +1,13 @@
 Correct the image in the manifest the team deploys from, review the change
 with `kubectl -n {{ .Namespace }} diff -f deploy/storefront.yaml`, apply it
 and record it in the repository. The workstation holds no copy of the team's
-repository;
-`mkdir -p deploy && kubectl -n {{ .Namespace }} get deployment storefront -o yaml > deploy/storefront.yaml`
-gives you a file to practice the same edit, diff and apply. The first apply
-warns that the `kubectl.kubernetes.io/last-applied-configuration` annotation
-is missing: the setup did not create the Deployment with `kubectl apply`.
-kubectl adds the annotation, and the warning does not come back.
+repository, so the snippet starts by exporting the live Deployment to
+`deploy/storefront.yaml` and practices the same edit, diff and apply on it.
+In the team's repository you would edit the tracked file on a branch and
+commit it instead of exporting. The first apply warns that the
+`kubectl.kubernetes.io/last-applied-configuration` annotation is missing:
+the setup did not create the Deployment with `kubectl apply`. kubectl adds
+the annotation, and the warning does not come back.
 
 Choose it when the manifest is the source of truth, which is every GitOps
 setup: the fix survives the next pipeline run, the history records who

@@ -243,17 +243,38 @@ func parseAddons(cl Cluster, value string) ([]string, error) {
 	return out, nil
 }
 
+// forgetFaults drops the fault records of a cluster that was deleted or
+// recreated; a failure is a warning, kubedrill heal clears them later.
+func (a *app) forgetFaults(ctx context.Context) {
+	fm, err := a.getFaults()
+	if err != nil || fm == nil {
+		return
+	}
+	if err := fm.Forget(ctx); err != nil {
+		fmt.Fprintf(a.stderr, "warning: %v; kubedrill heal clears them\n", err)
+	}
+}
+
 // ensureCluster ensures the cluster exists (audit log under
-// <cluster state>/audit), installs the base addons plus extra, waits for
-// the API services and preloads cluster.DebugImage on the nodes; a failed
-// preload is a warning.
+// <cluster state>/audit), forgets the fault records when it had to create
+// it, installs the base addons plus extra, waits for
+// the API services and preloads cluster.DebugImage and the images of every
+// scenario (scenario.Scenario.Images) on the nodes, so practice needs no
+// registry afterwards; a failed preload is a warning.
 func (a *app) ensureCluster(ctx context.Context, cl Cluster, profile string, extra []string) error {
 	data, err := a.profileData()
 	if err != nil {
 		return err
 	}
+	existed, err := cl.Exists(ctx)
+	if err != nil {
+		return err
+	}
 	if err := cl.Ensure(ctx, profile, data); err != nil {
 		return err
+	}
+	if !existed {
+		a.forgetFaults(ctx)
 	}
 	names := cl.BaseAddons()
 	if len(names) == 0 {
@@ -275,13 +296,43 @@ func (a *app) ensureCluster(ctx context.Context, cl Cluster, profile string, ext
 	if err := a.waitAPIServices(ctx, conn, apiServiceWait); err != nil {
 		return err
 	}
-	if err := cl.PullDebugImage(ctx); err != nil {
+	images := a.preloadImages()
+	a.progress.Step(fmt.Sprintf("preloading %s on the nodes", render.Plural(len(images), "image")))
+	err = cl.PullImages(ctx, images)
+	a.progress.Finish()
+	if err != nil {
 		if ctx.Err() != nil {
 			return err
 		}
-		a.printf("warning: %v; kubedrill node pulls it on first use inside the workstation\n", err)
+		fmt.Fprintf(a.stderr, "warning: %v; the nodes pull these images from the registry when a pod first needs them\n", err)
 	}
 	return nil
+}
+
+// preloadImages is cluster.DebugImage plus the images of every scenario in
+// the catalog; a scenario that does not render is reported on stderr and
+// contributes what it could.
+func (a *app) preloadImages() []string {
+	images := []string{cluster.DebugImage}
+	cat, err := a.getCatalog()
+	if err != nil {
+		fmt.Fprintf(a.stderr, "warning: preload only the debug image: %v\n", err)
+		return images
+	}
+	seen := map[string]bool{cluster.DebugImage: true}
+	for _, sc := range sortedScenarios(cat) {
+		found, err := sc.Images()
+		if err != nil {
+			fmt.Fprintf(a.stderr, "warning: %v\n", err)
+		}
+		for _, image := range found {
+			if !seen[image] {
+				seen[image] = true
+				images = append(images, image)
+			}
+		}
+	}
+	return images
 }
 
 // profileData is the template input of every profile: the audit directory
@@ -349,6 +400,7 @@ func (a *app) downCommand() *cobra.Command {
 			if err := cl.Delete(cmd.Context()); err != nil {
 				return err
 			}
+			a.forgetFaults(cmd.Context())
 			a.printf("cluster %s deleted\n", cluster.Name)
 			return nil
 		},

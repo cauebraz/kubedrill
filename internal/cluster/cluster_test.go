@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -725,6 +726,32 @@ func TestDeleteRemovesAddonContainers(t *testing.T) {
 	}
 }
 
+func TestDeleteRemovesClusterRecords(t *testing.T) {
+	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "kubeconfig"))
+	state := testStateDir(t)
+	m := New(t.TempDir(), WithStateDir(state))
+	m.provider = &fakeProvider{}
+	m.run = (&fakeDocker{}).run
+	records := []string{filepath.Join(state, auditPolicyHashName), InternalKubeconfigPathIn(state), ScriptKubeconfigPathIn(state)}
+	kept := filepath.Join(state, "faults.json")
+	for _, f := range append(records, kept) {
+		if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.Delete(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range records {
+		if _, err := os.Stat(f); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("%s after Delete: err %v, want removed", filepath.Base(f), err)
+		}
+	}
+	if _, err := os.Stat(kept); err != nil {
+		t.Errorf("faults.json after Delete: %v, want kept for the fault manager", err)
+	}
+}
+
 func TestEnsureTreatsConcurrentCreateAsExisting(t *testing.T) {
 	dir := t.TempDir()
 	writeProfile(t, dir, "base.yaml")
@@ -964,6 +991,7 @@ func TestEnsureExistingClusterWaitsForNodes(t *testing.T) {
 		{name: "nodes still joining", inspect: "/kubedrill-control-plane=true\n/kubedrill-worker=true\n/kubedrill-worker2=true\n", answers: []string{"", "kubedrill-control-plane=True\n", allReady}, timeout: time.Minute, wantQueries: 3},
 		{name: "a node never becomes ready", answers: []string{"kubedrill-control-plane=True\nkubedrill-worker=False\nkubedrill-worker2=True\n"}, timeout: 50 * time.Millisecond, wantErr: "ensure cluster kubedrill: wait for nodes: not ready after 50ms: kubedrill-worker=False", wantQueries: 1, atLeast: true},
 		{name: "stopped node containers fail fast", inspect: "/kubedrill-control-plane=false\n/kubedrill-worker=true\n/kubedrill-worker2=false\n", answers: []string{allReady}, timeout: time.Minute, wantErr: "ensure cluster kubedrill: node containers stopped: kubedrill-control-plane, kubedrill-worker2; start them with docker start kubedrill-control-plane kubedrill-worker2, or recreate the cluster with kubedrill down --yes && kubedrill up", wantQueries: 0},
+		{name: "a removed node container fails fast", inspect: "/kubedrill-control-plane=true\n/kubedrill-worker2=true\n", inspectErr: exitErrorWith(t, "Error: No such object: kubedrill-worker"), answers: []string{allReady}, timeout: time.Minute, wantErr: "ensure cluster kubedrill: node containers missing: kubedrill-worker; the cluster is incomplete (a docker rm removed them), recreate it with kubedrill down --yes && kubedrill up", wantQueries: 0},
 		{name: "a failing inspect leaves the verdict to the wait", inspectErr: errors.New("inspect failed"), answers: []string{allReady}, timeout: time.Minute, wantQueries: 1},
 	}
 	for _, tc := range tests {
@@ -1004,45 +1032,72 @@ func TestEnsureExistingClusterWaitsForNodes(t *testing.T) {
 	}
 }
 
-func TestPullDebugImage(t *testing.T) {
+func TestPullImages(t *testing.T) {
+	const plain = "registry.k8s.io/pause:3.10"
 	tests := []struct {
 		name    string
 		fail    string
 		wantErr string
 	}{
-		{name: "every node pulls"},
-		{name: "one node fails", fail: "kubedrill-worker2", wantErr: "pull " + DebugImage + ": kubedrill-worker2: docker exec kubedrill-worker2: no route to registry"},
+		{name: "every node pulls and tags"},
+		{name: "one node fails", fail: "kubedrill-worker2", wantErr: "pull " + DebugImage + " on kubedrill-worker2: docker exec kubedrill-worker2: no route to registry"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			m := New(t.TempDir(), WithStateDir(testStateDir(t)))
 			fd := &fakeDocker{respond: func(args []string) ([]byte, error) {
-				if args[1] == tc.fail {
+				if args[1] == tc.fail && args[2] == "crictl" && args[4] == DebugImage {
 					return nil, exitErrorWith(t, "no route to registry")
 				}
 				return nil, nil
 			}}
 			m.run = fd.run
-			err := m.PullDebugImage(context.Background())
+			err := m.PullImages(context.Background(), []string{DebugImage, plain})
 			gotErr := ""
 			if err != nil {
 				gotErr = err.Error()
 			}
 			if tc.wantErr == "" && gotErr != "" || tc.wantErr != "" && !strings.HasPrefix(gotErr, tc.wantErr) {
-				t.Fatalf("PullDebugImage: got %q, want prefix %q", gotErr, tc.wantErr)
+				t.Fatalf("PullImages: got %q, want prefix %q", gotErr, tc.wantErr)
 			}
 			var got []string
 			for _, c := range fd.calls {
 				got = append(got, strings.Join(c, " "))
 			}
-			want := []string{
-				"docker exec kubedrill-control-plane crictl pull " + DebugImage,
-				"docker exec kubedrill-worker crictl pull " + DebugImage,
-				"docker exec kubedrill-worker2 crictl pull " + DebugImage,
+			var want []string
+			for _, node := range []string{"kubedrill-control-plane", "kubedrill-worker", "kubedrill-worker2"} {
+				want = append(want, "docker exec "+node+" crictl pull "+DebugImage)
+				if node != tc.fail {
+					want = append(want, "docker exec "+node+" ctr --namespace k8s.io images tag --force docker.io/library/busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e docker.io/library/busybox:1.37.0")
+				}
+				want = append(want, "docker exec "+node+" crictl pull "+plain)
 			}
 			if strings.Join(got, "\n") != strings.Join(want, "\n") {
 				t.Errorf("calls:\n got %q\nwant %q", got, want)
 			}
 		})
+	}
+}
+
+func TestLocalRefs(t *testing.T) {
+	const d = "@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10"
+	tests := []struct {
+		image, wantDigest, wantTag string
+		ok                         bool
+	}{
+		{"nginx:1.27-alpine" + d, "docker.io/library/nginx" + d, "docker.io/library/nginx:1.27-alpine", true},
+		{"curlimages/curl:8.14.1" + d, "docker.io/curlimages/curl" + d, "docker.io/curlimages/curl:8.14.1", true},
+		{"index.docker.io/nginx:1" + d, "docker.io/library/nginx" + d, "docker.io/library/nginx:1", true},
+		{"registry.k8s.io/pause:3.10" + d, "registry.k8s.io/pause" + d, "registry.k8s.io/pause:3.10", true},
+		{"localhost:5000/app:v1" + d, "localhost:5000/app" + d, "localhost:5000/app:v1", true},
+		{"localhost:5000/app" + d, "", "", false},
+		{"nginx:1.27-alpine", "", "", false},
+		{"nginx" + d, "", "", false},
+	}
+	for _, tc := range tests {
+		gotDigest, gotTag, ok := localRefs(tc.image)
+		if gotDigest != tc.wantDigest || gotTag != tc.wantTag || ok != tc.ok {
+			t.Errorf("localRefs(%q) = %q, %q, %v, want %q, %q, %v", tc.image, gotDigest, gotTag, ok, tc.wantDigest, tc.wantTag, tc.ok)
+		}
 	}
 }

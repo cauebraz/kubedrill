@@ -915,8 +915,9 @@ func (s *Session) RecordDebrief(id string, d journal.Debrief, matched *bool) err
 }
 
 // Current returns the active episode and its rendered scenario, or
-// ErrNoActiveEpisode. The scenario renders in the episode's namespace, so
-// it reads the same as when the episode started.
+// ErrNoActiveEpisode. The scenario renders with the episode's variant in
+// its namespace, so it reads the same as when the episode started; a
+// variant removed since then is an error wrapping scenario.ErrVariantGone.
 func (s *Session) Current() (*journal.Episode, *scenario.Rendered, error) {
 	ep, err := s.d.Journal.Current()
 	if err != nil {
@@ -932,15 +933,17 @@ func (s *Session) Current() (*journal.Episode, *scenario.Rendered, error) {
 	return ep, rd, nil
 }
 
-// render renders the scenario of ep with its seed in its namespace.
+// render renders the scenario of ep with its seed and variant in its
+// namespace, so a variant added or reordered meanwhile does not change the
+// root cause of the episode.
 func (s *Session) render(ep *journal.Episode) (*scenario.Rendered, error) {
 	sc, err := s.d.Catalog.Find(ep.ScenarioID)
 	if err != nil {
 		return nil, fmt.Errorf("current episode: %w", err)
 	}
-	rd, err := sc.Render(ep.Seed, scenario.WithNamespace(ep.Namespace))
+	rd, err := sc.Render(ep.Seed, scenario.WithNamespace(ep.Namespace), scenario.WithVariant(ep.Variant))
 	if err != nil {
-		return nil, fmt.Errorf("render scenario %s seed %d: %w", ep.ScenarioID, ep.Seed, err)
+		return nil, fmt.Errorf("render episode %s: %w", ep.ID, err)
 	}
 	return rd, nil
 }

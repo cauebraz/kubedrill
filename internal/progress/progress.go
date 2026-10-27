@@ -38,14 +38,16 @@ type ScenarioInfo struct {
 	Level    string
 	Concepts []string
 	Minutes  int
+	Variants int
 }
 
 // Mastery summarises the finished attempts of one scenario or one concept.
 // Last is the number of attempts in the window (at most 4) and CleanInLast
 // the clean ones among them. Sessions counts the distinct sessions among the
 // clean attempts of the window; a session starts after a 3 hour gap.
-// Mastered means at least 3 clean attempts in the last 4, on distinct seeds,
-// across at least 2 sessions. A hinted or failed attempt takes a slot in the
+// Mastered means at least 3 clean attempts in the last 4, on distinct seeds
+// and on distinct variants (as many as the scenarios offer, up to 3), across
+// at least 2 sessions. A hinted or failed attempt takes a slot in the
 // window instead of resetting the count.
 type Mastery struct {
 	Attempts    int
@@ -109,11 +111,26 @@ func IsClean(e journal.Episode, minutes int) bool {
 	return true
 }
 
-// ScenarioMastery computes the mastery of one scenario from its episodes;
+// ScenarioMastery computes the mastery of scenario s from its episodes;
 // eps should hold only that scenario's episodes. Active episodes are
 // ignored.
-func ScenarioMastery(eps []journal.Episode, minutes int) Mastery {
-	return mastery(eps, func(journal.Episode) int { return minutes })
+func ScenarioMastery(eps []journal.Episode, s ScenarioInfo) Mastery {
+	return mastery(eps, func(journal.Episode) int { return s.Minutes }, variantCount(s))
+}
+
+// variantCount is the number of variants of s, at least 1.
+func variantCount(s ScenarioInfo) int {
+	return max(s.Variants, 1)
+}
+
+// conceptVariants is the number of distinct variants the scenarios in ids
+// offer together.
+func conceptVariants(byID map[string]ScenarioInfo, ids map[string]bool) int {
+	n := 0
+	for id := range ids {
+		n += variantCount(byID[id])
+	}
+	return n
 }
 
 // ConceptMastery computes mastery per concept over the episodes of every
@@ -129,7 +146,7 @@ func ConceptMastery(cat []ScenarioInfo, eps []journal.Episode) map[string]Master
 				in = append(in, e)
 			}
 		}
-		out[concept] = mastery(in, func(e journal.Episode) int { return byID[e.ScenarioID].Minutes })
+		out[concept] = mastery(in, func(e journal.Episode) int { return byID[e.ScenarioID].Minutes }, conceptVariants(byID, ids))
 	}
 	return out
 }
@@ -197,7 +214,7 @@ func nextReview(cat []ScenarioInfo, eps []journal.Episode, now time.Time, rnd fu
 			}
 		}
 		minutes := func(e journal.Episode) int { return byID[e.ScenarioID].Minutes }
-		if !mastery(in, minutes).Mastered {
+		if !mastery(in, minutes, conceptVariants(byID, ids)).Mastered {
 			continue
 		}
 		var last time.Time
@@ -261,7 +278,7 @@ func nextPractice(cat []ScenarioInfo, eps []journal.Episode, rnd func(n int64) i
 	}
 	levels := map[string][]ScenarioInfo{}
 	for _, s := range sortedCatalog(cat) {
-		if !ScenarioMastery(byScenario[s.ID], s.Minutes).Mastered {
+		if !ScenarioMastery(byScenario[s.ID], s).Mastered {
 			levels[s.Level] = append(levels[s.Level], s)
 		}
 	}
@@ -354,7 +371,10 @@ func Stats(cat []ScenarioInfo, eps []journal.Episode) Summary {
 	return sum
 }
 
-func mastery(eps []journal.Episode, minutes func(journal.Episode) int) Mastery {
+// mastery summarises eps; variants is how many distinct variants the
+// scenarios in scope offer, so a scenario with one variant can still be
+// mastered while one with three needs three different root causes.
+func mastery(eps []journal.Episode, minutes func(journal.Episode) int, variants int) Mastery {
 	done := finished(eps)
 	m := Mastery{Attempts: len(done)}
 	var solves []time.Duration
@@ -379,17 +399,29 @@ func mastery(eps []journal.Episode, minutes func(journal.Episode) int) Mastery {
 		seed int64
 	}
 	seeds := map[key]bool{}
+	causes := map[string]bool{}
 	var clean []journal.Episode
 	for _, e := range recent {
 		if IsClean(e, minutes(e)) {
 			clean = append(clean, e)
 			seeds[key{e.ScenarioID, e.Seed}] = true
+			causes[variantKey(e)] = true
 		}
 	}
 	m.CleanInLast = len(clean)
 	m.Sessions = sessions(clean)
-	m.Mastered = m.CleanInLast >= masteryClean && len(seeds) >= masteryClean && m.Sessions >= 2
+	m.Mastered = m.CleanInLast >= masteryClean && len(seeds) >= masteryClean &&
+		len(causes) >= min(masteryClean, variants) && m.Sessions >= 2
 	return m
+}
+
+// variantKey names the root cause an episode practised: its scenario and
+// variant, or its seed for an episode recorded without a variant.
+func variantKey(e journal.Episode) string {
+	if e.Variant == "" {
+		return fmt.Sprintf("%s seed %d", e.ScenarioID, e.Seed)
+	}
+	return e.ScenarioID + " variant " + e.Variant
 }
 
 func sessions(eps []journal.Episode) int {

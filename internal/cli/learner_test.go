@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/cauebraz/kubedrill/internal/cluster"
 	"github.com/cauebraz/kubedrill/internal/env"
 	"github.com/cauebraz/kubedrill/internal/grader"
 	"github.com/cauebraz/kubedrill/internal/journal"
@@ -247,6 +249,18 @@ func TestSubmitPassesAndPracticeRefuses(t *testing.T) {
 	mustContain(t, out, "exam submitted: solved", "Solved: Hello app is down", "Debrief: 001-hello-down")
 }
 
+func TestExamExpiryKeepsNamespaceOutputClean(t *testing.T) {
+	f := newFixture(t)
+	f.grader.grades = []grader.Grade{failGrade()}
+	f.run(t, "", "start", "001", "--seed", "1", "--exam")
+	f.now = time.Date(2026, 10, 25, 12, 20, 0, 0, time.UTC)
+	_, out, errOut := f.run(t, "", "namespace")
+	if out != "" {
+		t.Errorf("namespace after the deadline printed %q on stdout, want nothing", out)
+	}
+	mustContain(t, errOut, "exam time box of 001-hello-down expired")
+}
+
 func TestExamExpiresOnAnyCommand(t *testing.T) {
 	f := newFixture(t)
 	f.grader.grades = []grader.Grade{failGrade()}
@@ -257,7 +271,8 @@ func TestExamExpiresOnAnyCommand(t *testing.T) {
 		t.Fatalf("list after the deadline: exit %d %s", code, errOut)
 	}
 	at := time.Date(2026, 10, 25, 12, 15, 0, 0, time.UTC).Local().Format("15:04")
-	mustContain(t, out, "exam time box of 001-hello-down expired at "+at+": outcome timed_out (1 of 2 checks passed)")
+	mustContain(t, errOut, "exam time box of 001-hello-down expired at "+at+": outcome timed out (1 of 2 checks passed)")
+	mustNotContain(t, out, "exam time box")
 	if f.journal.current != nil || f.journal.episodes[0].Outcome != journal.OutcomeTimedOut {
 		t.Errorf("after expiry: current %+v outcome %s", f.journal.current, f.journal.episodes[0].Outcome)
 	}
@@ -528,22 +543,27 @@ func TestUpAddons(t *testing.T) {
 	}
 }
 
-func TestUpPreloadsDebugImage(t *testing.T) {
+func TestUpPreloadsImages(t *testing.T) {
+	const fixed = "nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10"
 	f := newFixture(t)
+	f.catalog.all[0].Meta.Images = []string{fixed}
 	code, out, errOut := f.run(t, "", "up")
 	if code != 0 {
 		t.Fatalf("exit: got %d, want 0 (%s)", code, errOut)
 	}
 	if f.cluster.pulls != 1 {
-		t.Errorf("debug image pulls: got %d, want 1", f.cluster.pulls)
+		t.Errorf("preloads: got %d, want 1", f.cluster.pulls)
 	}
-	mustNotContain(t, out, "warning:")
-	f.cluster.pullErr = errors.New("pull busybox: kubedrill-worker: no network")
-	code, out, errOut = f.run(t, "", "up")
+	if want := []string{cluster.DebugImage, fixed}; !reflect.DeepEqual(f.cluster.pulled, want) {
+		t.Errorf("preloaded images: got %v, want %v", f.cluster.pulled, want)
+	}
+	mustNotContain(t, out+errOut, "warning:")
+	f.cluster.pullErr = errors.New("pull busybox on kubedrill-worker: no network")
+	code, _, errOut = f.run(t, "", "up")
 	if code != 0 {
 		t.Fatalf("exit with a failed preload: got %d, want 0 (%s)", code, errOut)
 	}
-	mustContain(t, out, "warning: pull busybox: kubedrill-worker: no network; kubedrill node pulls it on first use inside the workstation\n")
+	mustContain(t, errOut, "warning: pull busybox on kubedrill-worker: no network; the nodes pull these images from the registry when a pod first needs them\n")
 }
 
 func TestUpWaitsForAPIServices(t *testing.T) {

@@ -58,7 +58,8 @@ the path from idea to pull request. Every file and field is described in
    ticket told from zero for a newcomer, under five fixed headings, true for
    every variant. [Sections](docs/scenario-format.md#storymd).
 9. **Finish.** Delete the template's comments and marker lines, add the id
-   to its module in `curriculum.yaml`, add the row to the scenario table in
+   to its module in `curriculum.yaml` (lint refuses a scenario the
+   curriculum does not list), add the row to the scenario table in
    `README.md`, then run the checks below.
 
 ## Run the checks
@@ -132,8 +133,10 @@ id, title, intro and the four sections. The reviewer also checks:
 - **Scripts:** bash 3.2 compatible, the macOS default: no `mapfile`, no
   associative arrays, no `${var,,}`.
 - **Pins:** images as `image:tag@sha256:<digest>` in setup, probes and
-  `solve.sh`, except when the tag is the bug. GitHub Actions by commit SHA
-  with the version in a comment.
+  `solve.sh`, except when the image is the bug, set from a variant
+  variable; lint enforces it for setup and probes. List the image the fix
+  needs in `scenario.toml` `images`, so `kubedrill up` preloads it. GitHub
+  Actions by commit SHA with the version in a comment.
 - **Text:** plain ASCII, hyphens for dashes, no emojis. Learner-facing text
   is en-US and names the observable fact. The vendored manifests under
   `cluster/addons/` keep upstream characters and their Apache-2.0 license;

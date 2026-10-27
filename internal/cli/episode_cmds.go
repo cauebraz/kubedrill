@@ -282,13 +282,27 @@ func workedExample(solution string) string {
 	return strings.Join(parts, "\n")
 }
 
-// siblingVariant renders sc for a seed whose variant differs from the one
-// ep runs, in a throwaway namespace, or returns nil when there is none.
+// siblingVariant renders sc, in a throwaway namespace, for the first
+// variant after the one ep runs, in declaration order, or returns nil when
+// there is none.
 func siblingVariant(sc *scenario.Scenario, ep *journal.Episode) *scenario.Rendered {
-	n := int64(len(sc.Variants))
-	for i := int64(1); i < n; i++ {
-		rd, err := sc.Render(ep.Seed+i, scenario.WithNamespace(workedExampleNamespace))
-		if err == nil && rd.Variant.Name != ep.Variant {
+	n := len(sc.Variants)
+	at := 0
+	for i, v := range sc.Variants {
+		if v.Name == ep.Variant {
+			at = i
+		}
+	}
+	for i := 1; i < n; i++ {
+		v := sc.Variants[(at+i)%n]
+		if v.Name == ep.Variant {
+			continue
+		}
+		seed, ok := sc.SeedFor(v.Name)
+		if !ok {
+			continue
+		}
+		if rd, err := sc.Render(seed, scenario.WithNamespace(workedExampleNamespace)); err == nil {
 			return rd
 		}
 	}
@@ -340,7 +354,7 @@ func (a *app) expectedLine(ep *journal.Episode, sc *scenario.Scenario) string {
 	expected := fmt.Sprintf("Expected: %d min", sc.Meta.Minutes)
 	if j, err := a.getJournal(); err == nil {
 		if eps, err := allEpisodes(j); err == nil {
-			m := progress.ScenarioMastery(episodesOf(withoutEpisode(eps, ep.ID), sc.Meta.ID), sc.Meta.Minutes)
+			m := progress.ScenarioMastery(episodesOf(withoutEpisode(eps, ep.ID), sc.Meta.ID), scenarioInfo(sc))
 			if m.Solved > 0 && m.MedianSolve > 0 {
 				expected += fmt.Sprintf(" (yours: %s median over %s)", render.Minutes(m.MedianSolve), render.Plural(m.Solved, "solve"))
 			}
@@ -499,7 +513,7 @@ func (a *app) checkCommand() *cobra.Command {
 // check did not pass.
 func (a *app) endedElsewhere(g grader.Grade, ep *journal.Episode) error {
 	a.writeGrade(a.stdout, g, false)
-	a.printf("the episode of %s already ended as %s in another terminal; kubedrill debrief shows it\n", ep.ScenarioID, ep.Outcome)
+	a.printf("the episode of %s already ended as %s in another terminal; kubedrill debrief shows it\n", ep.ScenarioID, outcomeWord(ep.Outcome))
 	if !g.Passed {
 		return ErrChecksFailed
 	}
@@ -714,7 +728,7 @@ func (a *app) surrender(ctx context.Context, s *env.Session, current *journal.Ep
 // without a diagnosis; --yes skips only the confirmation.
 var errSurrenderDiagnosis = refusal{msg: `the solution needs your diagnosis first (--yes skips only the confirmation): kubedrill diagnose "<cause>" then kubedrill solution --yes`, cause: env.ErrDiagnosisRequired}
 
-// renderFor renders sc as ep saw it (seed and namespace), or with seed 1
+// renderFor renders sc as ep saw it (seed, variant and namespace), or with seed 1
 // when there is no episode.
 func renderFor(sc *scenario.Scenario, ep *journal.Episode) (*scenario.Rendered, error) {
 	if ep == nil {
@@ -724,7 +738,7 @@ func renderFor(sc *scenario.Scenario, ep *journal.Episode) (*scenario.Rendered, 
 	if ep.Namespace != "" {
 		opts = append(opts, scenario.WithNamespace(ep.Namespace))
 	}
-	return sc.Render(ep.Seed, opts...)
+	return sc.Render(ep.Seed, append(opts, scenario.WithVariant(ep.Variant))...)
 }
 
 // latestEnded returns the most recently started ended episode of eps.
@@ -1004,7 +1018,7 @@ func (a *app) submitCommand() *cobra.Command {
 			if ep == nil {
 				ep = cur
 			}
-			a.printf("exam submitted: %s in %s\n", ep.Outcome, render.Minutes(ep.DurationAt(a.now())))
+			a.printf("exam submitted: %s in %s\n", outcomeWord(ep.Outcome), render.Minutes(ep.DurationAt(a.now())))
 			if !g.Passed {
 				a.println("Next: kubedrill debrief | kubedrill solution " + ep.ScenarioID + " (the reference)")
 				return ErrChecksFailed

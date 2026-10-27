@@ -148,9 +148,10 @@ func hasHeading(doc, heading string) bool {
 
 func section(doc, heading string) (body string, ok bool) {
 	lines := strings.Split(doc, "\n")
+	fenced := fenceMask(lines)
 	start := -1
 	for i, l := range lines {
-		if strings.TrimRight(l, " \t\r") == heading {
+		if !fenced[i] && strings.TrimRight(l, " \t\r") == heading {
 			start = i + 1
 			break
 		}
@@ -160,10 +161,42 @@ func section(doc, heading string) (body string, ok bool) {
 	}
 	end := len(lines)
 	for i := start; i < len(lines); i++ {
-		if strings.HasPrefix(lines[i], "## ") || strings.HasPrefix(lines[i], "# ") {
+		if !fenced[i] && (strings.HasPrefix(lines[i], "## ") || strings.HasPrefix(lines[i], "# ")) {
 			end = i
 			break
 		}
 	}
 	return strings.Trim(strings.Join(lines[start:end], "\n"), "\n\r \t"), true
+}
+
+// fenceMask reports, per line, whether the line is a code fence marker
+// (a line starting with three backticks or tildes) or inside a fenced block,
+// where a "#" line is a shell comment, not a heading.
+func fenceMask(lines []string) []bool {
+	out := make([]bool, len(lines))
+	fenced := false
+	for i, l := range lines {
+		t := strings.TrimSpace(l)
+		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
+			fenced = !fenced
+			out[i] = true
+			continue
+		}
+		out[i] = fenced
+	}
+	return out
+}
+
+// outsideFences keeps the matches of locs (byte offsets into doc) that start
+// on a line outside a fenced code block.
+func outsideFences(doc string, locs [][]int) [][]int {
+	lines := strings.Split(doc, "\n")
+	fenced := fenceMask(lines)
+	var out [][]int
+	for _, loc := range locs {
+		if !fenced[strings.Count(doc[:loc[0]], "\n")] {
+			out = append(out, loc)
+		}
+	}
+	return out
 }

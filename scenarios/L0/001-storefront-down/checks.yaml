@@ -41,7 +41,7 @@ checks:
       namespace: "{{ .Namespace }}"
       name: storefront
     path: "{.spec.template.spec.containers[0].image}"
-    matches: "^(docker\\.io/(library/)?)?nginx:1\\.27-alpine(@sha256:[0-9a-f]{64})?$"
+    matches: "^((docker\\.io|index\\.docker\\.io)/)?(library/)?nginx:1\\.27-alpine(@sha256:[0-9a-f]{64})?$"
     spoiler: true
 
   - id: service-endpoints

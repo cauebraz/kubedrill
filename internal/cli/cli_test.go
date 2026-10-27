@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -43,11 +44,13 @@ type fakeCluster struct {
 	staleErr  error
 	staleAsks int
 	pulls     int
+	pulled    []string
 	pullErr   error
 }
 
-func (c *fakeCluster) PullDebugImage(context.Context) error {
+func (c *fakeCluster) PullImages(_ context.Context, images []string) error {
 	c.pulls++
+	c.pulled = images
 	return c.pullErr
 }
 
@@ -221,6 +224,7 @@ type fakeFaults struct {
 	applied  []string
 	active   []faults.Fault
 	healed   int
+	forgot   int
 	applyErr error
 	healErr  error
 }
@@ -244,6 +248,12 @@ func (m *fakeFaults) Heal(context.Context) error {
 }
 
 func (m *fakeFaults) Active(context.Context) ([]faults.Fault, error) { return m.active, nil }
+
+func (m *fakeFaults) Forget(context.Context) error {
+	m.forgot++
+	m.active = nil
+	return nil
+}
 
 type memCatalog struct {
 	all []*scenario.Scenario
@@ -406,6 +416,7 @@ type fixture struct {
 	lint      []error
 	lintMods  []string
 	lintConc  []string
+	lintRefs  scenario.Refs
 	curr      *curriculum.Curriculum
 	currErr   error
 	pinned    []string
@@ -481,9 +492,10 @@ func (f *fixture) factories() Factories {
 			}
 			return f.curr, nil
 		},
-		Lint: func(_ string, moduleIDs, conceptIDs []string) []error {
-			f.lintMods = moduleIDs
-			f.lintConc = conceptIDs
+		Lint: func(_ string, refs scenario.Refs) []error {
+			f.lintMods = refs.Modules
+			f.lintConc = refs.Concepts
+			f.lintRefs = refs
 			return f.lint
 		},
 		Concepts: func(string) (Concepts, error) {
@@ -579,7 +591,11 @@ func mustContain(t *testing.T, got string, wants ...string) {
 // solvedEpisode is a clean solve of id: 3 minutes, no hints.
 func solvedEpisode(id, scenarioID string, seed int64, start time.Time) journal.Episode {
 	end := start.Add(3 * time.Minute)
-	return journal.Episode{ID: id, ScenarioID: scenarioID, Seed: seed, Variant: "image", StartedAt: start, EndedAt: &end, Outcome: journal.OutcomeSolved, Mode: journal.ModePractice}
+	variant := "image"
+	if seed%2 == 0 {
+		variant = "probe"
+	}
+	return journal.Episode{ID: id, ScenarioID: scenarioID, Seed: seed, Variant: variant, StartedAt: start, EndedAt: &end, Outcome: journal.OutcomeSolved, Mode: journal.ModePractice}
 }
 
 // masteredEpisodes masters both catalog scenarios: three clean solves each
@@ -822,7 +838,7 @@ func TestStatusAndJournal(t *testing.T) {
 	_, out, _ = f.run(t, "", "journal")
 	mustContain(t, out, "001-hello-down  1     practice  -        active", "- : hidden while the episode is active")
 	f.run(t, "", "check")
-	f.run(t, "", "start", "001-hello-down", "--seed", "2")
+	f.run(t, "", "start", "001-hello-down", "--seed", "3")
 	f.run(t, "", "check")
 	_, out, _ = f.run(t, "", "status")
 	mustContain(t, out, "solved: 1 of 2 scenarios (mastered: 0)")
@@ -891,6 +907,12 @@ func TestLint(t *testing.T) {
 	if strings.Join(f.lintConc, ",") != "pods,deployments,services" {
 		t.Errorf("lint concept ids: got %v, want [pods deployments services]", f.lintConc)
 	}
+	if got := strings.Join(f.lintRefs.ExamDomains, ","); got != "CKA:workloads" {
+		t.Errorf("lint exam domains: got %q, want CKA:workloads", got)
+	}
+	if want := map[string]string{"001-hello-down": "workloads-basics"}; !reflect.DeepEqual(f.lintRefs.Planned, want) {
+		t.Errorf("lint planned scenarios: got %v, want %v", f.lintRefs.Planned, want)
+	}
 	f.lint = []error{errors.New("scenarios/L0/001: hints.md missing")}
 	f.currErr = errors.New("load curriculum: module x references unknown exam")
 	code, out, errOut := f.run(t, "", "lint")
@@ -945,14 +967,21 @@ func TestDoctorAndUpDown(t *testing.T) {
 		t.Fatalf("doctor exit %d", code)
 	}
 	mustContain(t, out, "TOOL", "docker", "yes", "27.1", "daemon reachable", "kubectl  yes    1.37     -")
+	f.faults = &fakeFaults{}
 	code, out, _ = f.run(t, "", "up")
 	if code != 0 || len(f.cluster.ensured) != 1 || !strings.Contains(out, "cluster kubedrill: present (profile base)") || !strings.Contains(out, "addons: metrics-server") {
 		t.Errorf("up with cluster present: exit %d ensured %v out %q", code, f.cluster.ensured, out)
+	}
+	if f.faults.forgot != 0 {
+		t.Errorf("up on an existing cluster forgot the faults %d times, want 0", f.faults.forgot)
 	}
 	f.cluster.exists = false
 	code, out, _ = f.run(t, "", "up")
 	if code != 0 || len(f.cluster.ensured) != 2 || f.cluster.ensured[1] != "base" {
 		t.Errorf("up: exit %d ensured %v out %q", code, f.cluster.ensured, out)
+	}
+	if f.faults.forgot != 1 {
+		t.Errorf("up creating the cluster forgot the faults %d times, want 1", f.faults.forgot)
 	}
 	mustContain(t, out, "creating cluster kubedrill (profile base), about 2 minutes...", "cluster kubedrill is ready (profile base)")
 	audit := filepath.Join(f.root, "state", "kubedrill", "kubedrill", "audit")
@@ -966,6 +995,9 @@ func TestDoctorAndUpDown(t *testing.T) {
 	code, out, _ = f.run(t, "", "down", "--yes")
 	if code != 0 || f.cluster.deleted != 1 || !strings.Contains(out, "deleted") {
 		t.Errorf("down --yes: exit %d deleted %d out %q", code, f.cluster.deleted, out)
+	}
+	if f.faults.forgot != 2 {
+		t.Errorf("down forgot the faults %d times in total, want 2", f.faults.forgot)
 	}
 	f.cluster.tools[0] = cluster.Tool{Name: "docker", Found: false, Install: "https://docs.docker.com/get-docker/"}
 	code, out, errOut = f.run(t, "", "doctor")
@@ -1000,11 +1032,11 @@ func TestSmoke(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("smoke exit %d: %s\n%s", code, errOut, out)
 	}
-	mustContain(t, out, "ok   001-hello-down seed 1 (variant image)", "ok   001-hello-down seed 2 (variant probe)", "smoke: 2 runs passed")
+	mustContain(t, out, "ok   001-hello-down seed 1 (variant image)", "ok   001-hello-down seed 3 (variant probe)", "smoke: 2 runs passed")
 	if len(f.runs) != 2 || f.runs[0][0] != "/scenarios/L0/001-hello-down/solution/solve.sh" {
 		t.Fatalf("solve runs: got %v", f.runs)
 	}
-	mustContain(t, strings.Join(f.runs[1], " "), "TASK_NS=task-hello-abcde", "SEED=2", "VARIANT=probe", "VAR_IMAGE=nginx:1.26", "KUBECONFIG=")
+	mustContain(t, strings.Join(f.runs[1], " "), "TASK_NS=task-hello-abcde", "SEED=3", "VARIANT=probe", "VAR_IMAGE=nginx:1.26", "KUBECONFIG=")
 	if len(f.pinned) == 0 || !strings.HasSuffix(f.pinned[0], " /tmp/kubeconfig kind-kubedrill") {
 		t.Errorf("script kubeconfig not pinned: %v", f.pinned)
 	}
@@ -1371,7 +1403,7 @@ func TestSmokeArgs(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("exit: got %d, want 0 (%s)", code, errOut)
 		}
-		mustContain(t, out, "ok   001-hello-down seed 1 (variant image)", "ok   001-hello-down seed 2 (variant probe)", "ok   002-service-dns seed 1 (variant selector)", "smoke: 3 runs passed")
+		mustContain(t, out, "ok   001-hello-down seed 1 (variant image)", "ok   001-hello-down seed 3 (variant probe)", "ok   002-service-dns seed 1 (variant selector)", "smoke: 3 runs passed")
 		if len(f.runs) != 3 {
 			t.Errorf("solve runs: got %d, want 3", len(f.runs))
 		}

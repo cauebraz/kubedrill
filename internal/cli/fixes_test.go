@@ -49,7 +49,7 @@ func TestExamExpiresAtExactlyTheDeadline(t *testing.T) {
 			t.Errorf("examActive at %s: got %v, want %v", tc.now.Format("15:04:05"), got, tc.running)
 		}
 		f.grader.grades = []grader.Grade{failGrade()}
-		_, out, _ := f.run(t, "", "status")
+		_, _, out := f.run(t, "", "status")
 		if expired := strings.Contains(out, "exam time box of 001-hello-down expired"); expired == tc.running {
 			t.Errorf("status at %s: expired %v, want %v:\n%s", tc.now.Format("15:04:05"), expired, !tc.running, out)
 		}
@@ -206,6 +206,13 @@ func TestExplainErrors(t *testing.T) {
 	foreign := fmt.Errorf("namespace task-x belongs to another episode (seed 4); run: kubedrill reset: %w", env.ErrNamespaceForeign)
 	if got := a.explain(foreign); strings.Contains(got, ": "+env.ErrNamespaceForeign.Error()) {
 		t.Errorf("namespace foreign: got %q", got)
+	}
+	if got, want := a.explain(env.ErrNoActiveEpisode), "no active episode; start one with: kubedrill start <id> (see kubedrill list)"; got != want {
+		t.Errorf("bare no active episode: got %q, want %q", got, want)
+	}
+	solution := fmt.Errorf("%w; kubedrill solution <id> shows the walkthrough of a finished scenario", env.ErrNoActiveEpisode)
+	if got, want := a.explain(solution), "no active episode; kubedrill solution <id> shows the walkthrough of a finished scenario"; got != want {
+		t.Errorf("wrapped no active episode: got %q, want %q", got, want)
 	}
 }
 

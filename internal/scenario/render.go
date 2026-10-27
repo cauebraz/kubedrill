@@ -3,10 +3,12 @@ package scenario
 import (
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"text/template"
 	"text/template/parse"
@@ -47,6 +49,7 @@ type RenderOption func(*renderConfig)
 
 type renderConfig struct {
 	namespace string
+	variant   string
 }
 
 // WithNamespace makes Render use ns as the namespace instead of the rendered
@@ -57,18 +60,102 @@ func WithNamespace(ns string) RenderOption {
 	return func(c *renderConfig) { c.namespace = ns }
 }
 
-// VariantFor returns the variant Render picks for seed: the one with index
-// (seed-1) mod len(Variants), or a variant named "default" without vars when
-// the scenario declares none. Seed must be at least 1.
+// WithVariant makes Render use the variant named name instead of the one
+// the seed picks, so an episode renders with the root cause it was started
+// with even after variants were added or reordered. Render fails when the
+// scenario no longer has that variant. An empty name keeps the seed's pick.
+func WithVariant(name string) RenderOption {
+	return func(c *renderConfig) { c.variant = name }
+}
+
+// ErrVariantGone is returned by Render when WithVariant names a variant the
+// scenario no longer declares.
+var ErrVariantGone = errors.New("variant no longer exists")
+
+// VariantFor returns the variant Render picks for seed, or a variant named
+// "default" without vars when the scenario declares none. The pick is a
+// rendezvous hash of the seed and each variant name: reordering the
+// variants changes no pick, and adding one moves only the seeds the new
+// variant wins. Seed must be at least 1.
 func (s *Scenario) VariantFor(seed int64) Variant {
 	if len(s.Variants) == 0 {
 		return Variant{Name: "default"}
 	}
-	return s.Variants[(seed-1)%int64(len(s.Variants))]
+	best, bestScore := 0, uint64(0)
+	for i, v := range s.Variants {
+		if score := variantScore(seed, v.Name); i == 0 || score > bestScore {
+			best, bestScore = i, score
+		}
+	}
+	return s.Variants[best]
 }
 
-// Render specialises the scenario for seed: it picks the variant with index
-// (seed-1) mod len(Variants), expands the setup templates, the string fields
+// variantScore is the rendezvous weight of variant name for seed.
+func variantScore(seed int64, name string) uint64 {
+	h := fnv.New64a()
+	h.Write([]byte(name))
+	h.Write([]byte{0})
+	h.Write([]byte(strconv.FormatInt(seed, 10)))
+	x := h.Sum64()
+	x ^= x >> 30
+	x *= 0xbf58476d1ce4e5b9
+	x ^= x >> 27
+	x *= 0x94d049bb133111eb
+	x ^= x >> 31
+	return x
+}
+
+// maxSeedSearch bounds the search of SeedFor.
+const maxSeedSearch = 100000
+
+// SeedFor returns the smallest seed at least 1 whose pick is the variant
+// named name, and false when the scenario has no such variant. A scenario
+// without variants has seed 1 for "default".
+func (s *Scenario) SeedFor(name string) (int64, bool) {
+	if len(s.Variants) == 0 {
+		return 1, name == "default"
+	}
+	if _, ok := s.variantNamed(name); !ok {
+		return 0, false
+	}
+	for seed := int64(1); seed <= maxSeedSearch; seed++ {
+		if s.VariantFor(seed).Name == name {
+			return seed, true
+		}
+	}
+	return 0, false
+}
+
+// VariantSeeds returns one seed per variant, in declaration order, each the
+// smallest seed that picks its variant; seed 1 for a scenario without
+// variants. Lint and smoke render every variant through it.
+func (s *Scenario) VariantSeeds() []int64 {
+	if len(s.Variants) == 0 {
+		return []int64{1}
+	}
+	out := make([]int64, 0, len(s.Variants))
+	for _, v := range s.Variants {
+		if seed, ok := s.SeedFor(v.Name); ok {
+			out = append(out, seed)
+		}
+	}
+	return out
+}
+
+func (s *Scenario) variantNamed(name string) (Variant, bool) {
+	for _, v := range s.Variants {
+		if v.Name == name {
+			return v, true
+		}
+	}
+	if len(s.Variants) == 0 && name == "default" {
+		return Variant{Name: "default"}, true
+	}
+	return Variant{}, false
+}
+
+// Render specialises the scenario for seed: it picks the variant of the
+// seed (VariantFor) or the one WithVariant names, expands the setup templates, the string fields
 // of every check, instruction.md, hints.md, solution/README.md, story.md and
 // every approach's snippet.txt and content.md, and returns the result. Seed must be at least 1. Every template error is
 // returned at once, each one naming its file.
@@ -83,6 +170,13 @@ func (s *Scenario) Render(seed int64, opts ...RenderOption) (*Rendered, error) {
 		}
 	}
 	variant := s.VariantFor(seed)
+	if cfg.variant != "" {
+		v, ok := s.variantNamed(cfg.variant)
+		if !ok {
+			return nil, fmt.Errorf("render scenario %s seed %d: variant %q: %w; start a new episode", s.Meta.ID, seed, cfg.variant, ErrVariantGone)
+		}
+		variant = v
+	}
 	vars := make(map[string]string, len(variant.Vars))
 	for k, v := range variant.Vars {
 		vars[k] = v

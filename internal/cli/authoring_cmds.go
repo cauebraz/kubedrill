@@ -13,6 +13,7 @@ import (
 
 	"github.com/cauebraz/kubedrill/internal/atomicfile"
 	"github.com/cauebraz/kubedrill/internal/curriculum"
+	"github.com/cauebraz/kubedrill/internal/scenario"
 )
 
 func (a *app) lintCommand() *cobra.Command {
@@ -29,27 +30,23 @@ func (a *app) lintCommand() *cobra.Command {
 				return err
 			}
 			var errs []error
-			var moduleIDs, conceptIDs []string
+			var refs scenario.Refs
 			lib, libErr := a.f.Concepts(root)
 			if libErr != nil {
 				errs = append(errs, libErr)
 			} else {
-				conceptIDs = lib.IDs()
+				refs.Concepts = lib.IDs()
 			}
 			c, err := a.f.Curriculum(curriculum.DefaultPath(root))
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				for _, lv := range c.Levels {
-					for _, m := range lv.Modules {
-						moduleIDs = append(moduleIDs, m.ID)
-					}
-				}
+				refs.Modules, refs.ExamDomains, refs.Planned = curriculumRefs(c)
 				if libErr == nil {
-					errs = append(errs, missingConcepts(c.ConceptIDs(), conceptIDs)...)
+					errs = append(errs, missingConcepts(c.ConceptIDs(), refs.Concepts)...)
 				}
 			}
-			errs = append(a.f.Lint(root, moduleIDs, conceptIDs), errs...)
+			errs = append(a.f.Lint(root, refs), errs...)
 			for _, e := range errs {
 				a.printf("%s\n", e)
 			}
@@ -219,4 +216,27 @@ func (a *app) renderProfile(profile string) ([]byte, error) {
 		return nil, fmt.Errorf("render profile %s: the result still holds a template action ({{)", profile)
 	}
 	return raw, nil
+}
+
+// curriculumRefs returns the module ids of c, its exam domains written
+// EXAM:domain, and the module listing each scenario id.
+func curriculumRefs(c *curriculum.Curriculum) (modules, exams []string, planned map[string]string) {
+	planned = map[string]string{}
+	for _, lv := range c.Levels {
+		for _, m := range lv.Modules {
+			modules = append(modules, m.ID)
+			for _, p := range m.Scenarios {
+				if p.ID != "" {
+					planned[p.ID] = m.ID
+				}
+			}
+		}
+	}
+	exams = []string{}
+	for _, e := range c.Exams {
+		for _, d := range e.Domains {
+			exams = append(exams, e.ID+":"+d.ID)
+		}
+	}
+	return modules, exams, planned
 }

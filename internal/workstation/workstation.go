@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -417,7 +418,32 @@ func (m *Manager) EnsureBinary(ctx context.Context) (string, error) {
 		}
 		return "", fmt.Errorf("build linux kubedrill into %s: %w", out, err)
 	}
+	m.pruneBinaries(out)
 	return out, nil
+}
+
+// pruneBinaries removes the linux binaries of other checkouts or
+// architectures in the directory of keep that were last built more than
+// seven days ago; the next shell of that checkout builds its binary again.
+// A removal that fails is a warning on the output.
+func (m *Manager) pruneBinaries(keep string) {
+	matches, err := filepath.Glob(filepath.Join(filepath.Dir(keep), "kubedrill-linux-*"))
+	if err != nil {
+		return
+	}
+	cutoff := m.now().Add(-keepImages)
+	for _, path := range matches {
+		if path == keep {
+			continue
+		}
+		st, err := os.Stat(path)
+		if err != nil || st.IsDir() || !st.ModTime().Before(cutoff) {
+			continue
+		}
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			fmt.Fprintf(m.out, "warning: remove old workstation binary: %v\n", err)
+		}
+	}
 }
 
 func (m *Manager) binaryPath() (string, error) {

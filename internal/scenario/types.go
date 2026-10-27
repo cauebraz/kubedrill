@@ -44,6 +44,12 @@ type Meta struct {
 	// it needs maintainer review, since smoke applies its setup on the
 	// contributor's cluster.
 	AllowPrivileged bool `toml:"allow_privileged"`
+	// Images lists images the learner's fix or the setup needs that no
+	// setup manifest or probe names with a digest, each written
+	// name:tag@sha256:digest, for example the image the fixed Deployment
+	// runs. kubedrill up preloads them with the pinned setup and probe
+	// images (Scenario.Images), so a solve needs no registry.
+	Images []string `toml:"images"`
 }
 
 // Variant is one [[variant]] table: a named root cause or parameter set

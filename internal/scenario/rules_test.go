@@ -362,14 +362,14 @@ func TestRenderTexts(t *testing.T) {
 		opts          []RenderOption
 		wantNamespace string
 	}{
-		{name: "scenario namespace", wantNamespace: "fx-2"},
+		{name: "scenario namespace", wantNamespace: "fx-3"},
 		{name: "override", opts: []RenderOption{WithNamespace("fx-abcde")}, wantNamespace: "fx-abcde"},
-		{name: "empty override keeps scenario namespace", opts: []RenderOption{WithNamespace("")}, wantNamespace: "fx-2"},
-		{name: "nil option ignored", opts: []RenderOption{nil}, wantNamespace: "fx-2"},
+		{name: "empty override keeps scenario namespace", opts: []RenderOption{WithNamespace("")}, wantNamespace: "fx-3"},
+		{name: "nil option ignored", opts: []RenderOption{nil}, wantNamespace: "fx-3"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			r, err := s.Render(2, tc.opts...)
+			r, err := s.Render(3, tc.opts...)
 			if err != nil {
 				t.Fatalf("Render: %v", err)
 			}
@@ -510,7 +510,7 @@ func TestLintNewRules(t *testing.T) {
 				f["scenario.toml"] = strings.Replace(f["scenario.toml"], `vars = { image = "nginx:a" }`, `vars = { image = "nginx:a", extra = "x" }`, 1)
 				f["solution/README.md"] += "\n{{ .Vars.extra }}\n"
 			},
-			want: []string{"template: solution/README.md:33:8: executing \"solution/README.md\" at <.Vars.extra>: map has no entry for key \"extra\" (variant \"b\", seed 2)"},
+			want: []string{"template: solution/README.md:33:8: executing \"solution/README.md\" at <.Vars.extra>: map has no entry for key \"extra\" (variant \"b\", seed 3)"},
 		},
 		{
 			name: "check path is not a valid JSONPath",
@@ -536,7 +536,52 @@ func TestLintNewRules(t *testing.T) {
 			},
 			want: []string{
 				`checks.yaml: check "image": lte bound "nginx:a" is not a finite number (variant "a", seed 1)`,
-				`checks.yaml: check "image": lte bound "nginx:b" is not a finite number (variant "b", seed 2)`,
+				`checks.yaml: check "image": lte bound "nginx:b" is not a finite number (variant "b", seed 3)`,
+			},
+		},
+		{
+			name: "a variable puts a mutating command into a hint",
+			mutate: func(f fixture) {
+				f["scenario.toml"] = strings.Replace(f["scenario.toml"], `vars = { image = "nginx:a" }`, `vars = { image = "nginx:a", look = "kubectl scale deployment app --replicas 0" }`, 1)
+				f["scenario.toml"] = strings.Replace(f["scenario.toml"], `vars = { image = "nginx:b" }`, `vars = { image = "nginx:b", look = "kubectl get pods" }`, 1)
+				f["hints.md"] = fixtureHints + "\nRun {{ .Vars.look }}.\n"
+			},
+			want: []string{`hints.md: rendered: "## Hint 3: what it means" contains the mutating command "kubectl scale"`},
+		},
+		{
+			name: "the k alias counts as kubectl in a hint",
+			mutate: func(f fixture) {
+				f["hints.md"] = strings.Replace(fixtureHints, "Read events.", "Run `k set image deployment/app app=nginx`.", 1)
+			},
+			want: []string{`hints.md: "## Hint 2: what to observe" contains the mutating command "kubectl set"`},
+		},
+		{
+			name: "unpinned setup image that no variable plants",
+			mutate: func(f fixture) {
+				f["setup/extra.yaml"] = "apiVersion: v1\nkind: Pod\nmetadata:\n  name: p\n  namespace: {{ .Namespace }}\nspec:\n  containers:\n    - name: c\n      image: busybox\n"
+			},
+			want: []string{filepath.Join("setup", "extra.yaml") + `: Pod "p" container "c": image "busybox" is not pinned`},
+		},
+		{
+			name: "every Done when mismatch is reported",
+			mutate: func(f fixture) {
+				f["instruction.md"] = strings.Replace(f["instruction.md"], "- Deployment exists\n- runs {{ .Vars.image }}\n", "- Deployment gone\n- runs something else\n", 1)
+			},
+			want: []string{
+				`instruction.md: "## Done when" bullet 1 is "Deployment gone"`,
+				`instruction.md: "## Done when" bullet 2 is "runs something else"`,
+			},
+		},
+		{
+			name: "a hint heading inside a fence is not a hint",
+			mutate: func(f fixture) {
+				f["hints.md"] = strings.Replace(fixtureHints, "Read events.", "Read events.\n\n```md\n## Hint 9: an example heading\n```", 1)
+			},
+		},
+		{
+			name: "a shell comment in a fence does not end Done when",
+			mutate: func(f fixture) {
+				f["instruction.md"] = strings.Replace(f["instruction.md"], "## Done when\n\n", "## Done when\n\n```sh\n# a comment, not a heading\n```\n\n", 1)
 			},
 		},
 		{
@@ -564,7 +609,7 @@ func TestLintNewRules(t *testing.T) {
 			f := validFixture()
 			tc.mutate(f)
 			writeFixture(t, root, "L1", "001-fixture", f)
-			errs := Lint(root, nil, nil)
+			errs := Lint(root, Refs{})
 			var lines []string
 			for _, e := range errs {
 				lines = append(lines, e.Error())
@@ -655,7 +700,7 @@ func TestLintNamespaceLength(t *testing.T) {
 			f["scenario.toml"] = strings.Replace(f["scenario.toml"], `namespace = "fx-{{ .Seed }}"`, "namespace = \""+tc.ns+"\"", 1)
 			writeFixture(t, root, "L1", "001-fixture", f)
 			var lines []string
-			for _, e := range Lint(root, nil, nil) {
+			for _, e := range Lint(root, Refs{}) {
 				lines = append(lines, e.Error())
 			}
 			all := strings.Join(lines, "\n")
@@ -681,7 +726,7 @@ func TestRenderApproaches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	r, err := s.Render(2, WithNamespace("fx-abcde"))
+	r, err := s.Render(3, WithNamespace("fx-abcde"))
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -793,7 +838,7 @@ func TestLintPrivilegedSetup(t *testing.T) {
 	pod := func(spec string) string {
 		return "apiVersion: v1\nkind: Pod\nmetadata:\n  name: p\n  namespace: {{ .Namespace }}\nspec:\n" + spec
 	}
-	const ctr = "  containers:\n    - name: c\n      image: busybox\n"
+	const ctr = "  containers:\n    - name: c\n      image: busybox:1.37@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
 	tests := []struct {
 		name  string
 		setup string
@@ -807,7 +852,7 @@ func TestLintPrivilegedSetup(t *testing.T) {
 		{name: "hostIPC", setup: pod("  hostIPC: true\n" + ctr), want: "Pod \"p\": spec.hostIPC is true"},
 		{name: "capabilities add", setup: pod(ctr + "      securityContext:\n        capabilities:\n          add: [\"NET_ADMIN\"]\n"), want: "Pod \"p\": spec.containers[0].securityContext.capabilities.add adds capabilities"},
 		{name: "docker.sock path", setup: pod(ctr + "      env:\n        - name: DOCKER_HOST\n          value: unix:///var/run/docker.sock\n"), want: "Pod \"p\": spec.containers[0].env[0].value names docker.sock"},
-		{name: "privileged in a Deployment template", setup: "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: d\n  namespace: {{ .Namespace }}\nspec:\n  template:\n    spec:\n      terminationGracePeriodSeconds: 1\n      containers:\n        - name: c\n          image: busybox\n          securityContext:\n            privileged: true\n", want: "Deployment \"d\": spec.template.spec.containers[0].securityContext.privileged is true"},
+		{name: "privileged in a Deployment template", setup: "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: d\n  namespace: {{ .Namespace }}\nspec:\n  template:\n    spec:\n      terminationGracePeriodSeconds: 1\n      containers:\n        - name: c\n          image: busybox:1.37@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n          securityContext:\n            privileged: true\n", want: "Deployment \"d\": spec.template.spec.containers[0].securityContext.privileged is true"},
 		{name: "hostPort", setup: pod(ctr + "      ports:\n        - containerPort: 80\n          hostPort: 8080\n"), want: "Pod \"p\": spec.containers[0].ports[0].hostPort binds a node port"},
 		{name: "procMount Unmasked", setup: pod(ctr + "      securityContext:\n        procMount: Unmasked\n"), want: "Pod \"p\": spec.containers[0].securityContext.procMount is Unmasked"},
 		{name: "seccompProfile Unconfined", setup: pod("  securityContext:\n    seccompProfile:\n      type: Unconfined\n" + ctr), want: "Pod \"p\": spec.securityContext.seccompProfile.type is Unconfined"},
@@ -831,7 +876,7 @@ func TestLintPrivilegedSetup(t *testing.T) {
 			}
 			writeFixture(t, root, "L1", "001-fixture", f)
 			var lines []string
-			for _, e := range Lint(root, nil, nil) {
+			for _, e := range Lint(root, Refs{}) {
 				lines = append(lines, e.Error())
 			}
 			all := strings.Join(lines, "\n")
@@ -886,6 +931,9 @@ func TestRealScenarioImageCheck(t *testing.T) {
 		"docker.io/library/nginx:1.27-alpine",
 		"nginx:1.27-alpine" + digest,
 		"docker.io/library/nginx:1.27-alpine" + digest,
+		"library/nginx:1.27-alpine",
+		"index.docker.io/library/nginx:1.27-alpine",
+		"index.docker.io/nginx:1.27-alpine",
 	}
 	for _, img := range accept {
 		if !re.MatchString(img) {
@@ -899,7 +947,7 @@ func TestRealScenarioImageCheck(t *testing.T) {
 	if len(reject) != 3 {
 		t.Fatalf("variant images = %q, want 3", reject)
 	}
-	reject = append(reject, "library/nginx:1.27-alpine", "nginx:1.27-alpine@sha256:abc")
+	reject = append(reject, "evil.example/nginx:1.27-alpine", "docker.io/other/nginx:1.27-alpine", "nginx:1.27-alpine@sha256:abc")
 	for _, img := range reject {
 		if re.MatchString(img) {
 			t.Errorf("matches %q accepts %q, want reject", check.Matches, img)
@@ -923,6 +971,54 @@ func TestNormalizeCheckWeight(t *testing.T) {
 			normalizeCheck(&c)
 			if c.Weight != tt.want {
 				t.Errorf("weight: got %v, want %v", c.Weight, tt.want)
+			}
+		})
+	}
+}
+
+func TestLintCurriculumRefs(t *testing.T) {
+	tests := []struct {
+		name string
+		refs Refs
+		want []string
+	}{
+		{name: "unchecked without refs"},
+		{
+			name: "listed under its module with a known exam domain",
+			refs: Refs{ExamDomains: []string{"CKA:troubleshooting"}, Planned: map[string]string{"001-fixture": "L1.1"}},
+		},
+		{
+			name: "unknown exam domain",
+			refs: Refs{ExamDomains: []string{"CKA:storage"}},
+			want: []string{`scenarios/L1/001-fixture: scenario.toml: exam "CKA:troubleshooting" is not a domain of curriculum.yaml exams`},
+		},
+		{
+			name: "scenario missing from the curriculum and a planned id without a directory",
+			refs: Refs{Planned: map[string]string{"002-ghost": "L1.2"}},
+			want: []string{
+				`scenarios/L1/001-fixture: scenario.toml: curriculum.yaml lists no scenario "001-fixture"; add id: 001-fixture to a planned scenario of module L1.1`,
+				`curriculum.yaml: module L1.2 lists scenario "002-ghost", which has no directory under scenarios`,
+			},
+		},
+		{
+			name: "listed under another module",
+			refs: Refs{Planned: map[string]string{"001-fixture": "L1.3"}},
+			want: []string{`scenarios/L1/001-fixture: scenario.toml: scenario.module is "L1.1" but curriculum.yaml lists 001-fixture under module L1.3`},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := copyTree("../../scenarios/_template", filepath.Join(root, "scenarios", "_template")); err != nil {
+				t.Fatal(err)
+			}
+			writeFixture(t, root, "L1", "001-fixture", validFixture())
+			var got []string
+			for _, e := range Lint(root, tc.refs) {
+				got = append(got, e.Error())
+			}
+			if strings.Join(got, "\n") != strings.Join(tc.want, "\n") {
+				t.Errorf("Lint:\ngot  %q\nwant %q", got, tc.want)
 			}
 		})
 	}

@@ -108,12 +108,18 @@ func (a *app) expireIfDue(ctx context.Context) {
 	if ep == nil {
 		return
 	}
-	a.printf("exam time box of %s expired at %s: %s\n", ep.ScenarioID, cur.Deadline.Local().Format("15:04"), outcomeLine(ep))
+	fmt.Fprintf(a.stderr, "exam time box of %s expired at %s: %s\n", ep.ScenarioID, cur.Deadline.Local().Format("15:04"), outcomeLine(ep))
+}
+
+// outcomeWord is the learner-facing word of an outcome: the journal value
+// with spaces instead of underscores ("timed out").
+func outcomeWord(o journal.Outcome) string {
+	return strings.ReplaceAll(string(o), "_", " ")
 }
 
 // outcomeLine names the outcome and the last grade of an ended episode.
 func outcomeLine(ep *journal.Episode) string {
-	line := "outcome " + string(ep.Outcome)
+	line := "outcome " + outcomeWord(ep.Outcome)
 	if n := len(ep.Grades); n > 0 {
 		passed, total := ep.Grades[n-1].Summary()
 		line += fmt.Sprintf(" (%d of %d checks passed)", passed, total)
@@ -260,7 +266,7 @@ func rootCause(sc *scenario.Scenario, ep *journal.Episode) string {
 // hints, the trajectory from telemetry, the diagnosis next to the root
 // cause, and the stored answers.
 func (a *app) writeDebriefSummary(p render.Printer, ep *journal.Episode, sc *scenario.Scenario) {
-	p.Println(p.WrapLine(p.Style(render.StyleBold, fmt.Sprintf("Debrief: %s (episode %s, %s)", sc.Meta.ID, ep.ID, ep.Outcome)), "  "))
+	p.Println(p.WrapLine(p.Style(render.StyleBold, fmt.Sprintf("Debrief: %s (episode %s, %s)", sc.Meta.ID, ep.ID, outcomeWord(ep.Outcome))), "  "))
 	detail(p, fmt.Sprintf("  duration %s, %s", render.Minutes(ep.DurationAt(a.now())), render.Plural(ep.HintsUsed, "hint")))
 	t := ep.Telemetry
 	switch {
@@ -271,6 +277,8 @@ func (a *app) writeDebriefSummary(p render.Printer, ep *journal.Episode, sc *sce
 		switch {
 		case t.FirstWriteTarget == "":
 			detail(p, "  first write: none recorded")
+		case telemetry.MatchTarget(t.FirstWriteTarget, sc.Meta.FixTargets) && t.FirstWriteMetadataOnly:
+			detail(p, fmt.Sprintf("  first write: %s (a fix target, but only its labels or annotations changed)", t.FirstWriteTarget))
 		case telemetry.MatchTarget(t.FirstWriteTarget, sc.Meta.FixTargets):
 			detail(p, fmt.Sprintf("  first write: %s (a fix target)", t.FirstWriteTarget))
 		default:

@@ -156,7 +156,9 @@ kubectl get endpointslices -l kubernetes.io/service-name=storefront
 ```
 
 `rollout status` waits and ends with `successfully rolled out`. `get pods`
-shows 3 pods `Running` with `1/1` READY. The EndpointSlice lists the pod
+shows 3 pods `Running` with `1/1` READY. A pod named `kubedrill-probe-...`
+may appear for a few seconds: it is the grader sending one request through
+the Service, the way a customer would, and the grader deletes it. The EndpointSlice lists the pod
 addresses the Service sends traffic to; an empty list was the reason for the
 503. The right pane turns every check to `[pass]`, and `kubedrill check`
 grades once from the shell.

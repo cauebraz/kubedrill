@@ -44,6 +44,11 @@ type AuditEvent struct {
 	Namespace   string
 	Name        string
 	Code        int
+	// MetadataOnly is set when the audit log holds the request body of a
+	// patch or update and that body changes only metadata (labels,
+	// annotations) of the object or of its pod template, as kubectl
+	// annotate, label and rollout restart do. Without a body it is false.
+	MetadataOnly bool
 }
 
 // ShellCommand is one line of the workstation shell log.
@@ -75,8 +80,9 @@ type auditLine struct {
 	ResponseStatus *struct {
 		Code int `json:"code"`
 	} `json:"responseStatus"`
-	RequestReceivedTimestamp time.Time `json:"requestReceivedTimestamp"`
-	StageTimestamp           time.Time `json:"stageTimestamp"`
+	RequestObject            json.RawMessage `json:"requestObject"`
+	RequestReceivedTimestamp time.Time       `json:"requestReceivedTimestamp"`
+	StageTimestamp           time.Time       `json:"stageTimestamp"`
 }
 
 type shellLine struct {
@@ -166,6 +172,9 @@ func readAudit(path string, since, until time.Time, namespace string, fixTargets
 		}
 		if l.ResponseStatus != nil {
 			e.Code = l.ResponseStatus.Code
+		}
+		if (l.Verb == "patch" || l.Verb == "update") && ref.Subresource == "" {
+			e.MetadataOnly = metadataOnly(l.RequestObject)
 		}
 		out = append(out, e)
 	}
@@ -283,8 +292,9 @@ func IsWrite(verb string) bool {
 // unreadable),
 // "no-writes" when no write succeeded, "root-cause" when any write hit one of
 // fixTargets (group/resource/name; the core group is "core" or empty, as
-// scenario.ParseFixTarget returns it) and "symptom-only"
-// otherwise. Commands lists up to 50 kubectl command lines from the shell
+// scenario.ParseFixTarget returns it) with more than a metadata change
+// (MetadataOnly false: a rollout restart or an annotation is not a fix) and
+// "symptom-only" otherwise. Commands lists up to 50 kubectl command lines from the shell
 // log, in order.
 func Summarize(audit []AuditEvent, auditAvailable bool, shell []ShellCommand, fixTargets []string) journal.Telemetry {
 	t := journal.Telemetry{Source: source(auditAvailable, len(shell) > 0), Verdict: journal.VerdictUnknown}
@@ -315,8 +325,9 @@ func Summarize(audit []AuditEvent, auditAvailable bool, shell []ShellCommand, fi
 				at := e.Time
 				t.FirstWriteAt = &at
 				t.FirstWriteTarget = target
+				t.FirstWriteMetadataOnly = e.MetadataOnly
 			}
-			if MatchTarget(target, fixTargets) {
+			if MatchTarget(target, fixTargets) && !e.MetadataOnly {
 				hit = true
 			}
 		}
@@ -360,7 +371,9 @@ func Target(e AuditEvent) string {
 	return strings.ToLower(group + "/" + e.Resource + "/" + e.Name)
 }
 
-// preWriteReads marks, for every write in events (sorted by time), the
+// preWriteReads marks, for every write that counts (countsAsWrite: it
+// succeeded and is not a connection subresource) in events (sorted by
+// time), the
 // nearest preceding get of the same object by the same user agent less than
 // preWriteWindow before it: the client's own read before it writes. Only
 // that one get is marked; an earlier get within the window is the learner
@@ -368,7 +381,7 @@ func Target(e AuditEvent) string {
 func preWriteReads(events []AuditEvent) map[int]bool {
 	own := map[int]bool{}
 	for i, w := range events {
-		if !IsWrite(w.Verb) {
+		if !countsAsWrite(w) {
 			continue
 		}
 		for j := i - 1; j >= 0; j-- {
@@ -530,4 +543,71 @@ func eachLine(r io.Reader, limit int, fn func(line []byte)) error {
 			return nil
 		}
 	}
+}
+
+// metadataOnly reports whether a patch or update request body changes only
+// metadata: a merge or strategic merge patch (an object) whose keys outside
+// metadata, apiVersion and kind are only spec.template.metadata, or a JSON
+// patch (an array) whose every path is under /metadata or
+// /spec/template/metadata. An empty or unreadable body is not metadata
+// only, so a write without a recorded body keeps counting as a change.
+func metadataOnly(body json.RawMessage) bool {
+	if len(body) == 0 || string(body) == "null" {
+		return false
+	}
+	var ops []struct {
+		Path string `json:"path"`
+	}
+	if json.Unmarshal(body, &ops) == nil {
+		if len(ops) == 0 {
+			return false
+		}
+		for _, op := range ops {
+			if !strings.HasPrefix(op.Path, "/metadata") && !strings.HasPrefix(op.Path, "/spec/template/metadata") {
+				return false
+			}
+		}
+		return true
+	}
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(body, &obj) != nil {
+		return false
+	}
+	for k, v := range obj {
+		switch k {
+		case "metadata", "apiVersion", "kind":
+			continue
+		case "spec":
+			if !onlyTemplateMetadata(v) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// onlyTemplateMetadata reports whether a spec value holds nothing but
+// template.metadata.
+func onlyTemplateMetadata(spec json.RawMessage) bool {
+	var s map[string]json.RawMessage
+	if json.Unmarshal(spec, &s) != nil {
+		return false
+	}
+	for k, v := range s {
+		if k != "template" {
+			return false
+		}
+		var tpl map[string]json.RawMessage
+		if json.Unmarshal(v, &tpl) != nil {
+			return false
+		}
+		for tk := range tpl {
+			if tk != "metadata" {
+				return false
+			}
+		}
+	}
+	return true
 }

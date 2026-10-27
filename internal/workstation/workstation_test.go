@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io/fs"
 	"maps"
 	"os"
 	"os/exec"
@@ -660,6 +661,43 @@ func TestImageFilesMatchDockerfile(t *testing.T) {
 	want := slices.Sorted(slices.Values(imageFiles))
 	if !slices.Equal(got, want) {
 		t.Errorf("Dockerfile COPY sources plus Dockerfile: got %v, want imageFiles %v", got, want)
+	}
+}
+
+func TestEnsureBinaryPrunesOldBinaries(t *testing.T) {
+	root := writeRepo(t)
+	data := t.TempDir()
+	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
+	m := New(root, t.TempDir(), WithStateDir(data), WithRunner((&fakeRunner{}).run), WithOutput(&bytes.Buffer{}))
+	m.now = func() time.Time { return now }
+	current := wantBinary(data, root, m.goarch)
+	dir := filepath.Dir(current)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]time.Time{
+		current: now.Add(-30 * 24 * time.Hour),
+		filepath.Join(dir, "kubedrill-linux-arm64-old00000"): now.Add(-8 * 24 * time.Hour),
+		filepath.Join(dir, "kubedrill-linux-amd64-recent00"): now.Add(-6 * 24 * time.Hour),
+		filepath.Join(dir, "kubectl"):                        now.Add(-30 * 24 * time.Hour),
+	}
+	for path, at := range files {
+		if err := os.WriteFile(path, []byte("bin"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := m.EnsureBinary(context.Background()); err != nil {
+		t.Fatalf("EnsureBinary: %v", err)
+	}
+	for path := range files {
+		_, err := os.Stat(path)
+		gone := errors.Is(err, fs.ErrNotExist)
+		if want := strings.HasSuffix(path, "old00000"); gone != want {
+			t.Errorf("%s: removed %v, want %v", filepath.Base(path), gone, want)
+		}
 	}
 }
 

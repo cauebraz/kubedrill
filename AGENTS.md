@@ -4,9 +4,12 @@ Conventions for anyone (human or agent) changing this repository.
 
 ## What this is
 
-A local, offline Kubernetes training environment for one learner: a Go binary
+A local Kubernetes training environment for one learner: a Go binary
 (`kubedrill`) drives a long-lived kind cluster, starts each episode in a fresh
-namespace, and grades the end state with declarative checks. The loop is
+namespace, and grades the end state with declarative checks. The network is
+needed to create the cluster and build the workstation; `kubedrill up`
+preloads every image the scenarios name with a digest, so practice after it
+needs no registry. The loop is
 reset -> observe -> act (kubectl) -> grade -> feedback (debrief), modeled on
 RL environments but designed for a human; the troubleshooting loop (describe,
 candidate causes, splitting observation, change, verify) is the spine of every
@@ -24,7 +27,7 @@ internal/scenario/        on-disk scenario format: scenario.toml, instruction.md
 internal/grader/          runs checks.yaml as a DAG against the cluster, produces Grade with Results; script checks get an env allowlist (PATH, HOME, TMPDIR, LANG, LC_ALL, TERM, USER plus TASK_NS, SEED, VARIANT, VAR_*, KUBECONFIG) shared with hook.sh and solve.sh through internal/scriptrun; wrapper.go puts a kubectl tagged kubedrill-check first on PATH for them
 internal/kube/            the Kubernetes API client (dynamic client, server-side apply, probes, namespace GC, APIService health); cluster/ uses clientcmd, grader/ uses client-go jsonpath
 internal/yamldoc/         one YAML document splitter (Split) shared by kube, scenario lint and the addon loader
-internal/cluster/         kind lifecycle (doctor, ensure, delete, kubeconfig, audit check, audit policy drift, profile render, node debug image preload), profile templates and addons; the cluster state dir ($XDG_STATE_HOME/kubedrill/kubedrill) holds audit/ (the audit log), bin/ (the kubedrill-check kubectl wrapper and the linux binary), kubeconfig-internal, kubeconfig-scripts, audit-policy.sha256 and faults.json
+internal/cluster/         kind lifecycle (doctor, ensure, delete, kubeconfig, audit check, audit policy drift, profile render, image preload with PullImages), profile templates and addons; the cluster state dir ($XDG_STATE_HOME/kubedrill/kubedrill) holds audit/ (the audit log), bin/ (the kubedrill-check kubectl wrapper and the linux binary), kubeconfig-internal, kubeconfig-scripts, audit-policy.sha256 and faults.json
 internal/env/             learner loop and state machine: Start/Observe/Grade/Diagnose/Hint/Surrender/Submit/Expire
 internal/atomicfile/      file writes through a temporary file, a rename and a directory fsync
 internal/scriptrun/       bash runner for script checks, hook.sh and solve.sh: process-group kill after exit and on cancel, output cap, host env allowlist
@@ -80,6 +83,9 @@ private/                  git-ignored local notes (research, reviews); never lin
   first-line modification notice, so they keep upstream characters. They
   stay Apache-2.0 (`LICENSES/Apache-2.0.txt`); `cluster/addons/README.md`
   lists each source, version and local change and is updated with them.
+- An addon container that mounts a host path (the docker socket gives root
+  on the host) sets `host_access: true` in its `addon.yaml`; the loader
+  refuses it otherwise, and the flag needs maintainer review.
 - Learner-facing text (instruction.md, hints, solution, CLI output) is en-US,
   concrete, and names the observable fact: "deployment hello: expected 2
   ready replicas, got 0".
@@ -102,7 +108,8 @@ private/                  git-ignored local notes (research, reviews); never lin
   scenario lists `fix_targets` (`group/resource/name`, core group `core`).
 - hints.md is the four-rung ladder (`## Hint 1: where to look`, `## Hint 2:
   what to observe`, `## Hint 3: what it means`, optional `## Hint 4: what to
-  change`); no hint contains a mutating kubectl command.
+  change`); no hint contains a mutating kubectl (or `k`) command, raw or
+  rendered.
 - story.md is optional (recommended for L0): exactly `## What happened`,
   `## The pieces`, `## Following the trail`, `## The fix and why it works`,
   `## Check your work`, in order, written for someone who has never used
@@ -113,6 +120,11 @@ private/                  git-ignored local notes (research, reviews); never lin
 - Every file that names the namespace writes `{{ .Namespace }}`: the episode
   namespace is the scenario namespace plus a random suffix.
 - Setup Deployments set `terminationGracePeriodSeconds: 1`.
+- Setup images are pinned by digest unless the image is a variant variable
+  (the planted bug); images the fix needs go in `scenario.toml` `images`
+  so `kubedrill up` preloads them.
+- Every scenario is listed in `curriculum.yaml` under its module, and its
+  `exam` entries are domains of the curriculum's exams.
 - Setup manifests stay inside the pod sandbox: no `privileged: true`,
   `hostPath`, `hostNetwork`, `hostPID`, `hostIPC`, `hostPort`, added
   capabilities, `procMount: Unmasked`, `Unconfined` seccomp or AppArmor

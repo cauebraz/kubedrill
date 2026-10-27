@@ -236,6 +236,16 @@ func TestDebriefVerdictUnknownAndRedoKeepsAnswers(t *testing.T) {
 	}
 }
 
+func TestDebriefNamesAMetadataOnlyFirstWrite(t *testing.T) {
+	f := newFixture(t)
+	f.catalog.all[0].Meta.FixTargets = []string{"apps/deployments/hello"}
+	ep := solvedEpisode("e1", "001-hello-down", 1, time.Date(2026, 10, 24, 9, 0, 0, 0, time.UTC))
+	ep.Telemetry = &journal.Telemetry{Source: "audit", FirstWriteTarget: "apps/deployments/hello", FirstWriteMetadataOnly: true, Verdict: "root-cause"}
+	f.journal.episodes = []journal.Episode{ep}
+	_, out, _ := f.run(t, "", "debrief")
+	mustContain(t, out, "  first write: apps/deployments/hello (a fix target, but only its labels or annotations changed)\n")
+}
+
 func TestStatsVerdictsCountSolvedOnly(t *testing.T) {
 	f := newFixture(t)
 	start := time.Date(2026, 10, 24, 9, 0, 0, 0, time.UTC)
