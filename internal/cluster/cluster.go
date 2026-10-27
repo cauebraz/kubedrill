@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -193,6 +194,10 @@ type Tool struct {
 	Version string
 	Detail  string
 	Install string
+	// Optional is true for a tool kubedrill works without: kubectl, which
+	// the workstation ships and only kubedrill smoke and scenario hooks
+	// need on the host.
+	Optional bool
 }
 
 type provider interface {
@@ -217,6 +222,8 @@ type Manager struct {
 	provider     provider
 	run          runner
 	lookPath     func(file string) (string, error)
+	readFile     func(name string) ([]byte, error)
+	goos         string
 	readyTimeout time.Duration
 	readyPoll    time.Duration
 }
@@ -268,6 +275,8 @@ func New(profilesDir string, opts ...Option) *Manager {
 		getenv:       os.Getenv,
 		run:          execRunner,
 		lookPath:     exec.LookPath,
+		readFile:     os.ReadFile,
+		goos:         runtime.GOOS,
 		readyTimeout: readyTimeout,
 		readyPoll:    readyPoll,
 	}

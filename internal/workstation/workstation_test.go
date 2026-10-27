@@ -241,6 +241,7 @@ func TestEnsureBinary(t *testing.T) {
 			data := t.TempDir()
 			fr := &fakeRunner{}
 			m := New(root, t.TempDir(), WithStateDir(data), WithRunner(fr.run), WithOutput(&bytes.Buffer{}))
+			m.lookPath = func(string) (string, error) { return "/usr/local/go/bin/go", nil }
 			want := wantBinary(data, root, m.goarch)
 			if tt.binary {
 				if err := os.MkdirAll(filepath.Dir(want), 0o755); err != nil {
@@ -286,6 +287,96 @@ func TestEnsureBinary(t *testing.T) {
 			t.Errorf("binaryPath: got %q, want kubedrill-linux-<arch>-<8 hex>", filepath.Base(a))
 		}
 	})
+}
+
+func TestEnsureBinaryWithoutGo(t *testing.T) {
+	const image = "golang:1.27.3-alpine@sha256:" + "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	noGo := func(string) (string, error) { return "", exec.ErrNotFound }
+	tests := []struct {
+		name    string
+		builder string
+		wantErr string
+	}{
+		{name: "pinned build image", builder: "GO_BUILD_IMAGE=" + image + "\n"},
+		{name: "no builder file", wantErr: "build image is unknown"},
+		{name: "unpinned build image", builder: "GO_BUILD_IMAGE=golang:1.27.3-alpine\n", wantErr: "not pinned by digest"},
+		{name: "no build image line", builder: "OTHER=1\n", wantErr: "no GO_BUILD_IMAGE line"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := writeRepo(t)
+			if tt.builder != "" {
+				if err := os.WriteFile(filepath.Join(root, "workstation", "builder.env"), []byte(tt.builder), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			data := t.TempDir()
+			fr := &fakeRunner{}
+			out := &bytes.Buffer{}
+			m := New(root, t.TempDir(), WithStateDir(data), WithRunner(fr.run), WithOutput(out))
+			m.lookPath = noGo
+			m.goos = "darwin"
+			got, err := m.EnsureBinary(context.Background())
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("EnsureBinary error: got %v, want one containing %q", err, tt.wantErr)
+				}
+				if len(fr.calls) != 0 {
+					t.Errorf("calls: got %v, want none", fr.joined())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("EnsureBinary: got error %v, want nil", err)
+			}
+			if len(fr.calls) != 1 || fr.calls[0].name != "docker" {
+				t.Fatalf("calls: got %v, want one docker run", fr.joined())
+			}
+			argv := strings.Join(fr.calls[0].args, " ")
+			resolve := func(p string) string {
+				r, err := hostPath(p)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return r
+			}
+			for _, want := range []string{
+				"run --rm -e HOME=/tmp",
+				"-e GOOS=linux -e GOARCH=" + m.goarch + " -e CGO_ENABLED=0",
+				"type=bind,source=" + resolve(root) + ",target=/src,readonly",
+				"type=bind,source=" + resolve(filepath.Dir(got)) + ",target=/out ",
+				"type=bind,source=" + resolve(filepath.Join(data, "go")) + ",target=/cache ",
+				"-w /src " + image + " go build -buildvcs=false -trimpath -o /out/" + filepath.Base(got) + " ./cmd/kubedrill",
+			} {
+				if !strings.Contains(argv+" ", want) {
+					t.Errorf("docker argv: got %s, want it to contain %q", argv, want)
+				}
+			}
+			if !strings.Contains(out.String(), "go is not on PATH") {
+				t.Errorf("output: got %q, want the go is not on PATH line", out.String())
+			}
+		})
+	}
+}
+
+func TestBuilderImageMatchesGoMod(t *testing.T) {
+	mod, err := os.ReadFile(filepath.Join("..", "..", "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var version string
+	for _, line := range strings.Split(string(mod), "\n") {
+		if v, ok := strings.CutPrefix(line, "go "); ok {
+			version = strings.TrimSpace(v)
+		}
+	}
+	image, err := New(filepath.Join("..", ".."), t.TempDir()).builderImage()
+	if err != nil {
+		t.Fatalf("builderImage: %v", err)
+	}
+	if want := "golang:" + version + "-"; !strings.HasPrefix(image, want) {
+		t.Errorf("GO_BUILD_IMAGE: got %q, want the go.mod version, %s...", image, want)
+	}
 }
 
 func TestStateDirRequired(t *testing.T) {

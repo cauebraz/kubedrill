@@ -321,7 +321,7 @@ func TestDoctor(t *testing.T) {
 				return []byte(`{"clientVersion":{"gitVersion":"v1.34.1"}}`), nil
 			},
 			wantDocker:  Tool{Name: "docker", Found: true, Version: "28.3.2", Install: installDocker},
-			wantKubectl: Tool{Name: "kubectl", Found: true, Version: "v1.34.1", Install: installKubectl},
+			wantKubectl: Tool{Name: "kubectl", Found: true, Version: "v1.34.1", Install: installKubectl, Optional: true},
 		},
 		{
 			name:     "docker daemon down",
@@ -333,7 +333,7 @@ func TestDoctor(t *testing.T) {
 				return []byte(`{"clientVersion":{"gitVersion":"v1.34.1"}}`), nil
 			},
 			wantDocker:  Tool{Name: "docker", Found: true, Detail: "daemon not running", Install: installDocker},
-			wantKubectl: Tool{Name: "kubectl", Found: true, Version: "v1.34.1", Install: installKubectl},
+			wantKubectl: Tool{Name: "kubectl", Found: true, Version: "v1.34.1", Install: installKubectl, Optional: true},
 		},
 		{
 			name:     "binaries missing",
@@ -343,7 +343,7 @@ func TestDoctor(t *testing.T) {
 				return nil, nil
 			},
 			wantDocker:  Tool{Name: "docker", Detail: "binary not found on PATH", Install: installDocker},
-			wantKubectl: Tool{Name: "kubectl", Detail: "binary not found on PATH", Install: installKubectl},
+			wantKubectl: Tool{Name: "kubectl", Detail: "binary not found on PATH", Install: installKubectl, Optional: true},
 		},
 	}
 	for _, tc := range tests {
@@ -351,6 +351,7 @@ func TestDoctor(t *testing.T) {
 			m := New(t.TempDir(), WithStateDir(testStateDir(t)))
 			m.lookPath = tc.lookPath
 			m.run = tc.run
+			m.goos = "darwin"
 			tools, err := m.Doctor(context.Background())
 			if err != nil {
 				t.Fatalf("Doctor: got error %v, want nil", err)
@@ -366,6 +367,98 @@ func TestDoctor(t *testing.T) {
 			}
 			if tools[2].Name != "kind" || !tools[2].Found || tools[2].Version != "v0.33.0" {
 				t.Errorf("kind: got %+v, want Found with version v0.33.0", tools[2])
+			}
+		})
+	}
+}
+
+func TestDoctorDockerMemory(t *testing.T) {
+	tests := []struct {
+		name       string
+		memTotal   string
+		wantDetail string
+	}{
+		{name: "two GiB", memTotal: "2147483648", wantDetail: "2.0 GiB of memory, below the 3 GiB the cluster needs; raise it in Docker Desktop, Settings > Resources"},
+		{name: "eight GiB", memTotal: "8589934592"},
+		{name: "unreadable", memTotal: "<no value>"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := New(t.TempDir(), WithStateDir(testStateDir(t)))
+			m.goos = "darwin"
+			m.lookPath = func(f string) (string, error) { return "/usr/local/bin/" + f, nil }
+			m.run = func(_ context.Context, name string, args ...string) ([]byte, error) {
+				switch {
+				case name == "docker" && args[0] == "info":
+					return []byte(tc.memTotal + "\n"), nil
+				case name == "docker":
+					return []byte("28.3.2\n"), nil
+				}
+				return []byte(`{"clientVersion":{"gitVersion":"v1.34.1"}}`), nil
+			}
+			tools, err := m.Doctor(context.Background())
+			if err != nil {
+				t.Fatalf("Doctor: %v", err)
+			}
+			if got := tools[0]; !got.Found || got.Version != "28.3.2" || got.Detail != tc.wantDetail {
+				t.Errorf("docker: got %+v, want found 28.3.2 with detail %q", got, tc.wantDetail)
+			}
+		})
+	}
+}
+
+func TestDoctorInotify(t *testing.T) {
+	tests := []struct {
+		name      string
+		goos      string
+		files     map[string]string
+		wantRow   bool
+		wantWarn  bool
+		wantValue string
+	}{
+		{name: "linux defaults too low", goos: "linux", files: map[string]string{"max_user_instances": "128\n", "max_user_watches": "8192\n"}, wantRow: true, wantWarn: true, wantValue: "128 instances, 8192 watches"},
+		{name: "linux raised limits", goos: "linux", files: map[string]string{"max_user_instances": "512\n", "max_user_watches": "524288\n"}, wantRow: true, wantValue: "512 instances, 524288 watches"},
+		{name: "linux unreadable", goos: "linux", files: map[string]string{}},
+		{name: "macOS has no row", goos: "darwin", files: map[string]string{"max_user_instances": "1\n", "max_user_watches": "1\n"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := New(t.TempDir(), WithStateDir(testStateDir(t)))
+			m.goos = tc.goos
+			m.lookPath = func(f string) (string, error) { return "/usr/local/bin/" + f, nil }
+			m.run = func(_ context.Context, name string, args ...string) ([]byte, error) {
+				if name == "docker" {
+					return []byte("28.3.2\n"), nil
+				}
+				return []byte(`{"clientVersion":{"gitVersion":"v1.34.1"}}`), nil
+			}
+			m.readFile = func(name string) ([]byte, error) {
+				if v, ok := tc.files[strings.TrimPrefix(name, inotifyDir+"/")]; ok {
+					return []byte(v), nil
+				}
+				return nil, fs.ErrNotExist
+			}
+			tools, err := m.Doctor(context.Background())
+			if err != nil {
+				t.Fatalf("Doctor: %v", err)
+			}
+			var row *Tool
+			for i := range tools {
+				if tools[i].Name == "inotify" {
+					row = &tools[i]
+				}
+			}
+			if (row != nil) != tc.wantRow {
+				t.Fatalf("inotify row: got %+v, want present %v", row, tc.wantRow)
+			}
+			if row == nil {
+				return
+			}
+			if row.Version != tc.wantValue {
+				t.Errorf("inotify version: got %q, want %q", row.Version, tc.wantValue)
+			}
+			if warn := strings.Contains(row.Detail, "sudo sysctl fs.inotify.max_user_instances=512 fs.inotify.max_user_watches=524288"); warn != tc.wantWarn {
+				t.Errorf("inotify detail: got %q, want the sysctl remedy %v", row.Detail, tc.wantWarn)
 			}
 		})
 	}

@@ -2,6 +2,7 @@ package grader
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -76,6 +77,14 @@ func TestWriteKubectlWrapper(t *testing.T) {
 	t.Setenv("PATH", dir+":/usr/bin:/bin")
 	if _, err := WriteKubectlWrapper(dir); err == nil || !strings.Contains(err.Error(), "wrapper itself") {
 		t.Errorf("WriteKubectlWrapper with only the wrapper on PATH: got %v, want a self-reference error", err)
+	}
+}
+
+func TestWriteKubectlWrapperWithoutKubectl(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	_, err := WriteKubectlWrapper(t.TempDir())
+	if !errors.Is(err, exec.ErrNotFound) {
+		t.Errorf("WriteKubectlWrapper without kubectl: got %v, want an error wrapping exec.ErrNotFound", err)
 	}
 }
 

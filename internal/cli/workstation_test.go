@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"strings"
 	"testing"
 
@@ -21,6 +23,9 @@ type fakeWorkstation struct {
 	debugs        []string
 	debugErr      error
 	replays       []string
+	prepares      int
+	prepareOut    string
+	prepareErr    error
 }
 
 func (w *fakeWorkstation) NodeDebug(_ context.Context, clusterName, node, image string) error {
@@ -44,6 +49,14 @@ func (w *fakeWorkstation) record(s string) {
 func (w *fakeWorkstation) DockerAvailable(context.Context) error {
 	w.record("DockerAvailable")
 	return w.dockerErr
+}
+
+func (w *fakeWorkstation) Prepare(_ context.Context, out io.Writer) error {
+	w.prepares++
+	if w.prepareOut != "" {
+		fmt.Fprintln(out, w.prepareOut)
+	}
+	return w.prepareErr
 }
 
 func (w *fakeWorkstation) Shell(_ context.Context, o workstation.ShellOptions) error {
@@ -464,6 +477,90 @@ func TestDefaultResumeWithNamespaceGone(t *testing.T) {
 			}
 			if reset := after.ID != before.ID; reset != tc.wantSeed {
 				t.Errorf("episode reset: got %v, want %v", reset, tc.wantSeed)
+			}
+		})
+	}
+}
+
+func TestDefaultPreparesWorkstationAlongsideCluster(t *testing.T) {
+	cases := []struct {
+		name       string
+		tty        bool
+		prepareErr error
+		wantPrep   int
+		wantOut    []string
+		wantErr    []string
+	}{
+		{name: "interactive run prepares and prints the build log", tty: true, wantPrep: 1, wantOut: []string{"workstation image kubedrill-workstation:abc built in 40s", "started 001-hello-down"}},
+		{name: "a failed preparation is a warning", tty: true, prepareErr: errors.New("prepare workstation: build failed"), wantPrep: 1, wantOut: []string{"started 001-hello-down"}, wantErr: []string{"warning: prepare workstation: build failed; kubedrill tries again when it opens the workstation"}},
+		{name: "no terminal prepares nothing", wantPrep: 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			withWorkstation(f)
+			f.ws.prepareOut = "workstation image kubedrill-workstation:abc built in 40s"
+			f.ws.prepareErr = tc.prepareErr
+			f.stdoutTTY, f.stdinTTY = tc.tty, tc.tty
+			code, out, errOut := f.run(t, "\n")
+			if code != 0 {
+				t.Fatalf("default: exit %d: %s", code, errOut)
+			}
+			if f.ws.prepares != tc.wantPrep {
+				t.Errorf("Prepare calls: got %d, want %d", f.ws.prepares, tc.wantPrep)
+			}
+			mustContain(t, out, tc.wantOut...)
+			mustContain(t, errOut, tc.wantErr...)
+			if tc.wantPrep == 0 {
+				mustNotContain(t, out, "built in")
+			}
+		})
+	}
+}
+
+func TestDefaultOffersToRecreateAStaleCluster(t *testing.T) {
+	cases := []struct {
+		name        string
+		active      bool
+		stale       bool
+		stdin       string
+		wantDeleted int
+		wantOffer   bool
+		want        []string
+	}{
+		{name: "enter recreates", stale: true, stdin: "\nn\n", wantDeleted: 1, wantOffer: true, want: []string{"older audit policy", "cluster kubedrill deleted"}},
+		{name: "n keeps it and is not asked again", stale: true, stdin: "n\nn\n", wantOffer: true, want: []string{"kept the cluster; kubedrill down --yes && kubedrill up recreates it"}},
+		{name: "an active episode keeps the cluster", stale: true, active: true},
+		{name: "a current policy asks nothing"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			withWorkstation(f)
+			if tc.active {
+				if code, _, errOut := f.run(t, "", "start", "001", "--seed", "1", "--no-shell"); code != 0 {
+					t.Fatalf("start: exit %d: %s", code, errOut)
+				}
+			}
+			f.cluster.exists, f.cluster.stale = true, tc.stale
+			f.stdoutTTY, f.stdinTTY = true, true
+			code, out, errOut := f.run(t, tc.stdin)
+			if code != 0 {
+				t.Fatalf("default: exit %d: %s", code, errOut)
+			}
+			if offered := strings.Contains(out, "Recreate the cluster now? [Y/n]"); offered != tc.wantOffer {
+				t.Errorf("recreate offer: got %v, want %v\n%s", offered, tc.wantOffer, out)
+			}
+			mustContain(t, out, tc.want...)
+			if f.cluster.deleted != tc.wantDeleted {
+				t.Errorf("deleted: got %d, want %d", f.cluster.deleted, tc.wantDeleted)
+			}
+			if tc.wantDeleted > 0 && !f.cluster.exists {
+				t.Error("cluster not created again after the recreate")
+			}
+			if tc.wantOffer && tc.wantDeleted == 0 {
+				_, again, _ := f.run(t, "n\n")
+				mustNotContain(t, again, "Recreate the cluster now?")
 			}
 		})
 	}

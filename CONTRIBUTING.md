@@ -71,6 +71,8 @@ just smoke 011      # per variant: checks fail after setup, solve.sh runs, check
 just check-ci       # check, govulncheck and smoke for every scenario, as CI does
 ```
 
+- Contributors need Go (`just check`) and `kubectl` on the host: `hook.sh`,
+  `solve.sh` and script checks run there. Learners need neither.
 - Smoke uses a throwaway journal and its own namespaces. It refuses a
   scenario you have an active episode of, unless `--force`.
 - When the change touches shared code, run `./start.sh smoke` with no

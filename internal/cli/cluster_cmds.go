@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -31,6 +33,15 @@ func (a *app) runDefault(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	practice := a.interactive() && !a.insideWorkstation() && a.getenv("KUBEDRILL_NO_SHELL") != "1"
+	var prep *preparation
+	if practice {
+		if err := a.offerRecreate(ctx, cl); err != nil {
+			return err
+		}
+		prep = a.startPreparation(ctx)
+		defer prep.stop()
+	}
 	a.printf("ensuring cluster %s (profile %s)...\n", cluster.Name, defaultProfile)
 	if err := a.ensureCluster(ctx, cl, defaultProfile, nil); err != nil {
 		return err
@@ -39,10 +50,149 @@ func (a *app) runDefault(ctx context.Context) error {
 	if err := a.runList("", true); err != nil {
 		return err
 	}
-	if !a.interactive() || a.insideWorkstation() || a.getenv("KUBEDRILL_NO_SHELL") == "1" {
+	if !practice {
 		return nil
 	}
+	a.finishPreparation(ctx, prep)
 	return a.continuePractice(ctx)
+}
+
+// recreateOfferFile, under the journal directory, records the cluster
+// whose recreation the learner declined, so the offer is made once per
+// cluster.
+const recreateOfferFile = ".recreate-offer"
+
+// offerRecreate offers to delete a cluster created with an older audit
+// policy, so the default run creates it again with the repository's
+// policy, when no episode is active (an active episode keeps the cluster
+// and gets the notice of start instead). A declined offer is not repeated
+// for the same cluster.
+func (a *app) offerRecreate(ctx context.Context, cl Cluster) error {
+	exists, err := cl.Exists(ctx)
+	if err != nil || !exists {
+		return err
+	}
+	if stale, err := a.auditPolicyStale(ctx); err != nil || !stale {
+		return nil
+	}
+	j, err := a.getJournal()
+	if err != nil {
+		return err
+	}
+	if cur, err := j.Current(); err != nil || cur != nil {
+		return nil
+	}
+	stamp, err := a.clusterStamp(ctx)
+	if err != nil {
+		return nil
+	}
+	marker := filepath.Join(j.Dir(), recreateOfferFile)
+	if prev, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(prev)) == stamp {
+		return nil
+	}
+	a.println(a.printer().WrapLine("the cluster was created with an older audit policy, so the debrief misses part of what you change; no episode is active, so recreating it loses nothing and takes about 2 minutes", "  "))
+	ans, err := a.ask("Recreate the cluster now? [Y/n]")
+	if err != nil {
+		return err
+	}
+	switch strings.ToLower(ans) {
+	case "", "y", "yes":
+		if err := cl.Delete(ctx); err != nil {
+			return err
+		}
+		a.forgetFaults(ctx)
+		a.printf("cluster %s deleted\n", cluster.Name)
+		return nil
+	}
+	if err := os.MkdirAll(j.Dir(), 0o700); err == nil {
+		_ = os.WriteFile(marker, []byte(stamp+"\n"), 0o600)
+	}
+	a.println("kept the cluster; kubedrill down --yes && kubedrill up recreates it")
+	return nil
+}
+
+// preparation is a workstation Prepare running in the background while the
+// cluster is ensured; its output waits in out until the terminal is free.
+type preparation struct {
+	cancel context.CancelFunc
+	done   chan error
+	out    bytes.Buffer
+	err    error
+	waited bool
+}
+
+// startPreparation starts Workstation.Prepare in a goroutine, so the image
+// and linux binary builds overlap with the cluster creation; it returns nil
+// when there is no workstation to prepare. The caller owns the goroutine
+// and ends it with stop.
+func (a *app) startPreparation(ctx context.Context) *preparation {
+	j, err := a.getJournal()
+	if err != nil {
+		return nil
+	}
+	ws, err := a.getWorkstation(j)
+	if err != nil || ws == nil {
+		return nil
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	p := &preparation{cancel: cancel, done: make(chan error, 1)}
+	go func() {
+		p.done <- ws.Prepare(ctx, &p.out)
+	}()
+	return p
+}
+
+// ready reports, without blocking, whether the preparation has ended.
+func (p *preparation) ready() bool {
+	if p.waited {
+		return true
+	}
+	select {
+	case p.err = <-p.done:
+		p.waited = true
+		return true
+	default:
+		return false
+	}
+}
+
+// wait blocks until the preparation ends and returns its error.
+func (p *preparation) wait() error {
+	if !p.waited {
+		p.err = <-p.done
+		p.waited = true
+	}
+	return p.err
+}
+
+// stop cancels the preparation and waits for its goroutine; a nil
+// preparation is a no-op.
+func (p *preparation) stop() {
+	if p == nil {
+		return
+	}
+	p.cancel()
+	_ = p.wait()
+}
+
+// finishPreparation waits for p, printing its output; a failure is a
+// warning, because Shell builds the same things again and reports the
+// error where the learner needs it.
+func (a *app) finishPreparation(ctx context.Context, p *preparation) {
+	if p == nil {
+		return
+	}
+	if !p.ready() {
+		a.progress.Step("finishing the workstation build")
+	}
+	err := p.wait()
+	a.progress.Finish()
+	if out := strings.TrimSpace(p.out.String()); out != "" {
+		a.println(out)
+	}
+	if err != nil && ctx.Err() == nil {
+		fmt.Fprintf(a.stderr, "warning: %v; kubedrill tries again when it opens the workstation\n", err)
+	}
 }
 
 // continuePractice takes the learner from the default run into practice:
@@ -135,7 +285,7 @@ func (a *app) doctorCommand() *cobra.Command {
 				return err
 			}
 			for _, t := range tools {
-				if !t.Found {
+				if !t.Found && !t.Optional {
 					return fmt.Errorf("%s is missing: %s", t.Name, t.Install)
 				}
 			}
@@ -156,7 +306,10 @@ func (a *app) runDoctor(ctx context.Context) ([]cluster.Tool, error) {
 	rows := make([][]string, 0, len(tools))
 	for _, t := range tools {
 		detail := t.Detail
-		if !t.Found && t.Install != "" {
+		switch {
+		case !t.Found && t.Optional:
+			detail = "optional, the workstation has its own; for your own terminal, smoke and scenario hooks: " + t.Install
+		case !t.Found && t.Install != "":
 			detail = "install: " + t.Install
 		}
 		rows = append(rows, []string{t.Name, yesNo(t.Found), render.OrDash(t.Version), render.OrDash(detail)})

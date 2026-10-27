@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"sort"
@@ -164,10 +165,12 @@ func factories(stderr io.Writer, getenv func(string) string, now func() time.Tim
 					return env.ScriptEnv(rd, scriptKubeconfig, "")
 				}),
 			}
-			if dir, err := checkBinDir(state); err != nil {
-				fmt.Fprintf(stderr, "warning: script checks run the plain kubectl and count as learner requests: %v\n", err)
-			} else {
+			dir, err := checkBinDir(state)
+			switch {
+			case err == nil:
 				opts = append(opts, grader.WithPathPrefix(dir))
+			case !errors.Is(err, exec.ErrNotFound):
+				fmt.Fprintf(stderr, "warning: script checks run the plain kubectl and count as learner requests: %v\n", err)
 			}
 			return k, grader.New(k, opts...), nil
 		},
@@ -231,6 +234,8 @@ type unavailableWorkstation struct {
 }
 
 func (u unavailableWorkstation) DockerAvailable(context.Context) error { return u.err }
+
+func (u unavailableWorkstation) Prepare(context.Context, io.Writer) error { return u.err }
 
 func (u unavailableWorkstation) Shell(context.Context, workstation.ShellOptions) error { return u.err }
 

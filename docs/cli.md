@@ -7,9 +7,14 @@ variable and exit code. For how to study with these commands, read
 
 ## Running kubedrill
 
-`./start.sh` builds `bin/kubedrill` with the local Go toolchain and runs it
-with the same arguments.
+`./start.sh` builds `bin/kubedrill` and runs it with the same arguments.
 
+- It builds with the `go` on `PATH`. Without one, and with Docker running,
+  it prints `go is not on PATH; building kubedrill inside a golang container
+  (the first build also downloads the golang image)` and builds inside
+  `GO_BUILD_IMAGE` of `workstation/builder.env`, with the module and build
+  caches under `<state dir>/go`; a later build takes about 2 s. Without
+  either it says Docker is needed and exits 1.
 - `./start.sh` without arguments is the one command a learner needs: it
   runs `kubedrill` without a command (see
   [kubedrill without a command](#kubedrill-without-a-command)), so the first
@@ -651,7 +656,24 @@ Runs the doctor, then `up` with the base profile (base addons included),
 then prints the scenario list and the next recommended scenario.
 
 On a terminal (stdin and stdout), outside the workstation and without
-`KUBEDRILL_NO_SHELL=1`, it continues into practice:
+`KUBEDRILL_NO_SHELL=1`:
+
+- Before `up`, when the cluster exists, was created with an older audit
+  policy and no episode is active, it prints `the cluster was created with
+  an older audit policy, so the debrief misses part of what you change; no
+  episode is active, so recreating it loses nothing and takes about 2
+  minutes` and asks `Recreate the cluster now? [Y/n]`. Enter, `y` or `yes`
+  deletes the cluster (`cluster kubedrill deleted`) and `up` creates it
+  again; any other answer prints `kept the cluster; kubedrill down --yes &&
+  kubedrill up recreates it`, and the question is not asked again for that
+  cluster (`.recreate-offer` in the journal directory).
+- While `up` runs, it builds the workstation image and the linux binary in
+  the background and prints their output after the scenario list, behind a
+  `finishing the workstation build` progress line when they are still
+  running. A failure there is a `warning: ...; kubedrill tries again when it
+  opens the workstation` on stderr.
+
+Then it continues into practice:
 
 - With an active episode it prints `resuming <id>; opening the workstation`
   and opens the workstation as `kubedrill shell` does (the exam workstation
@@ -678,8 +700,20 @@ In a pipe or a script it stops after the list.
 kubedrill doctor
 ```
 
-Table of docker, kubectl and kind: found, version and install hint (`-` when
-there is no detail).
+Table of docker, kubectl, kind and, on a Linux host, inotify: found,
+version and detail (`-` when there is none). Exits 1 when docker is
+missing.
+
+- docker: the detail warns when Docker has less than 3 GiB of memory
+  (`<n> GiB of memory, below the 3 GiB the cluster needs; raise it in Docker
+  Desktop, Settings > Resources`); the idle cluster uses about 1.3 GiB.
+- kubectl is optional: the workstation has its own. When it is missing the
+  detail reads `optional, the workstation has its own; for your own
+  terminal, smoke and scenario hooks: <url>`.
+- inotify (Linux only): `fs.inotify.max_user_instances` and
+  `max_user_watches`; below 512 and 524288, the limits kind documents for
+  multi-node clusters, the detail gives the `sudo sysctl` command that
+  raises them.
 
 ### up
 
@@ -1181,7 +1215,8 @@ How it is computed:
   that runs the real kubectl with argv[0] `kubedrill-check`. kubectl builds
   its user agent from argv[0], so grading never counts as learner reads.
 - When the wrapper cannot be written, a warning says the plain kubectl runs
-  and counts.
+  and counts. Without kubectl on the host there is nothing to wrap and no
+  warning.
 - The shell log and the recordings need the workstation: `kubedrill start`
   on a terminal, or `kubedrill shell`.
 - The audit policy records the request body of the learner's `patch` and
@@ -1284,7 +1319,7 @@ Width:
 |----------|--------|
 | `KUBEDRILL_ROOT` | Repository root when `--root` is not given: `--root` wins, then `KUBEDRILL_ROOT`, then the first ancestor of the working directory with `curriculum.yaml` and `scenarios/` |
 | `KUBEDRILL_DATA` | Journal directory. Default: `$XDG_DATA_HOME/kubedrill` (`~/.local/share/kubedrill`); holds the episodes, the shell log (`journal.ShellLogPath`), the recordings (`journal.RecordingsDir`) and the notice markers |
-| `XDG_STATE_HOME` | Base of the cluster state directory (`$XDG_STATE_HOME/kubedrill/kubedrill`, default `~/.local/state/kubedrill/kubedrill`) holding the audit log (`audit/audit.log`), the kubectl wrapper of script checks and the linux binary (`bin/`), `kubeconfig-internal`, `kubeconfig-scripts`, `audit-policy.sha256` and `faults.json` |
+| `XDG_STATE_HOME` | Base of the cluster state directory (`$XDG_STATE_HOME/kubedrill/kubedrill`, default `~/.local/state/kubedrill/kubedrill`) holding the audit log (`audit/audit.log`), the kubectl wrapper of script checks and the linux binary (`bin/`), the Go caches of a build without host `go` (`go/`), `kubeconfig-internal`, `kubeconfig-scripts`, `audit-policy.sha256` and `faults.json` |
 | `KUBECONFIG` | Its first entry (default `~/.kube/config`) is where the cluster manager places the kind context and the source of the pinned copy exported to scripts |
 | `NO_COLOR` | Any value disables color and markdown styling; output is also plain when stdout is not a terminal |
 | `COLUMNS` | Wrap width on a terminal when it is a positive integer (kept between 40 and 120); otherwise the terminal's own width, else 80 |

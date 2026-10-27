@@ -83,6 +83,7 @@ type Concepts interface {
 // containerized toolbox.
 type Workstation interface {
 	DockerAvailable(ctx context.Context) error
+	Prepare(ctx context.Context, out io.Writer) error
 	Shell(ctx context.Context, opts workstation.ShellOptions) error
 	NodeShell(ctx context.Context, clusterName, node string) error
 	NodeDebug(ctx context.Context, clusterName, node, image string) error

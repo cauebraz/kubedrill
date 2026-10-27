@@ -45,6 +45,8 @@ const (
 	buildTimeout = 10 * time.Minute
 	keepImages   = 7 * 24 * time.Hour
 	stderrTail   = 4096
+	builderFile  = "builder.env"
+	builderVar   = "GO_BUILD_IMAGE"
 
 	// LayoutTmux opens a tmux session with `kubedrill ticket --follow`
 	// above the shell on the left and `kubedrill watch` on the right.
@@ -158,6 +160,7 @@ type Manager struct {
 	out      io.Writer
 	now      func() time.Time
 	run      Runner
+	lookPath func(file string) (string, error)
 	stdin    io.Reader
 	stdout   io.Writer
 	stderr   io.Writer
@@ -171,18 +174,19 @@ type Manager struct {
 // workstation/Dockerfile) and the journal directory dataDir.
 func New(root, dataDir string, opts ...Option) *Manager {
 	m := &Manager{
-		root:    root,
-		dataDir: dataDir,
-		out:     os.Stderr,
-		now:     time.Now,
-		run:     exec.CommandContext,
-		stdin:   os.Stdin,
-		stdout:  os.Stdout,
-		stderr:  os.Stderr,
-		goarch:  runtime.GOARCH,
-		goos:    runtime.GOOS,
-		uid:     os.Getuid(),
-		gid:     os.Getgid(),
+		root:     root,
+		dataDir:  dataDir,
+		out:      os.Stderr,
+		now:      time.Now,
+		run:      exec.CommandContext,
+		lookPath: exec.LookPath,
+		stdin:    os.Stdin,
+		stdout:   os.Stdout,
+		stderr:   os.Stderr,
+		goarch:   runtime.GOARCH,
+		goos:     runtime.GOOS,
+		uid:      os.Getuid(),
+		gid:      os.Getgid(),
 	}
 	for _, o := range opts {
 		o(m)
@@ -322,6 +326,22 @@ func (m *Manager) EnsureImage(ctx context.Context) (string, error) {
 	return tag, nil
 }
 
+// Prepare builds what Shell needs before a session can start, the image
+// (EnsureImage) and the linux binary (EnsureBinary), with their progress
+// written to out instead of the manager's output, so it can run while
+// another step owns the terminal.
+func (m *Manager) Prepare(ctx context.Context, out io.Writer) error {
+	c := *m
+	c.out = out
+	if _, err := c.EnsureImage(ctx); err != nil {
+		return fmt.Errorf("prepare workstation: %w", err)
+	}
+	if _, err := c.EnsureBinary(ctx); err != nil {
+		return fmt.Errorf("prepare workstation: %w", err)
+	}
+	return nil
+}
+
 // killGroupOnCancel runs cmd in its own process group, kills the whole group
 // when its context ends, and stops waiting for its output pipes waitDelay
 // later, so a grandchild that keeps a pipe open cannot hold Run.
@@ -394,8 +414,9 @@ func isImageTag(t string) bool {
 // It runs go build every time and lets the go build cache decide what is
 // stale, so an added, changed or deleted source file always reaches the
 // binary; a build with nothing to do returns in a fraction of a second and
-// leaves the file untouched. The go build is bounded to ten minutes on top
-// of ctx.
+// leaves the file untouched. Without go on PATH it builds inside the
+// golang image of workstation/builder.env (goBuild). The build is bounded
+// to ten minutes on top of ctx.
 func (m *Manager) EnsureBinary(ctx context.Context) (string, error) {
 	out, err := m.binaryPath()
 	if err != nil {
@@ -406,9 +427,10 @@ func (m *Manager) EnsureBinary(ctx context.Context) (string, error) {
 	}
 	bctx, cancel := context.WithTimeout(ctx, buildTimeout)
 	defer cancel()
-	cmd := m.run(bctx, "go", "build", "-buildvcs=false", "-trimpath", "-o", out, "./cmd/kubedrill")
-	cmd.Dir = m.root
-	cmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH="+m.goarch, "CGO_ENABLED=0")
+	cmd, err := m.goBuild(bctx, out)
+	if err != nil {
+		return "", fmt.Errorf("build linux kubedrill into %s: %w", out, err)
+	}
 	cmd.Stdout = m.out
 	cmd.Stderr = m.out
 	cmd.WaitDelay = waitDelay
@@ -420,6 +442,74 @@ func (m *Manager) EnsureBinary(ctx context.Context) (string, error) {
 	}
 	m.pruneBinaries(out)
 	return out, nil
+}
+
+// goBuild returns the command that builds cmd/kubedrill for linux into
+// out: the go on PATH when there is one, otherwise go inside the image
+// GO_BUILD_IMAGE of workstation/builder.env (the file start.sh reads), with
+// the module and build caches under <state>/go so later builds are
+// incremental.
+func (m *Manager) goBuild(ctx context.Context, out string) (*exec.Cmd, error) {
+	args := []string{"build", "-buildvcs=false", "-trimpath", "-o", out, "./cmd/kubedrill"}
+	if _, err := m.lookPath("go"); err == nil {
+		cmd := m.run(ctx, "go", args...)
+		cmd.Dir = m.root
+		cmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH="+m.goarch, "CGO_ENABLED=0")
+		return cmd, nil
+	}
+	image, err := m.builderImage()
+	if err != nil {
+		return nil, err
+	}
+	state, err := m.state()
+	if err != nil {
+		return nil, err
+	}
+	cache := filepath.Join(state, "go")
+	if err := atomicfile.MkdirPrivate(cache); err != nil {
+		return nil, err
+	}
+	sources := make([]string, 3)
+	for i, p := range []string{m.root, filepath.Dir(out), cache} {
+		if sources[i], err = hostPath(p); err != nil {
+			return nil, err
+		}
+	}
+	fmt.Fprintf(m.out, "go is not on PATH; building kubedrill for the workstation inside %s\n", image)
+	dargs := []string{"run", "--rm"}
+	dargs = append(dargs, m.linuxUser()...)
+	dargs = append(dargs,
+		"-e", "HOME=/tmp",
+		"-e", "GOCACHE=/cache/build",
+		"-e", "GOMODCACHE=/cache/mod",
+		"-e", "GOOS=linux",
+		"-e", "GOARCH="+m.goarch,
+		"-e", "CGO_ENABLED=0",
+	)
+	dargs = append(dargs, bindMount(sources[0], "/src", true)...)
+	dargs = append(dargs, bindMount(sources[1], "/out", false)...)
+	dargs = append(dargs, bindMount(sources[2], "/cache", false)...)
+	dargs = append(dargs, "-w", "/src", image, "go", "build", "-buildvcs=false", "-trimpath", "-o", "/out/"+filepath.Base(out), "./cmd/kubedrill")
+	return m.docker(ctx, dargs...), nil
+}
+
+// builderImage reads GO_BUILD_IMAGE from workstation/builder.env and
+// requires it pinned by digest.
+func (m *Manager) builderImage() (string, error) {
+	path := filepath.Join(m.root, imageDir, builderFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("go is not on PATH and the build image is unknown: %w", err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(line), builderVar+"="); ok {
+			if !strings.Contains(v, "@sha256:") {
+				return "", fmt.Errorf("%s: %s %q is not pinned by digest", path, builderVar, v)
+			}
+			return v, nil
+		}
+	}
+	return "", fmt.Errorf("%s: no %s line", path, builderVar)
 }
 
 // pruneBinaries removes the linux binaries of other checkouts or

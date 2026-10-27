@@ -221,8 +221,9 @@ Already done, documented elsewhere:
 Still to do:
 
 - Prebuilt binaries: `kubedrill` for macOS and Linux via GoReleaser (a
-  `.goreleaser.yaml` and a tag-triggered release workflow), so Go is no
-  longer required. `start.sh` says so when `go` is missing.
+  `.goreleaser.yaml` and a tag-triggered release workflow) and a published
+  workstation image, so the first run downloads instead of building. Until
+  then `start.sh` builds inside a golang container when `go` is missing.
 - Cluster-scoped objects in scenarios: ClusterRoles, CRDs, PriorityClasses
   and node labels, declared in `scenario.toml` with their cleanup, so a reset
   removes them with the namespace.

@@ -8,8 +8,10 @@ fix that works passes. No slides, no multiple choice.
 
 ## Quick start
 
-You need Docker running, `kubectl`, and Go 1.27.3 on `PATH`. kind is built
-into the binary, so there is nothing else to install.
+You need Docker running. kind is built into the binary, the workstation
+brings its own `kubectl`, and without Go 1.27.3 on `PATH` `./start.sh`
+builds `kubedrill` inside a golang container, so there is nothing else to
+install.
 
 ```sh
 git clone https://github.com/cauebraz/kubedrill.git && cd kubedrill && ./start.sh
@@ -21,9 +23,9 @@ plane, two workers) and offers your first scenario. Press Enter and the
 workstation opens. Next time, run `./start.sh` again: it reopens the
 scenario you were on, or offers the next one.
 
-The first run downloads the kind node image (about 1 GB). The first
-`kubedrill start` also builds the workstation image (about 800 MB). Both
-take a few minutes, once. `up` also preloads the images the scenarios need,
+The first run downloads the kind node image (about 1 GB) and builds the
+workstation image (about 800 MB) while the cluster starts. Both take a few
+minutes, once. `up` also preloads the images the scenarios need,
 so practice after it works without a registry. `kubedrill up --addons
 gateway,kwok` adds Envoy Gateway and KWOK to the cluster.
 

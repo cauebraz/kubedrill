@@ -648,13 +648,12 @@ func (a *app) auditPolicyStale(ctx context.Context) (bool, error) {
 	return cl.AuditPolicyStale(ctx)
 }
 
-// noticeOnce prints text on stderr unless the marker file under the journal
-// directory already records the current cluster (its creation time when
-// the cluster reports one, "shown" otherwise), then records it.
-func (a *app) noticeOnce(ctx context.Context, j Journal, file, text string) {
+// clusterStamp identifies the current cluster in a marker file: its
+// creation time when the cluster reports one, "shown" otherwise.
+func (a *app) clusterStamp(ctx context.Context) (string, error) {
 	cl, err := a.getCluster()
 	if err != nil {
-		return
+		return "", err
 	}
 	stamp := "shown"
 	if cc, ok := cl.(clusterCreated); ok {
@@ -664,6 +663,17 @@ func (a *app) noticeOnce(ctx context.Context, j Journal, file, text string) {
 		if err == nil && !created.IsZero() {
 			stamp = created.UTC().Format(time.RFC3339)
 		}
+	}
+	return stamp, nil
+}
+
+// noticeOnce prints text on stderr unless the marker file under the journal
+// directory already records the current cluster (its creation time when
+// the cluster reports one, "shown" otherwise), then records it.
+func (a *app) noticeOnce(ctx context.Context, j Journal, file, text string) {
+	stamp, err := a.clusterStamp(ctx)
+	if err != nil {
+		return
 	}
 	marker := filepath.Join(j.Dir(), file)
 	if err := os.MkdirAll(j.Dir(), 0o700); err != nil {

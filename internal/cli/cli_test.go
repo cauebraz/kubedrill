@@ -89,7 +89,11 @@ func (c *fakeCluster) EnsureAddons(_ context.Context, k cluster.AddonApplier, na
 	c.addons = append(c.addons, names)
 	return nil
 }
-func (c *fakeCluster) Delete(context.Context) error { c.deleted++; return nil }
+func (c *fakeCluster) Delete(context.Context) error {
+	c.deleted++
+	c.exists, c.stale = false, false
+	return nil
+}
 func (c *fakeCluster) Kubeconfig() (string, string, error) {
 	return "/tmp/kubeconfig", "kind-kubedrill", nil
 }

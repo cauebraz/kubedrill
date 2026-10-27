@@ -5,9 +5,10 @@ the Kubernetes tools installed, connected to the training cluster. Like the
 remote terminal of the CKA exam, it is the same environment on every
 machine.
 
-`kubedrill start <id>` opens it for you. On the host you only need Docker,
-`kubectl` and a Go toolchain that satisfies `go.mod`; Go cross-compiles the
-linux `kubedrill` binary the container uses.
+`kubedrill start <id>` opens it for you. On the host you only need Docker.
+Go cross-compiles the linux `kubedrill` binary the container uses: the
+host's `go` when it is on `PATH`, otherwise the golang image of
+`workstation/builder.env`.
 
 ## What you see
 
@@ -301,8 +302,8 @@ No capability is added back. The image strips the file capability of `ping`
 
 ### Image and binary
 
-- Image tag: `kubedrill-workstation:<12 hex>`, a sha256 over the six files
-  in `workstation/`. Changing any of them changes the tag, so the next
+- Image tag: `kubedrill-workstation:<12 hex>`, a sha256 over the six image
+  files in `workstation/` (not `builder.env`). Changing any of them changes the tag, so the next
   `kubedrill shell` builds the new image. Maintainer notes are in
   [workstation/README.md](../workstation/README.md).
 - `EnsureImage` runs `docker image inspect` and builds only when the tag is
@@ -329,6 +330,15 @@ No capability is added back. The image strips the file capability of `ping`
   every run; the Go build cache makes an unchanged tree a no-op of about
   0.2 s, and a deleted source file is never left in a stale binary. It then
   removes the binaries of other checkouts last built more than 7 days ago.
+- Without `go` on `PATH`, `EnsureBinary` prints `go is not on PATH; building
+  kubedrill for the workstation inside <image>` and runs the same build in
+  `GO_BUILD_IMAGE` of `workstation/builder.env` (pinned by digest, its Go
+  version equal to `go.mod`, which a test checks), with the repository
+  mounted read-only and the module and build caches under `<state dir>/go`.
+  `start.sh` reads the same file.
+- The default `kubedrill` run calls `Prepare`, which runs `EnsureImage` and
+  `EnsureBinary` while the cluster is created, so the first workstation
+  opens without a second wait.
 
 ### tmux layout
 
