@@ -162,7 +162,9 @@ __kubedrill_motd() {
   if [ -n "${TMUX:-}" ]; then
     printf 'copy: Ctrl-b m turns the tmux mouse off, then drag selects and Cmd-c copies; Ctrl-b m again turns it on\n'
   fi
-  if [ "${KUBEDRILL_TICKET_PANE:-}" = 1 ]; then
+  if [ "${KUBEDRILL_WEB:-}" = 1 ]; then
+    printf 'ticket: the panel on the left of the page (kubedrill ticket prints it here)\n'
+  elif [ "${KUBEDRILL_TICKET_PANE:-}" = 1 ]; then
     printf 'ticket: the pane above (mouse wheel scrolls it; kubedrill ticket prints it here)\n'
   elif command -v kubedrill >/dev/null 2>&1; then
     kubedrill ticket 2>/dev/null || true

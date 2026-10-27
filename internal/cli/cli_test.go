@@ -62,8 +62,11 @@ func (c *fakeCluster) Ensure(_ context.Context, profile string, data cluster.Pro
 	c.exists = true
 	return nil
 }
-func (c *fakeCluster) AuditEnabled(context.Context) (bool, error) {
+func (c *fakeCluster) AuditEnabled(ctx context.Context) (bool, error) {
 	c.auditAsks++
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	return c.audit, c.auditErr
 }
 func (c *fakeCluster) AuditPolicyStale(context.Context) (bool, error) {

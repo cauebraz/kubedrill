@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -26,6 +27,7 @@ type fakeWorkstation struct {
 	prepares      int
 	prepareOut    string
 	prepareErr    error
+	removed       []string
 }
 
 func (w *fakeWorkstation) NodeDebug(_ context.Context, clusterName, node, image string) error {
@@ -62,6 +64,18 @@ func (w *fakeWorkstation) Prepare(_ context.Context, out io.Writer) error {
 func (w *fakeWorkstation) Shell(_ context.Context, o workstation.ShellOptions) error {
 	w.record("Shell")
 	w.shells = append(w.shells, o)
+	return nil
+}
+
+func (w *fakeWorkstation) ShellCommand(_ context.Context, o workstation.ShellOptions) (*exec.Cmd, error) {
+	w.record("ShellCommand " + o.Name)
+	w.shells = append(w.shells, o)
+	return exec.Command("sh", "-c", "echo workstation ready; cat"), nil
+}
+
+func (w *fakeWorkstation) RemoveContainer(_ context.Context, name string) error {
+	w.record("RemoveContainer " + name)
+	w.removed = append(w.removed, name)
 	return nil
 }
 
@@ -413,7 +427,7 @@ func TestDefaultContinuesIntoPractice(t *testing.T) {
 		want      []string
 	}{
 		{name: "enter starts the recommendation", stdin: "\n", wantStart: true, wantShell: 1, want: []string{"Start 001-hello-down now? [Y/n]", "started 001-hello-down"}},
-		{name: "n leaves it", stdin: "n\n", want: []string{"Start 001-hello-down now? [Y/n]", "not started; run ./start.sh again"}},
+		{name: "n leaves it", stdin: "n\n", want: []string{"Start 001-hello-down now? [Y/n]", "not started; run kubedrill again"}},
 		{name: "active episode resumes", active: true, wantShell: 1, want: []string{"resuming 001-hello-down; opening the workstation"}},
 	}
 	for _, tc := range cases {

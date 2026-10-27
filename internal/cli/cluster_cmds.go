@@ -197,7 +197,7 @@ func (a *app) finishPreparation(ctx context.Context, p *preparation) {
 
 // continuePractice takes the learner from the default run into practice:
 // the workstation of the active episode, or the recommended scenario after
-// a [Y/n] prompt, so ./start.sh is the one command to remember.
+// a [Y/n] prompt, so kubedrill alone is the terminal way in.
 func (a *app) continuePractice(ctx context.Context) error {
 	a.expireIfDue(ctx)
 	j, err := a.getJournal()
@@ -229,7 +229,7 @@ func (a *app) continuePractice(ctx context.Context) error {
 	case "", "y", "yes":
 		return a.runStart(ctx, pick.Ref, startOptions{seed: pick.Seed, layout: layoutTmux})
 	}
-	a.println(a.printer().WrapLine(fmt.Sprintf("not started; run ./start.sh again or kubedrill start %s when you are ready", pick.Ref), "  "))
+	a.println(a.printer().WrapLine(fmt.Sprintf("not started; run kubedrill again or kubedrill start %s when you are ready", pick.Ref), "  "))
 	return nil
 }
 

@@ -13,6 +13,7 @@ import (
 	"io"
 	"math/rand/v2"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -85,6 +86,8 @@ type Workstation interface {
 	DockerAvailable(ctx context.Context) error
 	Prepare(ctx context.Context, out io.Writer) error
 	Shell(ctx context.Context, opts workstation.ShellOptions) error
+	ShellCommand(ctx context.Context, opts workstation.ShellOptions) (*exec.Cmd, error)
+	RemoveContainer(ctx context.Context, name string) error
 	NodeShell(ctx context.Context, clusterName, node string) error
 	NodeDebug(ctx context.Context, clusterName, node, image string) error
 	Replay(ctx context.Context, cast string) error
@@ -548,7 +551,8 @@ func (a *app) getSession(ctx context.Context, j Journal, progress func(string), 
 		d.Healer = fm
 	}
 	if learner && a.f.Telemetry != nil {
-		d.Telemetry = a.f.Telemetry(j.Dir(), func() bool { return a.auditEnabled(ctx) })
+		auditCtx := context.WithoutCancel(ctx)
+		d.Telemetry = a.f.Telemetry(j.Dir(), func() bool { return a.auditEnabled(auditCtx) })
 	}
 	return env.New(d), conn, nil
 }

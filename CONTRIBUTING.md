@@ -57,7 +57,24 @@ the path from idea to pull request. Every file and field is described in
 8. **`story.md`** (optional, recommended for L0 and for a first object). The
    ticket told from zero for a newcomer, under five fixed headings, true for
    every variant. [Sections](docs/scenario-format.md#storymd).
-9. **Finish.** Delete the template's comments and marker lines, add the id
+9. **`simulation.yaml`** (optional, recommended for L0 and L1; delete the
+   scaffolded file for a lab-only scenario). The browser workspace's
+   customer meeting, object diagram, quiz and guided steps;
+   `scenarios/L0/001-storefront-down/simulation.yaml` is the example.
+   [Format](docs/scenario-format.md#simulationyaml).
+   - Write it after `solution/README.md`: `kubedrill draft-guide <id>`
+     turns the walkthrough's commands into guide steps to edit, and
+     `kubedrill draft-guide <id> --check` flags guide commands the
+     walkthrough never runs.
+   - Write the meeting from the ticket: one turn per fact the learner needs
+     (what changed, the exact symptom, the reference that works, what done
+     means). A wrong choice is a move a real engineer would try, its reply
+     is still a real fact, and its feedback says what a better question
+     learns. No joke options: a distractor that nobody would pick teaches
+     nothing.
+   - Keep it with the page open: `kubedrill web --preview <id>` needs no
+     cluster and shows each edit on reload.
+10. **Finish.** Delete the template's comments and marker lines, add the id
    to its module in `curriculum.yaml` (lint refuses a scenario the
    curriculum does not list), add the row to the scenario table in
    `README.md`, then run the checks below.
@@ -78,6 +95,13 @@ just check-ci       # check, govulncheck and smoke for every scenario, as CI doe
 - When the change touches shared code, run `./start.sh smoke` with no
   argument before opening the pull request.
 - `just vuln` runs govulncheck alone and needs network.
+- Changes to the browser workspace (`internal/web/`): `just web-dev` serves
+  it on an in-memory backend with the files read from disk, no cluster
+  needed; `just ui-test` drives every stage in headless Chrome, and `just
+  ui-test /tmp/shots` also saves a screenshot of each screen in both
+  themes for the pull request. A deliberate change to the API's JSON
+  updates the snapshots with `go test ./internal/web -run TestSnapshots
+  -update`.
 
 What runs in CI:
 

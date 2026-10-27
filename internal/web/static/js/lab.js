@@ -1,0 +1,370 @@
+// Stages 4 and 5: the guided practice and the DIY run on a live namespace.
+
+import { api, start } from "./api.js";
+import { el, clear, store, toast, onLeave, duration, icons } from "./dom.js";
+import { bind, pushOverlay } from "./keys.js";
+
+export function renderLab(stage, a, next, stageId) {
+  clear(stage, el("p", { class: "loading", text: "Checking the environment..." }));
+  api.get("/api/session").then((s) => {
+    const act = s.active;
+    if (act && act.scenarioId === a.id && act.stage === stageId) { workspace(stage, a, stageId, act); return; }
+    launchPanel(stage, a, stageId, act);
+  }).catch((e) => clear(stage, el("p", { class: "loading", text: e.message })));
+}
+
+function launchPanel(stage, a, stageId, act) {
+  const isDIY = stageId === "diy";
+  const btn = el("button", { class: "btn primary", text: isDIY ? "Launch the DIY environment" : "Launch the practice environment" });
+  const steps = el("ol", { class: "launch-steps", "aria-live": "polite" });
+  const other = act ? el("div", { class: "callout" },
+    el("div", null, el("b", { text: act.scenarioId === a.id ? "A run of this assignment is in progress. " : act.scenarioId + " is active. " }),
+      "Launching ends it and records it as failed. ",
+      el("a", { class: "link", href: "#/a/" + encodeURIComponent(act.scenarioId) + "/" + (act.stage || "practice"), text: "Go back to it" }))) : null;
+  const small = window.matchMedia("(max-width: 960px)").matches
+    ? el("div", { class: "callout info", text: "The lab shows a terminal next to the steps; it needs a window at least 960 pixels wide." }) : null;
+  const launch = () => {
+    btn.disabled = true;
+    btn.textContent = "Launching...";
+    clear(steps);
+    let last = null;
+    start({ id: a.id, stage: stageId, replace: !!act }, (step) => {
+      if (last) { last.classList.add("done"); }
+      last = el("li", { class: "running", text: step });
+      steps.appendChild(last);
+    }).then(() => {
+      if (last) { last.classList.add("done"); }
+      renderLab(stage, a, null, stageId);
+    }).catch((e) => {
+      if (last) { last.classList.add("failed"); }
+      btn.disabled = false;
+      btn.textContent = "Try again";
+      toast(e.message, true);
+    });
+  };
+  btn.addEventListener("click", launch);
+  bind("Enter", "Launch the environment", () => { if (!btn.disabled) { launch(); } });
+  clear(stage, el("div", { class: "card launch" },
+    el("div", { class: "eyebrow", text: isDIY ? "Stage 5 / Do it yourself" : "Stage 4 / Guided practice" }),
+    el("h1", { text: isDIY ? "Now fix it on your own" : "Fix it step by step on a live cluster" }),
+    el("ul", { class: "launch-points" }, (isDIY
+      ? ["Same ticket, a different planted cause: what fixed the practice run will not be enough.", "No guide. The mentor gives hints, and the last one waits until you name a cause.", "Validate when you think the customer is happy; the checks grade the end state, so any fix that works passes."]
+      : ["A fresh namespace on your local cluster with the problem planted.", "A terminal in the page, already pointed at the namespace, with kubectl, k9s and helm.", "The steps on the left; the ones that change the cluster turn green on their own."]).map((t) => el("li", { text: t }))),
+    other, small,
+    el("div", { class: "launch-actions" }, btn, el("span", { class: "small muted" }, el("kbd", { class: "kbd", text: "Enter" }), " about 20 seconds")),
+    steps));
+  btn.focus();
+}
+
+function workspace(stage, a, stageId, act) {
+  const isDIY = stageId === "diy";
+  const guided = !isDIY && act.guide && act.guide.length;
+  const manualKey = "kd:guide:" + act.episodeId;
+  const manual = store(manualKey) || [];
+  const tabKey = "kd:tab:" + act.episodeId;
+  let tab = store(tabKey) || (guided ? "steps" : "ticket");
+  let lastChecks = [];
+  stage.classList.add("lab-stage");
+  onLeave(() => stage.classList.remove("lab-stage"));
+
+  const sideTabs = el("div", { class: "tabs side-tabs", role: "tablist" });
+  const sideBody = el("div", { class: "side-body" });
+  const side = el("aside", { class: "lab-side" },
+    el("div", { class: "lab-side-head" },
+      el("div", { class: "eyebrow", text: isDIY ? "Stage 5 / Do it yourself" : "Stage 4 / Guided practice" }),
+      el("h3", { text: a.title }),
+      sideTabs),
+    sideBody);
+  const termBox = el("div", { class: "term" });
+  const termState = el("span", { class: "state", text: "connecting" });
+  const timer = el("span", { class: "timer", title: "Time since the run started, against the expected minutes" });
+  const reconnect = el("button", { class: "term-btn", hidden: true, title: "Open a new terminal", html: icons.refresh + "<span>Reconnect</span>" });
+  const checksBar = el("div", { class: "checks", role: "status", "aria-label": "Live checks" });
+  const validateBtn = el("button", { class: "btn primary", title: "Grade the namespace now" }, "Validate ", el("kbd", { class: "kbd on-accent", text: navigator.platform.includes("Mac") ? "Cmd Enter" : "Ctrl Enter" }));
+  const hintPill = el("span", { class: "pill warn", hidden: act.hintsUsed === 0, title: "Hinted attempts still count as solves, not as clean solves for mastery" });
+  const mentorBtn = el("button", { class: "btn" }, "Mentor");
+  const updateMentor = () => {
+    mentorBtn.textContent = act.hintsTotal ? "Mentor (" + act.hintsUsed + "/" + act.hintsTotal + ")" : "Mentor";
+    hintPill.hidden = act.hintsUsed === 0;
+    hintPill.textContent = act.hintsUsed + " hint" + (act.hintsUsed === 1 ? "" : "s") + " used";
+  };
+  updateMentor();
+  clear(stage, el("div", { class: "lab" }, side,
+    el("div", { class: "lab-main" },
+      el("div", { class: "term-bar" },
+        el("span", { class: "lights", "aria-hidden": "true" }, el("i"), el("i"), el("i")),
+        el("span", null, "workstation ", el("span", { class: "ns", text: act.namespace })),
+        timer, reconnect, termState),
+      termBox),
+    el("div", { class: "lab-foot" }, checksBar, el("div", { class: "foot-actions" }, hintPill, mentorBtn, validateBtn))));
+
+  let term = startTerminal(termBox, termState, reconnect);
+  reconnect.addEventListener("click", () => { term.close(); clear(termBox); term = startTerminal(termBox, termState, reconnect); });
+  onLeave(() => term.close());
+
+  const started = new Date(act.startedAt).getTime();
+  const tick = () => {
+    const s = (Date.now() - started) / 1000;
+    timer.textContent = duration(s) + " / " + act.minutes + " min";
+    timer.classList.toggle("over", s > act.minutes * 60);
+  };
+  tick();
+  const clock = setInterval(tick, 1000);
+  onLeave(() => clearInterval(clock));
+
+  const beforeUnload = (e) => { if (term.connected()) { e.preventDefault(); e.returnValue = ""; } };
+  window.addEventListener("beforeunload", beforeUnload);
+  onLeave(() => window.removeEventListener("beforeunload", beforeUnload));
+
+  function drawTabs() {
+    const list = [];
+    if (guided) { list.push(["steps", "Steps"]); }
+    list.push(["ticket", "Ticket"]);
+    if (act.story) { list.push(["story", "Story"]); }
+    if (!list.some(([id]) => id === tab)) { tab = list[0][0]; }
+    clear(sideTabs, list.map(([id, label]) => el("button", { class: "tab" + (id === tab ? " on" : ""), role: "tab", "aria-selected": id === tab ? "true" : "false", text: label, onclick: () => { tab = id; store(tabKey, id); drawTabs(); drawSide(); } })));
+  }
+
+  function doneSteps() {
+    const passed = Object.fromEntries(lastChecks.map((c) => [c.id, c.status === "pass"]));
+    const done = act.guide.map((g, i) => g.check ? !!passed[g.check] : manual.includes(i));
+    let later = false;
+    for (let k = done.length - 1; k >= 0; k--) {
+      if (later) { done[k] = true; }
+      if (act.guide[k].check && done[k]) { later = true; }
+    }
+    return done;
+  }
+
+  function drawSide() {
+    if (tab === "ticket") { clear(sideBody, el("div", { class: "ticket", html: act.ticket })); return; }
+    if (tab === "story") { clear(sideBody, el("div", { class: "ticket", html: act.story })); return; }
+    const done = doneSteps();
+    const current = done.indexOf(false);
+    clear(sideBody,
+      el("p", { class: "side-note", text: done.filter(Boolean).length + " of " + act.guide.length + " steps. Type it puts the command at the prompt without running it; read it, then press Enter. Shift-click runs it." }),
+      el("ol", { class: "guide" }, act.guide.map((g, i) => {
+        const actions = el("div", { class: "gstep-actions" });
+        if (g.command) {
+          actions.appendChild(el("button", { class: "btn small", title: "Type the command at the prompt; Shift-click also runs it", text: "Type it", onclick: (e) => { term.send(g.command + (e.shiftKey ? "\r" : "")); term.focus(); } }));
+        }
+        if (!g.check) {
+          actions.appendChild(el("button", { class: "btn small" + (done[i] ? " ghost" : ""), text: done[i] ? "Undo" : "Mark done", onclick: () => {
+            const at = manual.indexOf(i);
+            if (at >= 0) { manual.splice(at, 1); } else { manual.push(i); }
+            store(manualKey, manual);
+            drawSide();
+          } }));
+        } else if (!done[i]) {
+          actions.prepend(el("span", { class: "planned", text: "green when the cluster shows it" }));
+        }
+        return el("li", { class: "gstep" + (done[i] ? " done" : "") + (i === current ? " current" : ""), "aria-current": i === current ? "step" : null },
+          el("div", { class: "gstep-head" }, el("span", { class: "tick", "aria-hidden": "true", text: done[i] ? "\u2713" : String(i + 1) }), el("span", { text: g.title }), done[i] ? el("span", { class: "sr-only", text: " (done)" }) : null),
+          el("div", { class: "body", html: g.body }),
+          g.command ? el("div", { class: "cmd" }, el("code", { text: g.command })) : null,
+          actions);
+      })));
+  }
+
+  let popover = null;
+  function showCheck(c, anchor) {
+    if (popover) { popover.remove(); popover = null; }
+    const close = () => { if (popover) { popover.remove(); popover = null; } };
+    popover = el("div", { class: "popover", role: "dialog", "aria-label": c.description },
+      el("div", { class: "pop-head" }, el("span", { class: "pill " + (c.status === "pass" ? "good" : c.status === "skipped" ? "" : "bad"), text: c.status }), el("b", { text: c.description })),
+      c.why ? el("p", { class: "small", text: c.why }) : null,
+      c.expected ? el("div", { class: "kv" }, el("span", { text: "expected" }), el("code", { text: c.expected })) : null,
+      c.actual ? el("div", { class: "kv" }, el("span", { text: "actual" }), el("code", { text: c.actual })) : null,
+      c.message ? el("div", { class: "kv" }, el("span", { text: "note" }), el("span", { text: c.message })) : null);
+    document.body.appendChild(popover);
+    const r = anchor.getBoundingClientRect();
+    popover.style.left = Math.max(12, Math.min(r.left, window.innerWidth - popover.offsetWidth - 12)) + "px";
+    popover.style.top = (r.top - popover.offsetHeight - 8) + "px";
+    const release = pushOverlay(close);
+    setTimeout(() => document.addEventListener("click", function off(e) { if (popover && !popover.contains(e.target)) { close(); release(); document.removeEventListener("click", off); } }), 0);
+  }
+  onLeave(() => { if (popover) { popover.remove(); } });
+
+  function drawChecks(s) {
+    if (s.checkError) { clear(checksBar, el("span", { class: "chk error" }, el("span", { text: s.checkError }))); return; }
+    const list = s.checks || [];
+    const ok = list.filter((c) => c.status === "pass").length;
+    clear(checksBar, el("span", { class: "sum", text: "Checks " + ok + "/" + list.length }),
+      list.map((c) => el("button", { class: "chk " + c.status, title: "Details", onclick: (e) => showCheck(c, e.currentTarget) }, el("span", { text: c.description }))));
+  }
+
+  let delay = 5000, unchanged = 0, lastKey = "", timerID = 0;
+  function poll() {
+    clearTimeout(timerID);
+    if (document.hidden) { return; }
+    api.get("/api/session?live=1").then((s) => {
+      if (!s.active || s.active.episodeId !== act.episodeId) { return; }
+      act = s.active;
+      updateMentor();
+      lastChecks = s.checks || [];
+      const key = JSON.stringify(lastChecks.map((c) => c.status));
+      unchanged = key === lastKey ? unchanged + 1 : 0;
+      lastKey = key;
+      delay = unchanged >= 12 ? 15000 : 5000;
+      drawChecks(s);
+      if (tab === "steps") { drawSide(); }
+    }).catch(() => {}).finally(() => { timerID = setTimeout(poll, delay); });
+  }
+  const onVisible = () => { if (!document.hidden) { unchanged = 0; poll(); } };
+  document.addEventListener("visibilitychange", onVisible);
+  term.onInput(() => { if (unchanged >= 12) { unchanged = 0; delay = 5000; clearTimeout(timerID); timerID = setTimeout(poll, 1500); } });
+  onLeave(() => { clearTimeout(timerID); document.removeEventListener("visibilitychange", onVisible); });
+
+  drawTabs();
+  drawSide();
+  poll();
+
+  const openMentorDrawer = () => openMentor(act, () => updateMentor());
+  mentorBtn.addEventListener("click", openMentorDrawer);
+  const validate = () => {
+    if (validateBtn.disabled) { return; }
+    validateBtn.disabled = true;
+    api.post("/api/validate").then((v) => {
+      if (v.passed) {
+        location.hash = "#/a/" + encodeURIComponent(a.id) + "/debrief/" + encodeURIComponent(v.episodeId);
+        return;
+      }
+      showFailure(v, isDIY);
+    }).catch((e) => toast(e.message, true)).finally(() => { validateBtn.disabled = false; });
+  };
+  validateBtn.addEventListener("click", validate);
+  bind("mod+Enter", "Validate the namespace", validate);
+  bind("mod+.", "Open the mentor", openMentorDrawer);
+  bind("mod+=", "Larger terminal text", () => term.zoom(1));
+  bind("mod+-", "Smaller terminal text", () => term.zoom(-1));
+}
+
+function startTerminal(box, stateEl, reconnect) {
+  const size = store("kd:term-font") || 13;
+  const term = new window.Terminal({
+    cursorBlink: true,
+    fontFamily: '"JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace',
+    fontSize: size,
+    theme: { background: "#050507", foreground: "#e4e4e7", cursor: "#2dd4bf", cursorAccent: "#050507", selectionBackground: "#1f3d3a", black: "#18181b", brightBlack: "#52525b", blue: "#60a5fa", green: "#34d399", yellow: "#fbbf24", red: "#f87171", cyan: "#2dd4bf", magenta: "#c084fc" },
+    scrollback: 5000
+  });
+  const fit = new window.FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(box);
+  try { fit.fit(); } catch (e) { /* not laid out yet */ }
+  const ws = new WebSocket((location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host + "/ws/terminal?cols=" + term.cols + "&rows=" + term.rows);
+  ws.binaryType = "arraybuffer";
+  const decoder = new TextDecoder();
+  let connected = false;
+  const inputListeners = [];
+  term.writeln("\x1b[90mStarting the workstation container...\x1b[0m");
+  stateEl.textContent = "connecting";
+  stateEl.className = "state";
+  reconnect.hidden = true;
+  ws.onopen = () => { connected = true; stateEl.textContent = "connected"; stateEl.className = "state on"; };
+  ws.onmessage = (ev) => term.write(typeof ev.data === "string" ? ev.data : decoder.decode(new Uint8Array(ev.data), { stream: true }));
+  ws.onclose = () => {
+    connected = false;
+    stateEl.textContent = "disconnected";
+    stateEl.className = "state off";
+    reconnect.hidden = false;
+    term.writeln("\r\n\x1b[90m[the terminal session ended; Reconnect opens a new one, the namespace is unchanged]\x1b[0m");
+  };
+  const send = (obj) => { if (ws.readyState === 1) { ws.send(JSON.stringify(obj)); } };
+  term.onData((d) => { send({ t: "i", d }); inputListeners.forEach((f) => f()); });
+  const resize = () => {
+    try { fit.fit(); } catch (e) { return; }
+    send({ t: "r", c: term.cols, r: term.rows });
+  };
+  const ro = new ResizeObserver(resize);
+  ro.observe(box);
+  setTimeout(() => { resize(); term.focus(); }, 50);
+  return {
+    send: (text) => send({ t: "i", d: text }),
+    focus: () => term.focus(),
+    connected: () => connected,
+    onInput: (f) => inputListeners.push(f),
+    zoom: (d) => {
+      const s = Math.max(10, Math.min(22, term.options.fontSize + d));
+      term.options.fontSize = s;
+      store("kd:term-font", s);
+      resize();
+    },
+    close: () => { ro.disconnect(); try { ws.close(); } catch (e) { /* closed */ } term.dispose(); }
+  };
+}
+
+function openMentor(act, onChange) {
+  const back = el("div", { class: "drawer-back" });
+  const body = el("div", { class: "drawer-body", "aria-live": "polite" });
+  const msg = (kind, html, cls) => { body.appendChild(el("div", { class: "mentor-msg" + (cls ? " " + cls : "") }, el("div", { class: "k", text: kind }), el("div", { html }))); body.scrollTop = body.scrollHeight; };
+  if (act.mentor) { msg("Mentor", act.mentor); }
+  if (!act.hintsUsed) {
+    msg("Before you ask", "<p>A hint never lowers the grade. It does take this attempt out of the clean solves that mastery counts, so try one more observation first if you have one.</p>", "note");
+  }
+  (act.hints || []).forEach((h, i) => msg("Hint " + (i + 1) + " of " + act.hintsTotal, h));
+  const hintBtn = el("button", { class: "btn primary", text: act.hintsUsed >= act.hintsTotal ? "No more hints" : "Ask for hint " + (act.hintsUsed + 1), disabled: act.hintsUsed >= act.hintsTotal });
+  hintBtn.addEventListener("click", () => {
+    hintBtn.disabled = true;
+    api.post("/api/hint").then((h) => {
+      msg("Hint " + h.index + " of " + h.total, h.html);
+      act.hints = (act.hints || []).concat([h.html]);
+      act.hintsUsed = h.index;
+      onChange();
+      hintBtn.textContent = h.index >= h.total ? "No more hints" : "Ask for hint " + (h.index + 1);
+      hintBtn.disabled = h.index >= h.total;
+    }).catch((e) => { hintBtn.disabled = false; msg("Mentor", "<p>" + escapeHTML(e.message) + "</p>", "note"); });
+  });
+  const area = el("textarea", { placeholder: "Name the cause in one line, for example: the Deployment pulls an image that does not exist", maxlength: "300", "aria-label": "Your diagnosis" });
+  if (act.diagnosis) { area.value = act.diagnosis; }
+  const diagBtn = el("button", { class: "btn", text: act.diagnosis ? "Update my diagnosis" : "Record my diagnosis" });
+  diagBtn.addEventListener("click", () => {
+    api.post("/api/diagnose", { text: area.value }).then(() => {
+      act.diagnosis = area.value;
+      onChange();
+      toast("Diagnosis recorded; the debrief compares it with the real cause.");
+      diagBtn.textContent = "Update my diagnosis";
+    }).catch((e) => toast(e.message, true));
+  });
+  let release = () => {};
+  const close = () => { release(); back.remove(); };
+  release = pushOverlay(close);
+  back.addEventListener("click", (e) => { if (e.target === back) { close(); } });
+  const closeBtn = el("button", { class: "btn ghost small x", text: "Close", onclick: close });
+  back.appendChild(el("aside", { class: "drawer", role: "dialog", "aria-modal": "true", "aria-label": "Mentor" },
+    el("div", { class: "drawer-head" }, el("div", { class: "avatar mentor", text: "M", "aria-hidden": "true" }), el("div", null, el("b", { text: "Mentor" }), el("div", { class: "small muted", text: "Each hint goes one step further" })), closeBtn),
+    body,
+    el("div", { class: "drawer-foot" }, el("label", { text: "Your diagnosis / the last hint waits for it" }), area, el("div", { class: "row" }, diagBtn, hintBtn))));
+  document.body.appendChild(back);
+  onLeave(close);
+  (act.diagnosis ? hintBtn : area).focus();
+}
+
+function escapeHTML(s) {
+  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function showFailure(v, isDIY) {
+  const back = el("div", { class: "modal-back", role: "dialog", "aria-modal": "true", "aria-label": "Validation result" });
+  let release = () => {};
+  const close = () => { release(); back.remove(); };
+  release = pushOverlay(close);
+  back.addEventListener("click", (e) => { if (e.target === back) { close(); } });
+  const keep = el("button", { class: "btn primary", text: "Keep working", onclick: close });
+  back.appendChild(el("div", { class: "modal" },
+    el("div", { class: "result-head" },
+      el("div", { class: "result-icon no", text: "!" }),
+      el("div", null, el("h2", { text: "Not there yet" }), el("div", { class: "small muted", text: "score " + Math.round(v.score * 100) + "%; nothing was recorded against you, validate as often as you like" }))),
+    isDIY ? el("div", { class: "callout info" }, el("div", null, el("b", { text: "The cause is different this time. " }), "If you repeated the practice fix, go back to the observations: the events and the object the ticket names tell you which part is wrong now.")) : null,
+    checkList(v.checks),
+    el("div", { class: "modal-actions" }, keep)));
+  document.body.appendChild(back);
+  keep.focus();
+}
+
+export function checkList(checks) {
+  return el("ul", { class: "result-list" }, checks.map((c) => el("li", { class: c.status },
+    el("span", null, el("span", { class: "st", text: c.status }), c.description),
+    c.status !== "pass" && (c.expected || c.actual || c.message) ? el("span", { class: "ea", text: [c.expected ? "expected: " + c.expected : "", c.actual ? "actual: " + c.actual : "", c.message || ""].filter(Boolean).join("   ") }) : null,
+    c.status !== "pass" && c.why ? el("span", { class: "why", text: c.why }) : null)));
+}

@@ -57,7 +57,7 @@ func RecordingsDir(dir string) string {
 	return filepath.Join(dir, recordings)
 }
 
-// Outcome mirrors the Gymnasium terminated/truncated split: Solved is the
+// Outcome separates a run that ended on its own from one cut short: Solved is the
 // task state, Abandoned is the learner surrendering (the solution was shown),
 // Failed is leaving without solving, TimedOut is an exam time box running
 // out.

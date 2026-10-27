@@ -1,0 +1,87 @@
+# kubedrill-template: delete the comments in this file in a real scenario.
+# Optional: the browser workspace's customer meeting, object diagram, quiz
+# and guided steps (docs/scenario-format.md#simulationyaml). Delete the file
+# for a lab-only scenario; keep it for L0 and L1.
+#
+# Writing good choices: a wrong choice is a plausible move that reveals a
+# wrong mental model (acting before observing, scaling a failure, guessing
+# a layer), its reply gives the learner a real fact, and its feedback says
+# what a better question would have learned. Never write a silly option.
+
+customer:
+  name: Customer name
+  role: Their role
+  company: Their company
+
+mentor:
+  intro: >-
+    Ask me for a hint whenever you are stuck: each hint goes one step
+    further, and the last one waits until you name a cause.
+
+meeting:
+  opening: >-
+    The customer's first line, in their words, from the ticket.
+  turns:
+    - prompt: What do you ask first?
+      choices:
+        - say: What changed right before it stopped working?
+          reply: The customer's answer, with one fact the learner needs.
+          feedback: Why this question narrows the search.
+          best: true
+          fact: The fact that goes on the requirements board.
+        - say: A plausible but weaker move.
+          reply: The customer's answer, still a real fact.
+          feedback: Why it helps less, and what to ask instead.
+    - prompt: Agree on what done means.
+      choices:
+        - say: What does fixed look like for you, and what must I not change?
+          reply: The end state of the ticket's Done when, and its constraints.
+          feedback: Agreeing on done lets you verify the way the customer will.
+          best: true
+          fact: "Done: the end state the checks grade."
+        - say: Can I delete everything and redeploy?
+          reply: Please do not.
+          feedback: Starting over destroys the evidence.
+  closing: >-
+    The customer's last line: they wait for the fix.
+
+diagram:
+  nodes:
+    - id: workload
+      label: Deployment app
+      note: what the team owns
+    - id: pods
+      label: Pods
+      note: what runs
+  edges:
+    - from: workload
+      to: pods
+      label: creates
+
+quiz:
+  - question: What does the first observation rule out?
+    choices:
+      - text: The right answer.
+        correct: true
+        explain: Why it is right.
+      - text: A tempting wrong answer.
+        explain: Why it is wrong.
+  - question: Where does the fix belong?
+    choices:
+      - text: In the object the ticket's cause lives in.
+        correct: true
+        explain: Why.
+      - text: In the object that shows the symptom.
+        explain: Why not.
+
+guide:
+  - title: Observe the symptom
+    body: What to read in the output and why.
+    command: kubectl get pods
+  - title: Find the observation that splits the causes
+    body: What the output tells you.
+    command: kubectl get events --sort-by=.lastTimestamp
+  - title: Change one thing
+    body: The fix of the first variant.
+    command: kubectl rollout status deployment/app
+    check: ready-replicas

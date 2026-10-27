@@ -72,6 +72,8 @@ func (a *app) rootCommand() *cobra.Command {
 		a.smokeCommand(),
 		a.profileCommand(),
 		a.versionCommand(),
+		a.webCommand(),
+		a.draftGuideCommand(),
 	)
 	return root
 }

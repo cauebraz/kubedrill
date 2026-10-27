@@ -73,4 +73,4 @@ offer_path() {
 }
 
 offer_path
-exec ./bin/kubedrill
+exec ./bin/kubedrill web

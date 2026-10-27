@@ -16,10 +16,11 @@ variable and exit code. For how to study with these commands, read
   caches under `<state dir>/go`; a later build takes about 2 s. Without
   either it says Docker is needed and exits 1.
 - `./start.sh` without arguments is the one command a learner needs: it
-  runs `kubedrill` without a command (see
-  [kubedrill without a command](#kubedrill-without-a-command)), so the first
-  run sets everything up and starts the first scenario, and every later run
-  reopens the active episode or offers the next one.
+  runs [`kubedrill web`](#web), so the first run sets everything up and
+  opens the browser workspace on `http://127.0.0.1:8642`, and every later
+  run opens it again with the progress kept. The terminal flow of
+  [kubedrill without a command](#kubedrill-without-a-command) stays
+  available as `kubedrill`.
 - Before that it makes `kubedrill` typeable when it is not yet: when
   `~/.local/bin` is on `PATH` and holds no `kubedrill` other than a symlink,
   it links `~/.local/bin/kubedrill` to `bin/kubedrill` and prints `kubedrill
@@ -44,6 +45,8 @@ Conventions shared by every command:
 
 | Command | Purpose | Needs cluster |
 |---------|---------|---------------|
+| **Browser workspace** | | |
+| [`web`](#web) | Doctor, `up`, then the workspace on `127.0.0.1` | yes (creates it) |
 | **Learner loop** | | |
 | [`start`](#start) | Start a scenario in a fresh namespace and open the workstation | yes (checked first) |
 | [`ticket`](#ticket) | Print the ticket again, or keep it on screen with `--follow` | no |
@@ -80,9 +83,144 @@ Conventions shared by every command:
 | **Authoring** | | |
 | [`lint`](#lint) | Validate scenarios, curriculum and concept pages | no |
 | [`new`](#new) | Scaffold a scenario | no |
+| [`draft-guide`](#draft-guide) | Draft or check the guide of `simulation.yaml` | no |
 | [`smoke`](#smoke) | Run every scenario end to end | yes |
 | [`profile render`](#profile-render) | Render a kind profile to a file | no |
 | [`version`](#version) | Version, revision and Go version | no |
+
+## Browser workspace
+
+### web
+
+```
+kubedrill web [--port 8642] [--no-open] [--preview <ref>] [--static-dir <dir>]
+```
+
+Runs the doctor, the recreate offer and `up` as
+[kubedrill without a command](#kubedrill-without-a-command) does, prepares
+the workstation while the cluster starts, then serves the workspace on
+`127.0.0.1:<port>` until Ctrl-C and opens it in the browser.
+
+- It prints `kubedrill web is ready: http://127.0.0.1:<port>/?t=<token>`.
+  The token is new on every run; the link stores it in an HttpOnly,
+  SameSite=Strict cookie. A request without it gets `Open the link kubedrill
+  web printed in your terminal; it carries the token of this run.` (401).
+- The server answers only requests whose Host is `127.0.0.1`, `localhost` or
+  `::1` (421 otherwise), requests that change state need the `X-Kubedrill:
+  1` header, and the terminal websocket needs the page's own origin.
+- `--no-open` or `KUBEDRILL_NO_BROWSER=1` prints the link without opening a
+  browser (`open` on macOS, `xdg-open` on Linux). A busy port is an error
+  that names `--port`.
+- `--preview <ref>` is for authors: it skips the doctor and the cluster,
+  opens the assignment at its meeting, prints `kubedrill web preview of
+  <id>: <link>`, and reads the scenario files again on every request, so an
+  edit to `simulation.yaml`, `story.md` or the ticket shows on reload. The
+  page shows a preview banner; the practice and DIY runs still need the
+  cluster.
+- `--static-dir <dir>` serves the page files from `<dir>` (normally
+  `internal/web/static`) instead of the copy in the binary, for front-end
+  work; the top bar then links the component kit. A directory without
+  `index.html` is an error.
+- Inside the workstation it refuses to run.
+- The page is dark by default and follows the system preference on the
+  first visit; the toggle in the top bar switches and remembers the choice
+  in the browser (`kd:theme`). The design system is described in
+  `internal/web/static/README.md`.
+- When the server stops answering, the page says `kubedrill web stopped
+  answering. Run ./start.sh again; your progress is kept.` with a Retry
+  link.
+
+Screens:
+
+| Screen | What it shows |
+|--------|---------------|
+| Home | A Continue card (the live run with its namespace and elapsed time, or the assignment `kubedrill list` recommends with its reason, or "all caught up"), the plans in progress, and links to the catalog and the exams. A profile line counts completed assignments, badges, reviews due and planned assignments |
+| Catalog | Every level and plan, with search (title, id, plan, concept) and filters for level, status (not started, active, solved, mastered, DIY passed), exam domain and concept. The filters live in the URL. A level with nothing written yet collapses to one line with its planned count. An assignment whose `requires` are not solved shows a lock and stays open |
+| Exams | Each exam domain with its weight, the assignments that train it and how many are solved |
+| Assignment | The stages below, with the concept pages as chips (each opens in a drawer) and the mastery meter |
+
+An assignment walks through six stages:
+
+| Stage | What happens | Recorded |
+|-------|--------------|----------|
+| Meet the customer | A scripted conversation from `simulation.yaml`: the learner picks questions, the customer answers, the mentor comments, and each best question adds a fact to the requirements board. A wrong pick can be retried | best questions on the first try |
+| Check understanding | The quiz of `simulation.yaml`, one question at a time, with an explanation for every answer | right on the first try |
+| Learn the pieces | The object diagram of `simulation.yaml`, `story.md`, the ticket and the concept pages as tabs | read |
+| Guided practice | `start` on the first variant; the steps beside a terminal into the workstation, the live checks and a timer | passed |
+| Do it yourself | `start` on another variant at random, the ticket and the story instead of the steps, the mentor | passed |
+| Result | The badge, the stage results with redo links, and the mastery rule with the learner's numbers | - |
+
+Launching a run:
+
+- `POST /api/start` streams newline-delimited JSON: one `{"step": ...}`
+  per setup step (`creating namespace shop-k3x9p`, `applying setup`), then
+  `{"session": ...}`, or `{"error": ..., "status": n}`. The page lists the
+  steps as they arrive.
+- Launching while another episode is active says which one and links to
+  it; confirming leaves it as `start --yes` does (recorded as failed).
+- Below 960 pixels the launch panel warns that the lab needs a wider
+  window.
+
+In the lab:
+
+- The side panel has tabs: Steps (practice only), Ticket and Story; the tab
+  is remembered per episode.
+- A step with `check` turns green when that check passes, and every step
+  before it with it; the others have a Mark done button. Type it puts the
+  step's command at the prompt without running it; Shift-click also runs
+  it.
+- The live checks poll every 5 seconds while the tab is visible, slow to 15
+  seconds after a minute without change, and speed up again on terminal
+  input. Each check opens a popover with its `why`, the expected value and
+  the actual one (a spoiler check never shows its actual value).
+- The terminal bar shows the time since the run started against the
+  expected minutes (amber past them). A dropped terminal shows Reconnect,
+  which opens a new container on the same namespace. Leaving the page
+  while the terminal is connected asks first.
+- The mentor drawer explains, before the first hint, that a hint never
+  lowers the grade but takes the attempt out of the clean solves mastery
+  counts; after it, the footer shows `<n> hints used`.
+- A failing Validate lists every check with expected, actual and `why`; in
+  a DIY run it adds that the cause differs from the practice run. A passing
+  one opens the debrief.
+
+The debrief of a passed run is `kubedrill debrief` on the page: the
+duration against the expected minutes, the hints, the learner's diagnosis
+next to the variant's `root_cause`, the trajectory from telemetry (verdict,
+observations before the first change, the first change and whether it hit
+a fix target), and the two reflection questions plus "did your diagnosis
+match", stored on the episode with `POST /api/debrief/<episode>` exactly as
+the terminal stores them.
+
+Keyboard (`?` lists the shortcuts of the current screen):
+
+| Keys | Where | Action |
+|------|-------|--------|
+| `1` to `9` | meeting, quiz | pick an option |
+| `Enter` | home, meeting, quiz, learn, launch, result | the screen's main action |
+| `/` | catalog | focus the search |
+| `c` | home | open the catalog |
+| `Cmd`/`Ctrl` `Enter` | lab, debrief | validate, save the debrief |
+| `Cmd`/`Ctrl` `.` | lab | open the mentor |
+| `Cmd`/`Ctrl` `=` and `-` | lab | terminal text size (remembered) |
+| `Cmd`/`Ctrl` arrows | assignment | previous and next stage |
+| `Esc` | anywhere | close the drawer, popover or dialog |
+
+Single keys never fire while typing in a field or the terminal.
+
+Storage:
+
+- Each terminal is one `docker run --rm -it` of the workstation (layout
+  `shell`, `KUBEDRILL_WEB=1`) in a pseudo-terminal on the host, named
+  `kubedrill-web-<8 hex>`. Closing the tab kills the docker client and runs
+  `docker rm -f` on the container.
+- Stage progress lives in `web-progress.json` in the journal directory
+  (`assignments` per scenario id and the stage of each episode the
+  workspace started); the episodes, grades, hints, diagnoses, debriefs and
+  telemetry are the journal's, as for every other command.
+- The browser keeps per-assignment conveniences in `localStorage`: a
+  meeting or quiz in progress, the guide steps marked done, the side tab,
+  the terminal text size and the theme. Clearing them loses nothing graded.
 
 ## Learner loop
 
@@ -689,7 +827,7 @@ Then it continues into practice:
   redeploys it` and opens nothing.
 - Without one it asks `Start <id> now? [Y/n]` for the recommended scenario.
   Enter, `y` or `yes` runs `kubedrill start <id>` with the recommended seed;
-  any other answer prints `not started; run ./start.sh again or kubedrill
+  any other answer prints `not started; run kubedrill again or kubedrill
   start <id> when you are ready`.
 
 In a pipe or a script it stops after the list.
@@ -962,7 +1100,27 @@ kubedrill new <level> <id>
 ```
 
 Scaffolds `scenarios/<level>/<id>/`, for example `new L0 001-my-slug`, and
-prints the next steps.
+prints the next steps. The scaffold includes a `simulation.yaml` with
+placeholder text; lint refuses its template marker until it is edited, and
+a lab-only scenario deletes the file.
+
+### draft-guide
+
+```
+kubedrill draft-guide <ref> [--check]
+```
+
+Prints a `guide:` block for `simulation.yaml`: one step per command of the
+`## Observation that splits them`, `## Change` and `## Verify` sections of
+`solution/README.md`, rendered for the first variant (the one the guided
+practice runs), without the `-n <namespace>` flag the workstation does not
+need. Titles read `Observe: kubectl get pods`, `Change one thing: ...`,
+`Verify: ...`; bodies are `TODO` placeholders.
+
+- `--check` compares the existing guide with the walkthrough instead and
+  prints one line per guide command whose kubectl verb and resource the
+  walkthrough never runs, or `<id>: every guide command appears in the
+  solution walkthrough`. It is advice and always exits 0.
 
 ### smoke
 
@@ -1324,6 +1482,8 @@ Width:
 | `NO_COLOR` | Any value disables color and markdown styling; output is also plain when stdout is not a terminal |
 | `COLUMNS` | Wrap width on a terminal when it is a positive integer (kept between 40 and 120); otherwise the terminal's own width, else 80 |
 | `KUBEDRILL_NO_SHELL` | `1` makes `start` print the ticket and stay on the host, like `--no-shell` |
+| `KUBEDRILL_NO_BROWSER` | `1` makes `web` print its link without opening a browser, like `--no-open` |
+| `KUBEDRILL_WEB` | Set to `1` inside a workstation the browser workspace opened; the welcome text points at the ticket panel of the page |
 | `KUBEDRILL_BIN` | Set by the CLI for `setup/hook.sh` and the `smoke` run of `solution/solve.sh`: the path of the running binary |
 | `KUBEDRILL_EPISODE` | Set by the CLI for the same scripts: the id of the episode being set up or solved |
 | `KUBEDRILL_AUDIT_LOG` | Path of the API audit log telemetry reads instead of `cluster.AuditLogPath()`; the workstation sets `/audit/audit.log` |

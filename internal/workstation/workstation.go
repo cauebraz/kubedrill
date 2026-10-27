@@ -218,6 +218,13 @@ type ShellOptions struct {
 	// Deadline, when set, is exported as KUBEDRILL_DEADLINE in RFC 3339 (UTC)
 	// and shown in the exam banner.
 	Deadline time.Time
+	// Web exports KUBEDRILL_WEB=1: the shell runs in the browser workspace,
+	// which shows the ticket beside the terminal, so the welcome text
+	// points there instead of printing it.
+	Web bool
+	// Name, when set, names the container, so a caller that cannot signal
+	// the docker client (a closed browser tab) removes it with docker rm -f.
+	Name string
 }
 
 // ImageTag returns the image reference for the current workstation files:
@@ -679,35 +686,50 @@ func sessionResult(op string, err error, tail *tailWriter) error {
 // end of session; only docker's own failures (exit codes 125, 126 and 127)
 // are errors.
 func (m *Manager) Shell(ctx context.Context, o ShellOptions) error {
+	cmd, err := m.ShellCommand(ctx, o)
+	if err != nil {
+		return err
+	}
+	tail := m.attach(cmd)
+	return sessionResult("start workstation", cmd.Run(), tail)
+}
+
+// ShellCommand prepares a workstation session (image, linux binary, kind
+// network, data directories, mount checks) and returns its `docker run
+// --rm -it` command without starting it or setting its standard streams,
+// so the caller can attach it to a terminal of its own, such as the
+// pseudo-terminal of the browser workspace. The command needs a TTY on its
+// standard input.
+func (m *Manager) ShellCommand(ctx context.Context, o ShellOptions) (*exec.Cmd, error) {
 	if o.Kubeconfig == "" {
-		return errors.New("start workstation: kubeconfig path is empty")
+		return nil, errors.New("start workstation: kubeconfig path is empty")
 	}
 	layout := o.Layout
 	if layout == "" {
 		layout = LayoutTmux
 	}
 	if !ValidLayout(layout) {
-		return fmt.Errorf("start workstation: layout %q is not %q or %q", layout, LayoutTmux, LayoutShell)
+		return nil, fmt.Errorf("start workstation: layout %q is not %q or %q", layout, LayoutTmux, LayoutShell)
 	}
 	tag, err := m.EnsureImage(ctx)
 	if err != nil {
-		return fmt.Errorf("start workstation: %w", err)
+		return nil, fmt.Errorf("start workstation: %w", err)
 	}
 	binary, err := m.EnsureBinary(ctx)
 	if err != nil {
-		return fmt.Errorf("start workstation: %w", err)
+		return nil, fmt.Errorf("start workstation: %w", err)
 	}
 	if err := m.checkKindNetwork(ctx); err != nil {
-		return fmt.Errorf("start workstation: %w", err)
+		return nil, fmt.Errorf("start workstation: %w", err)
 	}
 	if err := m.ensureDataDirs(); err != nil {
-		return fmt.Errorf("start workstation: %w", err)
+		return nil, fmt.Errorf("start workstation: %w", err)
 	}
 	audit := ""
 	if m.auditDir != "" {
 		if info, err := os.Stat(m.auditDir); err == nil && info.IsDir() {
 			if audit, err = hostPath(m.auditDir); err != nil {
-				return fmt.Errorf("start workstation: %w", err)
+				return nil, fmt.Errorf("start workstation: %w", err)
 			}
 		}
 	}
@@ -715,16 +737,19 @@ func (m *Manager) Shell(ctx context.Context, o ShellOptions) error {
 	for i, p := range []string{m.root, m.dataDir, o.Kubeconfig, filepath.Dir(binary)} {
 		sources[i], err = hostPath(p)
 		if err != nil {
-			return fmt.Errorf("start workstation: %w", err)
+			return nil, fmt.Errorf("start workstation: %w", err)
 		}
 	}
 	if err := m.checkJournalOverlap(sources[1], sources[2], sources[3]); err != nil {
-		return fmt.Errorf("start workstation: %w", err)
+		return nil, fmt.Errorf("start workstation: %w", err)
 	}
 	binarySource := filepath.Join(sources[3], filepath.Base(binary))
 	args := []string{"run", "--rm", "-it",
 		"--network", kindNetwork,
 		"--hostname", hostname,
+	}
+	if o.Name != "" {
+		args = append(args, "--name", o.Name)
 	}
 	args = append(args, hardening...)
 	args = append(args, bindMount(sources[0], repoMount, true)...)
@@ -747,6 +772,9 @@ func (m *Manager) Shell(ctx context.Context, o ShellOptions) error {
 	if o.Exam {
 		args = append(args, "-e", "KUBEDRILL_EXAM=1")
 	}
+	if o.Web {
+		args = append(args, "-e", "KUBEDRILL_WEB=1")
+	}
 	if !o.Deadline.IsZero() {
 		args = append(args, "-e", "KUBEDRILL_DEADLINE="+o.Deadline.UTC().Format(time.RFC3339))
 	}
@@ -757,9 +785,7 @@ func (m *Manager) Shell(ctx context.Context, o ShellOptions) error {
 	} else {
 		args = append(args, layout)
 	}
-	cmd := m.docker(ctx, args...)
-	tail := m.attach(cmd)
-	return sessionResult("start workstation", cmd.Run(), tail)
+	return m.docker(ctx, args...), nil
 }
 
 // linuxUser runs the container as the host user on Linux, where bind
@@ -932,6 +958,15 @@ func (m *Manager) deleteFinishedDebugPods(ctx context.Context) {
 	cmd := m.run(ctx, "kubectl", "delete", "pods", "--namespace", DebugNamespace,
 		"--field-selector=status.phase!=Pending,status.phase!=Running", "--ignore-not-found", "--wait=false")
 	_ = cmd.Run()
+}
+
+// RemoveContainer removes the container name, running or not; a container
+// that is already gone is no error.
+func (m *Manager) RemoveContainer(ctx context.Context, name string) error {
+	if _, err := m.probe(ctx, "rm", "-f", name); err != nil && !strings.Contains(err.Error(), "No such container") {
+		return fmt.Errorf("remove workstation container %s: %w", name, err)
+	}
+	return nil
 }
 
 // DockerAvailable reports whether the docker daemon answers `docker info`

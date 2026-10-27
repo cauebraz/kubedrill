@@ -31,6 +31,7 @@ var templateMarkers = map[string][]string{
 	fileHints:                                {"# kubedrill-template"},
 	fileChecks:                               {"# kubedrill-template"},
 	filepath.Join(dirSolution, fileSolution): {"kubedrill-template"},
+	fileSimulation:                           {"# kubedrill-template"},
 }
 
 const approachMarker = "kubedrill-template"
@@ -197,6 +198,7 @@ func lintScenario(s *Scenario, real bool, lr lintRefs) error {
 			problems = append(problems, lintCheckValues(r.Checks)...)
 			problems = append(problems, lintRenderedHints(s, r)...)
 			problems = append(problems, lintSetupImages(s, r)...)
+			problems = append(problems, lintSimulation(s, r)...)
 			if !s.Meta.AllowPrivileged {
 				problems = append(problems, lintPrivileged(s, r)...)
 			}
@@ -568,6 +570,24 @@ func lintSetupImages(s *Scenario, r *Rendered) []error {
 			}
 			errs = append(errs, fmt.Errorf("%s: %s %q container %q: image %q is not pinned; write image:tag@sha256:<digest>, or set it from a variant variable when the image is the bug", rel, ci.kind, ci.name, ci.container, ci.image))
 		}
+	}
+	return errs
+}
+
+// lintSimulation applies the simulation.yaml rules to the rendering of one
+// variant, so a variable that empties a field or a check renamed by a
+// variant shows up before the DIY run picks that variant.
+func lintSimulation(s *Scenario, r *Rendered) []error {
+	if r.Simulation == nil {
+		return nil
+	}
+	checks := make(map[string]bool, len(r.Checks))
+	for _, c := range r.Checks {
+		checks[c.ID] = true
+	}
+	var errs []error
+	for _, p := range r.Simulation.problems(checks) {
+		errs = append(errs, fmt.Errorf("%s: %s", fileSimulation, p))
 	}
 	return errs
 }

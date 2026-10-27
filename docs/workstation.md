@@ -90,9 +90,11 @@ On login the shell:
   <TAB>); new to Kubernetes? kubedrill story`;
 - inside tmux, prints `copy: Ctrl-b m turns the tmux mouse off, then drag
   selects and Cmd-c copies; Ctrl-b m again turns it on`;
-- prints `ticket: the pane above (mouse wheel scrolls it; kubedrill ticket
-  prints it here)` when the ticket pane is open (`KUBEDRILL_TICKET_PANE=1`),
-  and the full ticket (`kubedrill ticket`) otherwise;
+- prints `ticket: the panel on the left of the page (kubedrill ticket prints
+  it here)` in the browser workspace (`KUBEDRILL_WEB=1`), `ticket: the pane
+  above (mouse wheel scrolls it; kubedrill ticket prints it here)` when the
+  ticket pane is open (`KUBEDRILL_TICKET_PANE=1`), and the full ticket
+  (`kubedrill ticket`) otherwise;
 - points `kubectl` at the episode namespace, so `k get pods` needs no `-n`.
 
 The prompt shows that namespace: `learner@kubedrill /workspace

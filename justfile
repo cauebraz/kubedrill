@@ -13,6 +13,7 @@ fmt:
 
 vet:
     go vet ./...
+    go vet -tags browser ./internal/web
 
 test:
     go test ./... -race -count=1
@@ -43,6 +44,14 @@ check-ci: check vuln smoke
 
 smoke *scenarios: build
     ./bin/kubedrill smoke {{scenarios}}
+
+# The browser workspace on an in-memory backend with the page files read from disk; no cluster or Docker
+web-dev:
+    go run ./internal/web/devserver
+
+# Drive the workspace in headless Chrome through every stage; just ui-test /tmp/shots also saves screenshots
+ui-test shots="":
+    KUBEDRILL_SHOTS="{{shots}}" go test -tags browser -count=1 ./internal/web -run TestBrowser
 
 # Scaffold a new scenario: just new-scenario L0 011 my-slug
 new-scenario level id slug: build

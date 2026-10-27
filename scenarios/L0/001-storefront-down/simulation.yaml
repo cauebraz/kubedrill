@@ -1,0 +1,241 @@
+customer:
+  name: Dana
+  role: Storefront team lead
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Ask me for a hint whenever you are
+    stuck: each hint goes one step further, from where to look to what to
+    change, and the last one waits until you name a cause.
+
+meeting:
+  opening: >-
+    Thanks for jumping on. The storefront has been down since this morning
+    and customers are getting an error page. Our pipeline says everything
+    went fine, so we are confused. Where do you want to start?
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What changed right before it stopped working?
+          reply: >-
+            This morning we moved the storefront to the new cluster. We applied
+            the same manifests we had in the old repository, and the pipeline
+            went green.
+          feedback: >-
+            Good first question. A failure that starts right after a change
+            usually comes from that change, and "same manifests from the old
+            environment" is a strong lead: they carry the old environment's
+            assumptions with them.
+          best: true
+          fact: It broke right after the move to the new cluster, with the manifests copied from the old repository.
+        - say: Can you restart the pods and see if it comes back?
+          reply: >-
+            Someone already deleted a couple of pods. The new ones look exactly
+            the same as the old ones.
+          feedback: >-
+            Acting before observing hides evidence and rarely fixes a problem
+            in the blueprint: new pods are built from the same template. Ask
+            what changed first.
+        - say: Is there a bug in the latest release of the app?
+          reply: >-
+            No, release 2.14.0 runs in every other environment and nobody
+            touched the code.
+          feedback: >-
+            Ruling out the code is useful, but it does not point anywhere yet.
+            "What changed?" narrows the search much faster.
+    - prompt: You need the exact symptom. What do you ask?
+      choices:
+        - say: What exactly do the users and your dashboards show?
+          reply: >-
+            The status page shows 0 of 3 ready, the public site returns 503 from
+            the edge, and the internal URL refuses the connection right away.
+          feedback: >-
+            Precise symptoms split the candidate causes. "0 of 3 ready" says no
+            pod reached the Ready state, and a refused connection (not a
+            timeout) says the Service has nowhere to send traffic.
+          best: true
+          fact: 0 of 3 pods are ready; the Service refuses connections and the edge returns 503.
+        - say: Should we scale the storefront to 10 replicas to absorb the load?
+          reply: >-
+            It is not a load problem, there is no traffic getting through at
+            all. Ten broken copies would not help either.
+          feedback: >-
+            Scaling multiplies whatever the pods do, including failing. Find
+            out what the symptom is before choosing a change.
+        - say: Is DNS broken on the new cluster?
+          reply: >-
+            The internal name resolves fine, it just refuses the connection.
+          feedback: >-
+            A reasonable suspicion, and the answer rules it out: a name that
+            resolves and refuses at once is not a DNS failure.
+    - prompt: Find out what the team runs everywhere else.
+      choices:
+        - say: Which image and files does the storefront run in the other environments?
+          reply: >-
+            The official nginx 1.27-alpine image from Docker Hub, serving the
+            files from our storefront-html ConfigMap. Nothing custom.
+          feedback: >-
+            Now you have a reference to compare against. Whatever the new
+            cluster runs that differs from "nginx 1.27-alpine from Docker Hub"
+            is suspicious.
+          best: true
+          fact: Every other environment runs the official nginx:1.27-alpine from Docker Hub with the storefront-html ConfigMap.
+        - say: Which registry password do the nodes use?
+          reply: >-
+            None that I know of. The image is public, we never needed
+            credentials.
+          feedback: >-
+            Credentials matter for private registries; this team uses a public
+            image. Ask what they run, not how they authenticate.
+    - prompt: Agree on what done means before you touch anything.
+      choices:
+        - say: What does "fixed" look like for you, and is there anything I must not change?
+          reply: >-
+            Three pods ready, the Service routing to them, and the page showing
+            ACME Storefront 2.14.0. Please keep the names of the Deployment,
+            the Service and the ConfigMap, and do not delete the namespace.
+          feedback: >-
+            Agreeing on the end state and the constraints up front is what
+            lets you verify your fix the same way the customer will.
+          best: true
+          fact: "Done: 3 ready pods on nginx:1.27-alpine, the Service serves the ACME Storefront 2.14.0 page; keep the names and the namespace."
+        - say: Can I delete the namespace and redeploy everything from scratch?
+          reply: >-
+            Please do not. Other things live in that namespace and we would
+            lose the history of what happened.
+          feedback: >-
+            Starting over destroys the evidence and may break what still works.
+            Ask what done looks like and what you must keep.
+  closing: >-
+    Perfect, that is everything I know. I will be on the status page; ping me
+    when the storefront is back.
+
+diagram:
+  nodes:
+    - id: deploy
+      label: Deployment storefront
+      note: keeps 3 pods from its template, image included
+    - id: rs
+      label: ReplicaSet
+      note: creates the pods
+    - id: pods
+      label: Pods x3
+      note: scheduled, image pulled, container started, probe passed
+    - id: registry
+      label: Image registry
+      note: the node downloads the image from here
+    - id: configmap
+      label: ConfigMap storefront-html
+      note: the website files
+    - id: service
+      label: Service storefront
+      note: routes only to Ready pods
+    - id: users
+      label: Customers
+      note: 503 when no pod is Ready
+  edges:
+    - from: deploy
+      to: rs
+      label: creates
+    - from: rs
+      to: pods
+      label: creates
+    - from: registry
+      to: pods
+      label: image pull
+    - from: configmap
+      to: pods
+      label: mounted
+    - from: service
+      to: pods
+      label: Ready only
+    - from: users
+      to: service
+      label: requests
+
+quiz:
+  - question: Every storefront pod shows ImagePullBackOff. Which causes does that rule out?
+    choices:
+      - text: A crash or a failing readiness probe, because no container ever started.
+        correct: true
+        explain: >-
+          ImagePullBackOff happens before the container exists, so nothing
+          that needs a running container (a crash, a probe) can be the cause.
+      - text: Nothing, the pods could still be crashing after they start.
+        explain: >-
+          A pod stuck pulling its image never starts a container, so it cannot
+          crash. The status names the step that stalled.
+      - text: An image problem, because the pods exist.
+        explain: >-
+          The pods exist because the Deployment created them; the image
+          problem is exactly what stops them from going further.
+  - question: Where does the fix for a wrong image reference belong?
+    choices:
+      - text: In the Deployment's pod template, container web.
+        correct: true
+        explain: >-
+          The pods copy the image from the Deployment's template. Change it
+          there and the Deployment rolls out new pods with the right image.
+      - text: In the pods; delete them so they come back.
+        explain: >-
+          New pods are built from the same template and get the same wrong
+          image. Deleting pods treats the symptom, not the cause.
+      - text: In the Service, so it stops routing to the broken pods.
+        explain: >-
+          The Service already routes only to Ready pods. With zero Ready pods,
+          no Service change can bring the page back.
+  - question: Why did the pipeline go green while the storefront was down?
+    choices:
+      - text: Applying a manifest only stores the desired state; it does not wait for the pods to run.
+        correct: true
+        explain: >-
+          The API server accepted valid YAML. Pulling the image happens later,
+          on the nodes. A pipeline that runs rollout status would have failed.
+      - text: The pipeline tested the old cluster by mistake.
+        explain: >-
+          Nothing in the ticket points at that. The cluster accepted the
+          manifests, which is all a plain apply checks.
+
+guide:
+  - title: List the pods
+    body: >-
+      The workstation shell already points at the episode namespace. List the
+      pods and read the STATUS column: it names the step where each pod is
+      stuck. All three show the same status, so the problem is in the shared
+      template, not in one node.
+    command: kubectl get pods
+  - title: Read the events
+    body: >-
+      Events record what the kubelet tried and what answered. Find the
+      "Failed to pull image" line: it names the image reference and the
+      registry's answer. An image reference has three parts, registry host,
+      repository and tag; one of them differs from what the team runs
+      everywhere else.
+    command: kubectl get events --sort-by=.lastTimestamp
+  - title: Read the image the Deployment asks for
+    body: >-
+      Pods copy their image from the Deployment's pod template. Print it and
+      compare it with nginx:1.27-alpine, the image every other environment
+      runs.
+    command: kubectl get deployment storefront -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+  - title: Change the image in the Deployment
+    body: >-
+      Change one thing: the image of container web. The Deployment creates a
+      new ReplicaSet and replaces the pods with ones that can pull the image.
+    command: kubectl set image deployment/storefront web=nginx:1.27-alpine
+    check: image-correct
+  - title: Watch the rollout finish
+    body: >-
+      rollout status waits until the new pods are Ready. This is the
+      verification, not decoration: a pipeline that ran it would have caught
+      the outage this morning.
+    command: kubectl rollout status deployment/storefront
+    check: ready-replicas
+  - title: Confirm the Service has endpoints again
+    body: >-
+      The Service routes only to Ready pods. Its EndpointSlice lists their
+      addresses; three addresses mean traffic reaches the storefront again.
+      Then press Validate to grade the assignment.
+    command: kubectl get endpointslices -l kubernetes.io/service-name=storefront
+    check: service-endpoints

@@ -198,13 +198,26 @@ func Next(cat []ScenarioInfo, eps []journal.Episode, now time.Time, rnd func(n i
 	return nextPractice(cat, done, rnd)
 }
 
-func nextReview(cat []ScenarioInfo, eps []journal.Episode, now time.Time, rnd func(n int64) int64) (Recommendation, bool) {
-	byID := index(cat)
-	type due struct {
-		concept string
-		overdue time.Duration
-		last    time.Time
+// due is one mastered concept whose review interval has passed.
+type due struct {
+	concept string
+	overdue time.Duration
+	last    time.Time
+}
+
+// DueConcepts lists the mastered concepts whose spaced review is due at
+// now, most overdue first; Next recommends a scenario of the first one.
+func DueConcepts(cat []ScenarioInfo, eps []journal.Episode, now time.Time) []string {
+	dues := dueReviews(cat, finished(eps), now)
+	out := make([]string, 0, len(dues))
+	for _, d := range dues {
+		out = append(out, d.concept)
 	}
+	return out
+}
+
+func dueReviews(cat []ScenarioInfo, eps []journal.Episode, now time.Time) []due {
+	byID := index(cat)
 	var dues []due
 	for concept, ids := range conceptScenarios(cat) {
 		var in []journal.Episode
@@ -235,15 +248,20 @@ func nextReview(cat []ScenarioInfo, eps []journal.Episode, now time.Time, rnd fu
 			dues = append(dues, due{concept: concept, overdue: gap - interval, last: last})
 		}
 	}
-	if len(dues) == 0 {
-		return Recommendation{}, false
-	}
 	sort.Slice(dues, func(i, j int) bool {
 		if dues[i].overdue != dues[j].overdue {
 			return dues[i].overdue > dues[j].overdue
 		}
 		return dues[i].concept < dues[j].concept
 	})
+	return dues
+}
+
+func nextReview(cat []ScenarioInfo, eps []journal.Episode, now time.Time, rnd func(n int64) int64) (Recommendation, bool) {
+	dues := dueReviews(cat, eps, now)
+	if len(dues) == 0 {
+		return Recommendation{}, false
+	}
 	d := dues[0]
 	pick := ""
 	var pickAt time.Time

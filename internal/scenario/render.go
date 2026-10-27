@@ -246,6 +246,13 @@ func (s *Scenario) Render(seed int64, opts ...RenderOption) (*Rendered, error) {
 		}
 	}
 
+	var sim *Simulation
+	if s.simulationDoc != "" {
+		if sim, err = renderSimulation(s.simulationDoc, data); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
 	approaches := make([]Approach, 0, len(s.Approaches))
 	for _, a := range s.Approaches {
 		dir := filepath.Join(dirApproaches, a.Name)
@@ -276,6 +283,7 @@ func (s *Scenario) Render(seed int64, opts ...RenderOption) (*Rendered, error) {
 		Solution:    solution,
 		Story:       story,
 		Approaches:  approaches,
+		Simulation:  sim,
 	}, nil
 }
 

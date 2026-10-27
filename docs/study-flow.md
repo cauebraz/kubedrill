@@ -7,8 +7,35 @@ with a method, not by guessing. Every message and option is listed in
 
 ## A session in short
 
-`./start.sh` takes you to the recommended scenario, or back to the one you
-were on. The commands of a session:
+`./start.sh` opens the browser workspace (`kubedrill web`). Pick an
+assignment from a learning plan and walk its stages:
+
+1. Meet the customer: pick the questions that gather the requirements; the
+   mentor explains why a question helps or not.
+2. Check understanding: a short quiz on what the symptoms rule in and out.
+3. Learn the pieces: the object diagram, the story from zero, the ticket.
+4. Guided practice: the first variant on a live namespace, with the steps
+   beside a terminal into the workstation and the checks updating every 5
+   seconds. Validate grades it like `kubedrill check`.
+5. Do it yourself: another variant, the ticket only, the mentor's hint
+   ladder and your diagnosis. A pass completes the assignment.
+6. Result: the badge, your stage scores and the mastery rule with your
+   numbers; every DIY of a learning plan passed earns the plan's badge.
+
+After each passed run the page opens the debrief: the same summary and
+questions as `kubedrill debrief`, stored on the episode. The home page
+starts with one next step (the open run, or the recommendation of
+`kubedrill list` with its reason), the catalog filters the whole
+curriculum, and `?` lists the keyboard shortcuts of the screen.
+
+The practice and DIY runs are ordinary episodes: everything below about
+grading, hints, diagnosis, telemetry and mastery applies to them. The
+meeting and quiz scores are kept in `web-progress.json` in your journal
+and never touch the grade.
+
+The same loop runs in the terminal. `kubedrill` takes you to the
+recommended scenario, or back to the one you were on. The commands of a
+session:
 
 ```sh
 kubedrill start 000               # or pick one yourself: fresh namespace, the workstation opens with the ticket
@@ -40,7 +67,7 @@ Every scenario walkthrough uses these steps as its headings.
 ## Start an episode
 
 ```sh
-./start.sh             # the recommended scenario, after a [Y/n] prompt
+kubedrill              # the recommended scenario, after a [Y/n] prompt
 kubedrill start <id>   # a scenario you pick
 ```
 
@@ -379,4 +406,5 @@ namespaces.
 - **Exam preparation:** check `kubedrill exam CKA`, then rehearse tasks with
   `--exam`.
 
-The levels, hours and planned scenarios are in [roadmap.md](roadmap.md).
+The levels, hours and planned scenarios are in `curriculum.yaml`; `kubedrill
+path` prints them with your progress.

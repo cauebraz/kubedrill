@@ -1,0 +1,66 @@
+{
+  "active": {
+    "diagnosis": "",
+    "episodeId": "001-storefront-down-1",
+    "guide": [
+      {
+        "body": "<p>Read the STATUS column.</p>\n",
+        "command": "kubectl get pods",
+        "title": "List the pods"
+      },
+      {
+        "body": "<p>Find the <code>Failed to pull image</code> line.</p>\n",
+        "command": "kubectl get events --sort-by=.lastTimestamp",
+        "title": "Read the events"
+      },
+      {
+        "body": "<p>Change one thing.</p>\n",
+        "check": "image-correct",
+        "command": "kubectl set image deployment/storefront web=nginx:1.27-alpine",
+        "title": "Change the image"
+      },
+      {
+        "body": "<p>Wait for Ready.</p>\n",
+        "check": "ready-replicas",
+        "command": "kubectl rollout status deployment/storefront",
+        "title": "Watch the rollout"
+      }
+    ],
+    "hints": [],
+    "hintsTotal": 4,
+    "hintsUsed": 0,
+    "mentor": "<p>Ask me for a hint whenever you are stuck.</p>\n",
+    "minutes": 10,
+    "namespace": "shop-abcde",
+    "scenarioId": "001-storefront-down",
+    "stage": "practice",
+    "startedAt": "2026-10-27T12:00:00Z",
+    "story": "<h1>The storefront that never started</h1>\n<h2>What happened</h2>\n<p>The team moved the storefront to a new cluster.</p>\n",
+    "ticket": "<h1>Storefront is down after the cluster migration</h1>\n<h2>Ticket</h2>\n<blockquote>\n<p><strong>From:</strong> Dana</p>\n<p>The status page shows <code>0/3</code> ready.</p>\n</blockquote>\n<h2>Done when</h2>\n<ul>\n<li>deployment storefront has 3 ready replicas</li>\n<li>deployment storefront runs the nginx:1.27-alpine image</li>\n</ul>\n<!-- raw HTML omitted -->\n",
+    "title": "Storefront is down after the cluster migration"
+  },
+  "checks": [
+    {
+      "description": "deployment storefront exists",
+      "id": "deploy-exists",
+      "status": "pass",
+      "why": "The Deployment is the object the team owns."
+    },
+    {
+      "description": "deployment storefront runs the nginx:1.27-alpine image",
+      "expected": "nginx:1.27-alpine",
+      "id": "image-correct",
+      "status": "fail",
+      "why": "The image reference decides whether the node can pull it."
+    },
+    {
+      "actual": "no value at {.status.readyReplicas}",
+      "description": "deployment storefront has 3 ready replicas",
+      "expected": "3",
+      "id": "ready-replicas",
+      "status": "fail",
+      "why": "Ready pods are what the Service routes to."
+    }
+  ],
+  "passed": false
+}

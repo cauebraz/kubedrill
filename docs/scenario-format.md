@@ -17,6 +17,7 @@ scenarios/L0/001-storefront-down/
 |-- instruction.md       the ticket: symptom, environment, "## Done when", constraints
 |-- hints.md             the hint ladder: 3 or 4 "## Hint N: <rung>" sections
 |-- story.md             optional: the ticket told from zero for a learner new to its objects
+|-- simulation.yaml      optional: customer meeting, diagram, quiz and guide of the browser workspace
 |-- setup/
 |   |-- configmap.yaml   Go text/template manifests, applied in file-name order
 |   |-- deployment.yaml
@@ -88,7 +89,7 @@ Notes:
 
 - Unknown keys are rejected.
 - `requires`, `addons` and `profile` are parsed but not validated or acted
-  on yet (see `docs/roadmap.md`).
+  on by `start` yet; the browser workspace shows `requires` as a lock.
 - `images`: `kubedrill up` preloads these, every probe image and every
   setup image pinned by digest on the nodes. An image written
   `name:tag@sha256:...` is pulled by digest and tagged `name:tag` on the
@@ -149,7 +150,8 @@ so an undefined key fails the render instead of printing an empty string:
 
 - the setup manifests
 - the string fields of `checks.yaml` (listed under [checks.yaml](#checksyaml))
-- `instruction.md`, `hints.md`, `solution/README.md` and `story.md`
+- `instruction.md`, `hints.md`, `solution/README.md`, `story.md` and
+  `simulation.yaml`
 - `approaches/*/snippet.txt` and `approaches/*/content.md`
 
 | Field | Value |
@@ -216,6 +218,89 @@ the variants apart (an Event message, a status reason) and lets the
 learner's cluster answer which one this episode runs. Unlike `hints.md` it
 may show the mutating command of the fix, so a learner who reads it before
 the ticket gets the method and the vocabulary, and still has to observe.
+
+## simulation.yaml
+
+Optional, and recommended for L0 and L1. It feeds the stages of the browser
+workspace (`kubedrill web`, see [cli.md](cli.md#web)) that run before and
+around the episode. Without it the workspace skips the meeting and the
+quiz. The file is a template like the others, so `{{ .Namespace }}` and
+`{{ .Vars.key }}` work; everything in it must hold for every variant except
+the `guide`, which runs on the first variant only (the DIY run picks
+another one).
+
+```yaml
+customer:            # who opened the ticket
+  name: Dana
+  role: Storefront team lead
+  company: ACME Retail
+mentor:
+  intro: >-          # first message of the mentor panel (optional)
+    Ask me for a hint whenever you are stuck.
+meeting:
+  opening: >-        # the customer's first line
+    The storefront has been down since this morning.
+  turns:             # at least 2
+    - prompt: What do you ask first?
+      choices:       # at least 2, exactly one best: true
+        - say: What changed right before it stopped working?
+          reply: We moved it to the new cluster this morning.
+          feedback: A failure that starts after a change usually comes from it.
+          best: true
+          fact: It broke right after the move to the new cluster.   # goes on the requirements board
+        - say: Can you restart the pods?
+          reply: We did, they came back the same.
+          feedback: Acting before observing hides evidence.
+  closing: Ping me when it is back.
+diagram:             # the Learn stage; 2 to 9 nodes, laid out top to bottom
+  nodes:
+    - {id: deploy, label: Deployment storefront, note: keeps 3 pods}
+    - {id: pods, label: Pods x3, column: 1}   # column (optional) orders nodes inside a row
+  edges:
+    - {from: deploy, to: pods, label: creates}
+quiz:                # at least 2 questions, exactly one correct choice each
+  - question: Every pod shows ImagePullBackOff. What does that rule out?
+    choices:
+      - text: A crash or a failing probe, because no container started.
+        correct: true
+        explain: The pull happens before the container exists.
+      - text: Nothing.
+        explain: A pod that never starts a container cannot crash.
+guide:               # at least 3 steps of the guided practice
+  - title: List the pods
+    body: Read the STATUS column.            # markdown
+    command: kubectl get pods                 # optional, shown with Type it
+  - title: Change the image
+    body: Change one thing.
+    command: kubectl set image deployment/storefront web=nginx:1.27-alpine
+    check: image-correct                      # optional: green when this check passes
+```
+
+- The meeting rewards the questions of the troubleshooting loop: what
+  changed, the exact symptom, the reference that works, what done means.
+  Each wrong choice gets a reply and feedback that say why it helps less;
+  the learner can pick again.
+- The guide may show mutating commands, unlike `hints.md`: it is the
+  practice run, and the DIY run plants a different cause.
+- A step without `check` is marked done by the learner; a step whose
+  `check` passes turns green with every step before it.
+- Unknown keys are errors (strict YAML).
+- The diagram puts each node in the row of its longest path from a node
+  with no incoming edge; inside a row, nodes follow `column` (lower first)
+  and then their order in the file. More than 9 nodes is an error: the
+  rows cross their edges, so split the story instead.
+- Writing choices: a wrong choice is a plausible move that reveals a wrong
+  mental model (acting before observing, scaling a failure, blaming a
+  layer the symptom rules out), its reply still gives a real fact, and its
+  feedback names what a better question learns. A quiz distractor is a
+  belief a learner actually holds, and its `explain` corrects it.
+- `kubedrill draft-guide <ref>` drafts the guide from the solution's
+  Observation, Change and Verify commands, and `kubedrill draft-guide <ref>
+  --check` lists guide commands the walkthrough never runs (see
+  [cli.md](cli.md#draft-guide)).
+- `kubedrill web --preview <ref>` opens the assignment without the cluster
+  and rereads the files on every request, so the meeting, quiz and diagram
+  can be written with the page open.
 
 ## hints.md
 
@@ -430,7 +515,7 @@ Rules for manifests:
   (Namespace, ClusterRole, CRD, PriorityClass, Node) fails the start
   (`cluster-scoped <Kind> <name> is not allowed in a scenario setup`), and
   so does another namespace (`object names namespace "x" but the scenario
-  namespace is "y"`). Cluster-scoped setup is on the roadmap.
+  namespace is "y"`). Cluster-scoped setup is not supported yet.
 - Stay inside the pod sandbox. Unless `allow_privileged = true`, lint
   rejects a rendered manifest that sets `privileged: true`, `hostNetwork:
   true`, `hostPID: true` or `hostIPC: true`, binds a non-zero `hostPort`,
@@ -611,6 +696,17 @@ Files:
   executable
 - `story.md` (when present): the five sections in order; it parses as a
   template
+- `simulation.yaml` (when present): parses as a template and, rendered for
+  the first variant, as strict YAML; a customer name and role, an opening
+  and a closing, at least 2 meeting turns with at least 2 choices and
+  exactly one best choice (with a `fact`) each, every choice with `say`,
+  `reply` and `feedback`; 2 to 9 diagram nodes with unique lowercase ids
+  and edges between them; at least 2 quiz questions with exactly one
+  correct choice and an `explain` on every choice; at least 3 guide steps
+  with a title and a body, each `check` naming a check of `checks.yaml`.
+  The same rules run again on the rendering of every variant. Messages
+  quote the start of the line they are about, for example `meeting turn 2
+  choice 1 ("Can you restart the pods?") needs say, reply and feedback`
 - `approaches/`: only directories, each named in lowercase words joined by
   hyphens, holding exactly a 1 to 8 line `snippet.txt` and a non-empty
   `content.md`; both parse as templates
@@ -624,7 +720,7 @@ Across the tree:
   iterations plus `template` calls, even ones that print nothing), so a
   template cannot hang lint or start
 - one seed per variant (the smallest seed that picks it) renders setup, checks, `instruction.md`,
-  `hints.md`, `solution/README.md`, `story.md` and `approaches/`, so an undefined
+  `hints.md`, `solution/README.md`, `story.md`, `simulation.yaml` and `approaches/`, so an undefined
   `.Vars` key shows up before a learner hits it
 - every page under `docs/concepts/` loads (id, title, intro, the four
   sections in order), and every concept a `curriculum.yaml` module lists
@@ -677,4 +773,7 @@ Both copy `scenarios/_template` to `scenarios/L0/011-slug/`, rewrite `id`
 and `level` in `scenario.toml`, and print the next steps: edit the files,
 `kubedrill lint`, `kubedrill smoke 011-slug`. The destination must not
 exist. The template's comments explain each file. Delete them and the
-marker lines in a real scenario, or lint rejects it.
+marker lines in a real scenario, or lint rejects it. The template includes
+`simulation.yaml`; delete it for a lab-only scenario, or replace its
+placeholders (`kubedrill draft-guide <id>` drafts the guide once the
+solution exists).

@@ -1,0 +1,316 @@
+{
+  "exams": [
+    {
+      "domains": [
+        {
+          "assignments": [
+            "001-storefront-down",
+            "002-restart-triage"
+          ],
+          "id": "troubleshooting",
+          "solved": 0,
+          "title": "Troubleshooting",
+          "weight": 30
+        },
+        {
+          "assignments": [],
+          "id": "workloads",
+          "solved": 0,
+          "title": "Workloads and scheduling",
+          "weight": 15
+        }
+      ],
+      "id": "CKA",
+      "title": "Certified Kubernetes Administrator"
+    },
+    {
+      "domains": [
+        {
+          "assignments": [
+            "003-crashloop",
+            "004-never-ready"
+          ],
+          "id": "observability",
+          "solved": 0,
+          "title": "Application observability and maintenance",
+          "weight": 15
+        },
+        {
+          "assignments": [
+            "011-rollout-stuck"
+          ],
+          "id": "deployment",
+          "solved": 0,
+          "title": "Application deployment",
+          "weight": 20
+        }
+      ],
+      "id": "CKAD",
+      "title": "Certified Kubernetes Application Developer"
+    }
+  ],
+  "levels": [
+    {
+      "after": "Reads any object and fixes one-object failures",
+      "before": "",
+      "id": "L0",
+      "modules": [
+        {
+          "assignments": [
+            {
+              "concepts": [
+                "pod-lifecycle",
+                "image-pull"
+              ],
+              "exam": [
+                "CKA:troubleshooting"
+              ],
+              "id": "001-storefront-down",
+              "mastery": {
+                "attempts": 0,
+                "cleanInLast": 0,
+                "last": 0,
+                "mastered": false,
+                "solved": 0,
+                "variants": 3,
+                "variantsSolved": 0
+              },
+              "minutes": 10,
+              "progress": {
+                "diy": {
+                  "done": false
+                },
+                "learn": {
+                  "done": false
+                },
+                "meeting": {
+                  "done": false
+                },
+                "practice": {
+                  "done": false
+                },
+                "quiz": {
+                  "done": false
+                }
+              },
+              "requires": [],
+              "simulation": true,
+              "status": "todo",
+              "title": "Storefront is down after the cluster migration"
+            },
+            {
+              "concepts": [
+                "pod-lifecycle"
+              ],
+              "exam": [
+                "CKA:troubleshooting"
+              ],
+              "id": "002-restart-triage",
+              "mastery": {
+                "attempts": 0,
+                "cleanInLast": 0,
+                "last": 0,
+                "mastered": false,
+                "solved": 0,
+                "variants": 3,
+                "variantsSolved": 0
+              },
+              "minutes": 12,
+              "progress": {
+                "diy": {
+                  "done": false
+                },
+                "learn": {
+                  "done": false
+                },
+                "meeting": {
+                  "done": false
+                },
+                "practice": {
+                  "done": false
+                },
+                "quiz": {
+                  "done": false
+                }
+              },
+              "requires": [],
+              "simulation": false,
+              "status": "todo",
+              "title": "Find the pod that keeps restarting"
+            }
+          ],
+          "badge": false,
+          "id": "L0.1",
+          "planned": 2,
+          "summary": "kubectl verbs, namespaces, events",
+          "title": "Reading the cluster"
+        },
+        {
+          "assignments": [
+            {
+              "concepts": [
+                "pod-lifecycle"
+              ],
+              "exam": [
+                "CKAD:observability"
+              ],
+              "id": "003-crashloop",
+              "mastery": {
+                "attempts": 0,
+                "cleanInLast": 0,
+                "last": 0,
+                "mastered": false,
+                "solved": 0,
+                "variants": 3,
+                "variantsSolved": 0
+              },
+              "minutes": 15,
+              "progress": {
+                "diy": {
+                  "done": false
+                },
+                "learn": {
+                  "done": false
+                },
+                "meeting": {
+                  "done": false
+                },
+                "practice": {
+                  "done": false
+                },
+                "quiz": {
+                  "done": false
+                }
+              },
+              "requires": [],
+              "simulation": false,
+              "status": "todo",
+              "title": "Worker is in CrashLoopBackOff since the deploy"
+            },
+            {
+              "concepts": [
+                "readiness-and-endpoints"
+              ],
+              "exam": [
+                "CKAD:observability"
+              ],
+              "id": "004-never-ready",
+              "mastery": {
+                "attempts": 0,
+                "cleanInLast": 0,
+                "last": 0,
+                "mastered": false,
+                "solved": 0,
+                "variants": 3,
+                "variantsSolved": 0
+              },
+              "minutes": 15,
+              "progress": {
+                "diy": {
+                  "done": false
+                },
+                "learn": {
+                  "done": false
+                },
+                "meeting": {
+                  "done": false
+                },
+                "practice": {
+                  "done": false
+                },
+                "quiz": {
+                  "done": false
+                }
+              },
+              "requires": [
+                "003-crashloop"
+              ],
+              "simulation": false,
+              "status": "todo",
+              "title": "API never becomes Ready"
+            }
+          ],
+          "badge": false,
+          "id": "L0.2",
+          "planned": 3,
+          "summary": "Phases, probes, restarts",
+          "title": "Pod lifecycle"
+        }
+      ],
+      "title": "Foundations"
+    },
+    {
+      "after": "Debugs an app in a namespace without help",
+      "before": "",
+      "id": "L1",
+      "modules": [
+        {
+          "assignments": [
+            {
+              "concepts": [
+                "rollouts"
+              ],
+              "exam": [
+                "CKAD:deployment"
+              ],
+              "id": "011-rollout-stuck",
+              "mastery": {
+                "attempts": 0,
+                "cleanInLast": 0,
+                "last": 0,
+                "mastered": false,
+                "solved": 0,
+                "variants": 3,
+                "variantsSolved": 0
+              },
+              "minutes": 20,
+              "progress": {
+                "diy": {
+                  "done": false
+                },
+                "learn": {
+                  "done": false
+                },
+                "meeting": {
+                  "done": false
+                },
+                "practice": {
+                  "done": false
+                },
+                "quiz": {
+                  "done": false
+                }
+              },
+              "requires": [],
+              "simulation": false,
+              "status": "todo",
+              "title": "Rollout stuck at 1 of 3 new replicas"
+            }
+          ],
+          "badge": false,
+          "id": "L1.1",
+          "planned": 4,
+          "summary": "Deployments, strategies, history",
+          "title": "Rollouts"
+        }
+      ],
+      "title": "Application operator"
+    },
+    {
+      "after": "On-call for a cluster",
+      "before": "",
+      "id": "L2",
+      "modules": [
+        {
+          "assignments": [],
+          "badge": false,
+          "id": "L2.1",
+          "planned": 6,
+          "summary": "Taints, affinity, resources",
+          "title": "Scheduling"
+        }
+      ],
+      "title": "Cluster operator"
+    }
+  ]
+}

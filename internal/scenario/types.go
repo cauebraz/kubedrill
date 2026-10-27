@@ -146,12 +146,13 @@ type Scenario struct {
 	// ticket told from zero for a learner new to the objects it involves.
 	Story string
 
-	hintsDoc string
+	hintsDoc      string
+	simulationDoc string
 }
 
 // Rendered is a Scenario specialised for one seed: the variant is chosen,
 // templates in setup files, checks, instruction.md, hints.md,
-// solution/README.md, story.md and the approaches are expanded, and Vars
+// solution/README.md, story.md, simulation.yaml and the approaches are expanded, and Vars
 // carries the values the templates saw. Instruction, Hints, Solution, Story
 // and Approaches are the learner-facing texts for this episode; the raw fields on Scenario keep
 // the templates.
@@ -168,4 +169,7 @@ type Rendered struct {
 	Solution    string
 	Story       string
 	Approaches  []Approach
+	// Simulation is the rendered simulation.yaml, nil when the scenario has
+	// none.
+	Simulation *Simulation
 }

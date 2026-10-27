@@ -1,0 +1,454 @@
+package web_test
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"errors"
+	"flag"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"golang.org/x/net/websocket"
+
+	"github.com/cauebraz/kubedrill/internal/web"
+	"github.com/cauebraz/kubedrill/internal/web/webtest"
+)
+
+const testToken = "0123456789abcdef"
+
+var update = flag.Bool("update", false, "rewrite the JSON snapshots under testdata")
+
+type client struct {
+	t      *testing.T
+	srv    *httptest.Server
+	cookie *http.Cookie
+}
+
+func newClient(t *testing.T, b web.Backend) *client {
+	t.Helper()
+	s := web.New(web.Deps{Backend: b, ProgressPath: filepath.Join(t.TempDir(), "progress.json"), Token: testToken, Now: fixedNow})
+	srv := httptest.NewServer(s.Handler())
+	t.Cleanup(srv.Close)
+	return &client{t: t, srv: srv, cookie: &http.Cookie{Name: "kubedrill_token", Value: testToken}}
+}
+
+func fixedNow() time.Time { return time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC) }
+
+func newFake() *webtest.Fake {
+	f := webtest.New()
+	f.Now = fixedNow
+	return f
+}
+
+func (c *client) do(method, path, body string, header bool) (*http.Response, string) {
+	c.t.Helper()
+	req, err := http.NewRequest(method, c.srv.URL+path, strings.NewReader(body))
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	if c.cookie != nil {
+		req.AddCookie(c.cookie)
+	}
+	if header {
+		req.Header.Set("X-Kubedrill", "1")
+	}
+	res, err := c.srv.Client().Do(req)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	defer res.Body.Close()
+	b, _ := io.ReadAll(res.Body)
+	return res, string(b)
+}
+
+func (c *client) json(method, path, body string, out any) int {
+	c.t.Helper()
+	res, text := c.do(method, path, body, true)
+	if out != nil && res.StatusCode < 300 {
+		if err := json.Unmarshal([]byte(text), out); err != nil {
+			c.t.Fatalf("%s %s: decode %q: %v", method, path, text, err)
+		}
+	}
+	return res.StatusCode
+}
+
+// start posts /api/start and reads the NDJSON stream: the steps, then the
+// session or the error line.
+func (c *client) start(body string) (steps []string, sess web.Session, errLine string, status int) {
+	c.t.Helper()
+	res, text := c.do("POST", "/api/start", body, true)
+	sc := bufio.NewScanner(strings.NewReader(text))
+	for sc.Scan() {
+		var line struct {
+			Step    string       `json:"step"`
+			Session *web.Session `json:"session"`
+			Error   string       `json:"error"`
+			Status  int          `json:"status"`
+		}
+		if err := json.Unmarshal(sc.Bytes(), &line); err != nil {
+			c.t.Fatalf("start: line %q: %v", sc.Text(), err)
+		}
+		switch {
+		case line.Step != "":
+			steps = append(steps, line.Step)
+		case line.Session != nil:
+			sess = *line.Session
+		case line.Error != "":
+			errLine, status = line.Error, line.Status
+		}
+	}
+	if status == 0 {
+		status = res.StatusCode
+	}
+	return steps, sess, errLine, status
+}
+
+func TestGuard(t *testing.T) {
+	c := newClient(t, newFake())
+	noRedirect := c.srv.Client()
+	noRedirect.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
+	t.Run("no cookie is refused with a pointer to the link", func(t *testing.T) {
+		c2 := *c
+		c2.cookie = nil
+		res, body := c2.do("GET", "/api/catalog", "", false)
+		if res.StatusCode != http.StatusUnauthorized || !strings.Contains(body, "Open the link") {
+			t.Errorf("got %d %q, want 401 with the link hint", res.StatusCode, body)
+		}
+	})
+	t.Run("the token link sets the cookie", func(t *testing.T) {
+		res, err := noRedirect.Get(c.srv.URL + "/?t=" + testToken)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		var got *http.Cookie
+		for _, ck := range res.Cookies() {
+			if ck.Name == "kubedrill_token" {
+				got = ck
+			}
+		}
+		if res.StatusCode != http.StatusSeeOther || got == nil || got.Value != testToken || !got.HttpOnly || got.SameSite != http.SameSiteStrictMode {
+			t.Errorf("got %d cookie %+v, want 303 with an HttpOnly SameSite=Strict token cookie", res.StatusCode, got)
+		}
+	})
+	t.Run("a wrong token link is refused", func(t *testing.T) {
+		res, err := noRedirect.Get(c.srv.URL + "/?t=nope")
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusForbidden {
+			t.Errorf("got %d, want 403", res.StatusCode)
+		}
+	})
+	t.Run("a foreign host is refused", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", c.srv.URL+"/api/catalog", nil)
+		req.Host = "evil.example:8642"
+		req.AddCookie(c.cookie)
+		res, err := c.srv.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusMisdirectedRequest {
+			t.Errorf("got %d, want 421", res.StatusCode)
+		}
+	})
+	t.Run("a POST without the header is refused", func(t *testing.T) {
+		res, _ := c.do("POST", "/api/hint", "{}", false)
+		if res.StatusCode != http.StatusForbidden {
+			t.Errorf("got %d, want 403", res.StatusCode)
+		}
+	})
+	t.Run("static files are served with module types", func(t *testing.T) {
+		for _, p := range []string{"/", "/app.js", "/app.css", "/js/api.js", "/js/lab.js", "/vendor/xterm/xterm.js", "/vendor/xterm/addon-fit.js"} {
+			res, _ := c.do("GET", p, "", false)
+			if res.StatusCode != http.StatusOK {
+				t.Errorf("GET %s: got %d, want 200", p, res.StatusCode)
+			}
+			if strings.HasSuffix(p, ".js") && !strings.Contains(res.Header.Get("Content-Type"), "javascript") {
+				t.Errorf("GET %s: Content-Type %q, want javascript (ES modules need it)", p, res.Header.Get("Content-Type"))
+			}
+		}
+	})
+}
+
+func TestStaticDirServesFromDisk(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("from disk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := web.New(web.Deps{Backend: newFake(), Token: testToken, StaticDir: dir, Preview: "001"})
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	c := &client{t: t, srv: srv, cookie: &http.Cookie{Name: "kubedrill_token", Value: testToken}}
+	if _, body := c.do("GET", "/", "", false); body != "from disk" {
+		t.Errorf("index: got %q, want the file from --static-dir", body)
+	}
+	var meta map[string]any
+	c.json("GET", "/api/meta", "", &meta)
+	if meta["preview"] != "001" || meta["dev"] != true {
+		t.Errorf("meta: got %v, want preview 001 and dev true", meta)
+	}
+}
+
+func TestAssignmentRendersMarkdownWithoutRawHTML(t *testing.T) {
+	c := newClient(t, newFake())
+	var a web.Assignment
+	if code := c.json("GET", "/api/assignment/001", "", &a); code != 200 {
+		t.Fatalf("status %d", code)
+	}
+	if !strings.Contains(a.Ticket, "<h1>Storefront is down") || strings.Contains(a.Ticket, "<script>") {
+		t.Errorf("ticket HTML: got %q", a.Ticket)
+	}
+	if len(a.Concepts) != 1 || !strings.Contains(a.Concepts[0].Body, "<strong>Pending</strong>") {
+		t.Errorf("concept body: got %+v, want HTML", a.Concepts)
+	}
+	if code := c.json("GET", "/api/assignment/999", "", nil); code != 500 {
+		t.Errorf("unknown assignment: got %d, want 500", code)
+	}
+}
+
+func TestStartStreamsSteps(t *testing.T) {
+	f := newFake()
+	c := newClient(t, f)
+	if _, _, errLine, status := c.start(`{"id":"001","stage":"quiz"}`); status != 400 || !strings.Contains(errLine, "does not run an episode") {
+		t.Errorf("start of a page stage: got %d %q, want 400", status, errLine)
+	}
+	steps, sess, errLine, _ := c.start(`{"id":"001","stage":"practice"}`)
+	if errLine != "" {
+		t.Fatalf("start: %s", errLine)
+	}
+	if want := []string{"creating namespace shop-abcde", "applying 3 setup manifests", "recording the episode"}; strings.Join(steps, "|") != strings.Join(want, "|") {
+		t.Errorf("steps: got %q, want %q", steps, want)
+	}
+	if sess.Active == nil || sess.Active.Stage != web.StagePractice || sess.Active.Ticket == "" || !strings.HasPrefix(sess.Active.Ticket, "<h1>") {
+		t.Fatalf("session: got %+v", sess.Active)
+	}
+	if _, _, errLine, status := c.start(`{"id":"001","stage":"diy"}`); status != http.StatusConflict || errLine == "" {
+		t.Errorf("start over an active episode: got %d %q, want 409", status, errLine)
+	}
+}
+
+func TestStageFlowAndDebrief(t *testing.T) {
+	f := newFake()
+	c := newClient(t, f)
+
+	if code := c.json("POST", "/api/progress", `{"id":"001-storefront-down","stage":"practice","score":1,"total":1}`, nil); code != 400 {
+		t.Errorf("page-recorded practice: got %d, want 400", code)
+	}
+	var sp web.StageProgress
+	if code := c.json("POST", "/api/progress", `{"id":"001-storefront-down","stage":"meeting","score":1,"total":2}`, &sp); code != 200 || !sp.Meeting.Done {
+		t.Fatalf("meeting progress: got %d %+v", code, sp)
+	}
+
+	c.start(`{"id":"001","stage":"practice"}`)
+	var v web.Validation
+	if code := c.json("POST", "/api/validate", "", &v); code != 200 || v.Passed {
+		t.Fatalf("failing validate: got %d %+v", code, v)
+	}
+	if code := c.json("POST", "/api/diagnose", `{"text":"short"}`, nil); code != 400 {
+		t.Errorf("short diagnosis: got %d, want 400", code)
+	}
+	if code := c.json("POST", "/api/diagnose", `{"text":"the image does not exist"}`, nil); code != 200 {
+		t.Errorf("diagnosis: got %d", code)
+	}
+	var h web.Hint
+	if code := c.json("POST", "/api/hint", "", &h); code != 200 || !strings.Contains(h.HTML, "<code>0/3 ready</code>") {
+		t.Errorf("hint: got %d %+v", code, h)
+	}
+	f.Fix()
+	c.json("POST", "/api/validate", "", &v)
+	if !v.Passed || !strings.Contains(v.Solution, "<h2>Change</h2>") {
+		t.Fatalf("passing validate: got %+v", v)
+	}
+
+	var d web.Debrief
+	if code := c.json("GET", "/api/debrief/"+v.EpisodeID, "", &d); code != 200 || d.Verdict != "root-cause" || d.FirstWriteKind != "fix-target" {
+		t.Fatalf("debrief: got %d %+v", code, d)
+	}
+	if code := c.json("POST", "/api/debrief/"+v.EpisodeID, `{"matched":true,"ruledOutEarlier":"the Events","nextTimeFirst":"describe pod"}`, &d); code != 200 {
+		t.Fatalf("record debrief: got %d", code)
+	}
+	if d.Answers.RuledOutEarlier != "the Events" || d.Matched == nil || !*d.Matched {
+		t.Errorf("recorded debrief: got %+v", d)
+	}
+	if code := c.json("POST", "/api/debrief/"+v.EpisodeID, `{"ruledOutEarlier":"`+strings.Repeat("x", 501)+`"}`, nil); code != 400 {
+		t.Errorf("long answer: got %d, want 400", code)
+	}
+	if code := c.json("GET", "/api/debrief/nope", "", nil); code != 400 {
+		t.Errorf("unknown episode: got %d, want 400", code)
+	}
+
+	var cat web.Catalog
+	c.json("GET", "/api/catalog", "", &cat)
+	if p := cat.Levels[0].Modules[0].Assignments[0].Progress; !p.Practice.Done || !p.Meeting.Done {
+		t.Errorf("progress after the practice: got %+v", p)
+	}
+}
+
+func TestBadgeNeedsEveryDIY(t *testing.T) {
+	f := newFake()
+	f.Passed = true
+	c := newClient(t, f)
+	for _, id := range []string{"001", "002"} {
+		c.start(`{"id":"` + id + `","stage":"diy","replace":true}`)
+		c.json("POST", "/api/validate", "", nil)
+	}
+	var cat web.Catalog
+	c.json("GET", "/api/catalog", "", &cat)
+	if !cat.Levels[0].Modules[0].Badge {
+		t.Errorf("L0.1 badge: got false after every DIY passed")
+	}
+	if cat.Levels[0].Modules[1].Badge {
+		t.Error("L0.2 badge earned with no DIY")
+	}
+	if cat.Levels[2].Modules[0].Badge {
+		t.Error("a plan with no assignment earned its badge")
+	}
+}
+
+func TestNextOffersActiveThenRecommendation(t *testing.T) {
+	c := newClient(t, newFake())
+	var n web.Next
+	c.json("GET", "/api/next", "", &n)
+	if n.Active != nil || n.ScenarioID != webtest.FullID || n.Reason == "" {
+		t.Errorf("next without an episode: got %+v", n)
+	}
+	c.start(`{"id":"001","stage":"practice"}`)
+	c.json("GET", "/api/next", "", &n)
+	if n.Active == nil || n.Active.Stage != web.StagePractice {
+		t.Errorf("next with an episode: got %+v", n)
+	}
+}
+
+// TestSnapshots pins the JSON the page reads; run with -update after a
+// deliberate change and review the diff.
+func TestSnapshots(t *testing.T) {
+	f := newFake()
+	c := newClient(t, f)
+	snap := func(name, path string) {
+		t.Helper()
+		_, body := c.do("GET", path, "", false)
+		var v any
+		if err := json.Unmarshal([]byte(body), &v); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		enc.SetEscapeHTML(false)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(v); err != nil {
+			t.Fatal(err)
+		}
+		got := buf.Bytes()
+		file := filepath.Join("testdata", name+".json")
+		if *update {
+			if err := os.MkdirAll("testdata", 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(file, got, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+		want, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("%s: %v (run go test ./internal/web -run TestSnapshots -update)", file, err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("%s changed; review and run with -update:\n%s", file, got)
+		}
+	}
+	snap("catalog", "/api/catalog")
+	snap("assignment", "/api/assignment/001")
+	snap("next-idle", "/api/next")
+	c.start(`{"id":"001","stage":"practice"}`)
+	snap("session-live", "/api/session?live=1")
+}
+
+func TestTerminal(t *testing.T) {
+	f := newFake()
+	f.TerminalArgv = []string{"sh", "-c", `printf 'ready\n'; stty -echo; read line; echo "you said $line"; stty size; sleep 30`}
+	c := newClient(t, f)
+	u := strings.Replace(c.srv.URL, "http://", "ws://", 1) + "/ws/terminal?cols=91&rows=27"
+
+	t.Run("a foreign origin is refused", func(t *testing.T) {
+		cfg, _ := websocket.NewConfig(u, "http://evil.example")
+		cfg.Header.Add("Cookie", "kubedrill_token="+testToken)
+		if ws, err := websocket.DialConfig(cfg); err == nil {
+			ws.Close()
+			t.Fatal("dial with a foreign origin succeeded")
+		}
+	})
+
+	cfg, err := websocket.NewConfig(u, c.srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Header.Add("Cookie", "kubedrill_token="+testToken)
+	ws, err := websocket.DialConfig(cfg)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	var out strings.Builder
+	read := func(want string) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for !strings.Contains(out.String(), want) {
+			if time.Now().After(deadline) {
+				t.Fatalf("terminal output: got %q, want %q", out.String(), want)
+			}
+			_ = ws.SetReadDeadline(deadline)
+			var b []byte
+			if err := websocket.Message.Receive(ws, &b); err != nil {
+				t.Fatalf("receive: %v (so far %q)", err, out.String())
+			}
+			out.Write(b)
+		}
+	}
+	read("ready")
+	_ = websocket.Message.Send(ws, `{"t":"r","c":100,"r":40}`)
+	_ = websocket.Message.Send(ws, `{"t":"i","d":"hi\r"}`)
+	read("you said hi")
+	read("40 100")
+	ws.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		f.Lock()
+		n := len(f.Cleaned)
+		var name string
+		if n > 0 {
+			name = f.Cleaned[0]
+		}
+		f.Unlock()
+		if n == 1 {
+			if !strings.HasPrefix(name, "kubedrill-web-") {
+				t.Errorf("container name: got %q, want kubedrill-web-<hex>", name)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("cleanup not called after the page closed the terminal")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestHintErrorIsABadRequest(t *testing.T) {
+	f := newFake()
+	f.HintErr = errors.New("commit to a cause first")
+	c := newClient(t, f)
+	c.start(`{"id":"001","stage":"practice"}`)
+	if code := c.json("POST", "/api/hint", "", nil); code != 400 {
+		t.Errorf("hint error: got %d, want 400", code)
+	}
+}

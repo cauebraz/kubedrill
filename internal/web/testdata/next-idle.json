@@ -1,0 +1,7 @@
+{
+  "minutes": 10,
+  "reason": "you have not tried it yet; it is the next one at L0",
+  "reviewsPending": 1,
+  "scenarioId": "001-storefront-down",
+  "title": "Storefront is down after the cluster migration"
+}

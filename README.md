@@ -19,9 +19,9 @@ git clone https://github.com/cauebraz/kubedrill.git && cd kubedrill && ./start.s
 
 That is the only command to remember. `./start.sh` builds `kubedrill`,
 checks your tools, creates a local cluster (Kubernetes v1.37.0, one control
-plane, two workers) and offers your first scenario. Press Enter and the
-workstation opens. Next time, run `./start.sh` again: it reopens the
-scenario you were on, or offers the next one.
+plane, two workers) and opens the workspace in your browser at
+`http://127.0.0.1:8642`. Next time, run `./start.sh` again: your progress
+is kept. Ctrl-C in the terminal stops the workspace.
 
 The first run downloads the kind node image (about 1 GB) and builds the
 workstation image (about 800 MB) while the cluster starts. Both take a few
@@ -29,9 +29,42 @@ minutes, once. `up` also preloads the images the scenarios need,
 so practice after it works without a registry. `kubedrill up --addons
 gateway,kwok` adds Envoy Gateway and KWOK to the cluster.
 
-## Your first scenario
+## Your first assignment
 
-The workstation opens in your terminal. This is the first scenario, a
+Each assignment runs in the browser, in six stages:
+
+1. **Meet the customer.** Chat with the person who opened the ticket and
+   pick the questions a good engineer would ask. Each good question adds a
+   requirement to your board, and a mentor comments on every choice.
+2. **Check understanding.** A short quiz on what the symptoms mean.
+3. **Learn the pieces.** A diagram of the objects involved and the story of
+   the ticket told from zero.
+4. **Guided practice.** A live namespace with the problem planted, a
+   terminal into the workstation in the page, step-by-step instructions and
+   checks that turn green as you fix things.
+5. **Do it yourself.** The same ticket with a different planted cause, no
+   guide, and a mentor that gives hints one step at a time.
+6. **Debrief and badge.** After each passed run the debrief puts your
+   diagnosis next to the real cause and shows your trajectory: how much you
+   observed before the first change, and whether that change hit the
+   object the fix belongs to. Finish every DIY run of a learning plan to
+   earn its badge.
+
+The home page always has one next step: the run you left open, or the
+assignment kubedrill recommends and why. The catalog filters every
+assignment by level, status, exam domain and concept, and the exams page
+shows how much of each CKA, CKAD and CKS domain you cover. Press `?` on any
+screen for its keyboard shortcuts.
+
+![The browser workspace on the guided practice of scenario 001: the steps on the left, the workstation terminal on the right, the live checks below](docs/images/web-practice.png)
+
+Everything runs on your machine: the page talks to `kubedrill` on
+`127.0.0.1` only, with a token from the link it prints.
+
+## The terminal workstation
+
+Prefer the terminal? `kubedrill` without arguments runs the same setup and
+opens the workstation in tmux instead. This is the first scenario, a
 minute in:
 
 ![The kubedrill workstation on scenario 001: the ticket at the top left, the shell below it, the live checks on the right](docs/images/first-scenario.png)
@@ -66,10 +99,8 @@ verify. `kubedrill learn troubleshooting-loop` explains it.
 | [docs/workstation.md](docs/workstation.md)           | Learn the workstation panes, tools and recording              |
 | [docs/cli.md](docs/cli.md)                           | Look up a command, flag, message or exit code                 |
 | [docs/concepts/](docs/concepts/README.md)            | Read about a mechanism a ticket uses                          |
-| [docs/roadmap.md](docs/roadmap.md)                   | See the levels L0 to L6 and the planned scenarios             |
 | [CONTRIBUTING.md](CONTRIBUTING.md)                   | Write a scenario                                              |
 | [docs/scenario-format.md](docs/scenario-format.md)   | Look up a scenario file or field                              |
-| [docs/design.md](docs/design.md)                     | Know why it works this way, with sources                      |
 
 ## Your data stays local
 

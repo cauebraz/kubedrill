@@ -23,7 +23,7 @@ stays on the learner's machine.
 
 ```
 cmd/kubedrill/            composition root and main; telemetry reads the cluster audit log and the journal's shell log and recordings
-internal/scenario/        on-disk scenario format: scenario.toml, instruction.md, hints.md, story.md, setup/, checks.yaml, solution/, approaches/
+internal/scenario/        on-disk scenario format: scenario.toml, instruction.md, hints.md, story.md, simulation.yaml, setup/, checks.yaml, solution/, approaches/
 internal/grader/          runs checks.yaml as a DAG against the cluster, produces Grade with Results; script checks get an env allowlist (PATH, HOME, TMPDIR, LANG, LC_ALL, TERM, USER plus TASK_NS, SEED, VARIANT, VAR_*, KUBECONFIG) shared with hook.sh and solve.sh through internal/scriptrun; wrapper.go puts a kubectl tagged kubedrill-check first on PATH for them
 internal/kube/            the Kubernetes API client (dynamic client, server-side apply, probes, namespace GC, APIService health); cluster/ uses clientcmd, grader/ uses client-go jsonpath
 internal/yamldoc/         one YAML document splitter (Split) shared by kube, scenario lint and the addon loader
@@ -38,7 +38,8 @@ internal/faults/          node faults through docker (pause, stop kubelet, tc ne
 internal/curriculum/      curriculum.yaml: levels L0-L6, modules, exam map
 internal/concepts/        loads and validates docs/concepts/*.md (title, intro, four sections)
 internal/workstation/     the workstation container: image tag, linux binary (host go, or the golang image of workstation/builder.env) and kubeconfig-internal (both in the cluster state dir, mounted read-only), docker run, exam mode, replay, node shell (docker exec on the host, kubectl debug node in the kubedrill-debug namespace inside the workstation)
-internal/cli/             cobra commands, Factories/Options, session assembly and command handlers
+internal/cli/             cobra commands, Factories/Options, session assembly and command handlers; web.go is the Backend of the browser workspace
+internal/web/             kubedrill web: HTTP server on 127.0.0.1 (token cookie, loopback Host, X-Kubedrill header), JSON API with snapshots in testdata/, NDJSON launch progress, stage progress (web-progress.json in the journal), websocket terminal in a host pseudo-terminal (stdlib, darwin and linux); static/ is the page (index.html, app.js, js/ ES modules, app.css design tokens, vendored xterm.js; static/README.md is the design system); webtest/ is the in-memory Backend, devserver/ serves it, browser_test.go (tag browser) drives headless Chrome
 internal/render/          terminal text: width resolution, wrap and truncate, markdown, styles, check result lines, Printer, progress line
 internal/tui/watch/       Bubble Tea model of kubedrill watch (Session, Options, Run)
 internal/tui/ticket/      Bubble Tea model of kubedrill ticket --follow (Loader, Run); s switches to the story
@@ -83,6 +84,14 @@ private/                  git-ignored local notes (research, reviews); never lin
   first-line modification notice, so they keep upstream characters. They
   stay Apache-2.0 (`LICENSES/Apache-2.0.txt`); `cluster/addons/README.md`
   lists each source, version and local change and is updated with them.
+  The same holds for the browser libraries under
+  `internal/web/static/vendor/` (MIT, sources and checksums in its
+  README.md).
+- The browser workspace binds 127.0.0.1 only and every route but the token
+  link needs the token cookie; the page renders scenario markdown with raw
+  HTML dropped and sets learner text with textContent, never innerHTML.
+  Its styles use the tokens of `internal/web/static/app.css` (dark and
+  light themes), never literal colors.
 - An addon container that mounts a host path (the docker socket gives root
   on the host) sets `host_access: true` in its `addon.yaml`; the loader
   refuses it otherwise, and the flag needs maintainer review.
@@ -114,6 +123,10 @@ private/                  git-ignored local notes (research, reviews); never lin
   `## The pieces`, `## Following the trail`, `## The fix and why it works`,
   `## Check your work`, in order, written for someone who has never used
   Kubernetes and true for every variant.
+- simulation.yaml is optional (recommended for L0 and L1): the customer
+  meeting (exactly one best question per turn), the diagram, the quiz and
+  the guide of the browser workspace; the guide runs on the first variant
+  and may show the fix, the rest holds for every variant.
 - solution/README.md has exactly `## Symptom`, `## Candidate causes`, `##
   Observation that splits them`, `## Change`, `## Verify`, `## In the real
   world`, `## Go deeper`, in order.
@@ -145,6 +158,8 @@ just check       gofmt, go vet, go test -race, go build, go mod tidy -diff, shel
 just build       builds bin/kubedrill
 just smoke       runs every scenario end to end against the current cluster
 just vuln        govulncheck over the module (needs network)
+just web-dev     the browser workspace on an in-memory backend, page files from disk
+just ui-test     every workspace stage in headless Chrome (needs Chrome); a directory argument saves screenshots
 just check-ci    check, vuln and smoke; the check and smoke jobs of CI
 ```
 

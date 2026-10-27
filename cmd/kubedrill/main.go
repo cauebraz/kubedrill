@@ -239,6 +239,12 @@ func (u unavailableWorkstation) Prepare(context.Context, io.Writer) error { retu
 
 func (u unavailableWorkstation) Shell(context.Context, workstation.ShellOptions) error { return u.err }
 
+func (u unavailableWorkstation) ShellCommand(context.Context, workstation.ShellOptions) (*exec.Cmd, error) {
+	return nil, u.err
+}
+
+func (u unavailableWorkstation) RemoveContainer(context.Context, string) error { return u.err }
+
 func (u unavailableWorkstation) NodeShell(context.Context, string, string) error { return u.err }
 
 func (u unavailableWorkstation) NodeDebug(context.Context, string, string, string) error {

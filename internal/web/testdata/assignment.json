@@ -1,0 +1,183 @@
+{
+  "concepts": [
+    {
+      "body": "<h1>Pod lifecycle</h1>\n<p>A pod moves from <strong>Pending</strong> to <strong>Running</strong>.</p>\n",
+      "id": "pod-lifecycle",
+      "summary": "From Pending to Running to Ready.",
+      "title": "Pod lifecycle"
+    }
+  ],
+  "exam": [
+    "CKA:troubleshooting"
+  ],
+  "id": "001-storefront-down",
+  "level": "L0",
+  "mastery": {
+    "attempts": 0,
+    "cleanInLast": 0,
+    "last": 0,
+    "mastered": false,
+    "solved": 0,
+    "variants": 3,
+    "variantsSolved": 0
+  },
+  "minutes": 10,
+  "module": "L0.1",
+  "moduleTitle": "Reading the cluster",
+  "progress": {
+    "diy": {
+      "done": false
+    },
+    "learn": {
+      "done": false
+    },
+    "meeting": {
+      "done": false
+    },
+    "practice": {
+      "done": false
+    },
+    "quiz": {
+      "done": false
+    }
+  },
+  "simulation": {
+    "customer": {
+      "company": "ACME Retail",
+      "name": "Dana",
+      "role": "Storefront team lead"
+    },
+    "diagram": {
+      "edges": [
+        {
+          "from": "deploy",
+          "label": "creates",
+          "to": "pods"
+        },
+        {
+          "from": "service",
+          "label": "Ready only",
+          "to": "pods"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "deploy",
+          "label": "Deployment storefront",
+          "note": "keeps 3 pods"
+        },
+        {
+          "id": "pods",
+          "label": "Pods x3",
+          "note": "image pulled, probe passed"
+        },
+        {
+          "id": "service",
+          "label": "Service storefront",
+          "note": "routes to Ready pods"
+        }
+      ]
+    },
+    "guide": [
+      {
+        "body": "Read the STATUS column.",
+        "command": "kubectl get pods",
+        "title": "List the pods"
+      },
+      {
+        "body": "Find the `Failed to pull image` line.",
+        "command": "kubectl get events --sort-by=.lastTimestamp",
+        "title": "Read the events"
+      },
+      {
+        "body": "Change one thing.",
+        "check": "image-correct",
+        "command": "kubectl set image deployment/storefront web=nginx:1.27-alpine",
+        "title": "Change the image"
+      },
+      {
+        "body": "Wait for Ready.",
+        "check": "ready-replicas",
+        "command": "kubectl rollout status deployment/storefront",
+        "title": "Watch the rollout"
+      }
+    ],
+    "meeting": {
+      "closing": "Ping me when it is back.",
+      "opening": "The storefront has been down since this morning. Where do you want to start?",
+      "turns": [
+        {
+          "choices": [
+            {
+              "best": true,
+              "fact": "It broke right after the move to the new cluster.",
+              "feedback": "A failure right after a change usually comes from it.",
+              "reply": "We moved it to the new cluster this morning.",
+              "say": "What changed right before it stopped working?"
+            },
+            {
+              "feedback": "Acting before observing hides evidence.",
+              "reply": "We did, they came back the same.",
+              "say": "Can you restart the pods?"
+            }
+          ],
+          "prompt": "What do you ask first?"
+        },
+        {
+          "choices": [
+            {
+              "feedback": "Starting over destroys the evidence.",
+              "reply": "Please do not.",
+              "say": "Can I delete the namespace?"
+            },
+            {
+              "best": true,
+              "fact": "Done: 3 ready pods serve the 2.14.0 page.",
+              "feedback": "Agreeing on done lets you verify like the customer.",
+              "reply": "Three ready pods serving the 2.14.0 page.",
+              "say": "What does fixed look like for you?"
+            }
+          ],
+          "prompt": "Agree on done."
+        }
+      ]
+    },
+    "mentor": {
+      "intro": "Ask me for a hint whenever you are stuck."
+    },
+    "quiz": [
+      {
+        "choices": [
+          {
+            "correct": true,
+            "explain": "The pull happens before the container exists.",
+            "text": "A crash or a failing probe."
+          },
+          {
+            "explain": "A pod that never starts a container cannot crash.",
+            "text": "Nothing."
+          }
+        ],
+        "question": "Every pod shows ImagePullBackOff. What does that rule out?"
+      },
+      {
+        "choices": [
+          {
+            "explain": "New pods get the same template.",
+            "text": "In the pods."
+          },
+          {
+            "correct": true,
+            "explain": "The pods copy the image from it.",
+            "text": "In the Deployment's pod template."
+          }
+        ],
+        "question": "Where does the fix belong?"
+      }
+    ]
+  },
+  "story": "<h1>The storefront that never started</h1>\n<h2>What happened</h2>\n<p>The team moved the storefront to a new cluster.</p>\n",
+  "ticket": "<h1>Storefront is down after the cluster migration</h1>\n<h2>Ticket</h2>\n<blockquote>\n<p><strong>From:</strong> Dana</p>\n<p>The status page shows <code>0/3</code> ready.</p>\n</blockquote>\n<h2>Done when</h2>\n<ul>\n<li>deployment storefront has 3 ready replicas</li>\n<li>deployment storefront runs the nginx:1.27-alpine image</li>\n</ul>\n<!-- raw HTML omitted -->\n",
+  "title": "Storefront is down after the cluster migration",
+  "variants": 3
+}
