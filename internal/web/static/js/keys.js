@@ -18,14 +18,17 @@ function chord(e) {
 }
 
 // bind registers keys (for example "1", "Enter", "mod+Enter") with a
-// description for the help overlay; it lasts until the route changes.
+// description for the help overlay; it lasts until the route changes or
+// the returned function drops it.
 export function bind(keys, description, fn) {
   const b = { keys: [].concat(keys), description, fn };
   bindings.push(b);
-  onLeave(() => {
+  const drop = () => {
     const i = bindings.indexOf(b);
     if (i >= 0) { bindings.splice(i, 1); }
-  });
+  };
+  onLeave(drop);
+  return drop;
 }
 
 // pushOverlay registers an open drawer or modal; Esc closes the last one.

@@ -1,0 +1,93 @@
+checks:
+  - id: sts-ready
+    description: statefulset redis has 3 ready replicas
+    why: >-
+      readyReplicas counts redis pods that answer their readiness probe; a
+      pod that is not Ready gets no DNS record under the headless Service, so
+      session-api cannot reach that node and logins that hash to it fail.
+    critical: true
+    weight: 2
+    resource:
+      apiVersion: apps/v1
+      kind: StatefulSet
+      namespace: "{{ .Namespace }}"
+      name: redis
+    path: "{.status.readyReplicas}"
+    equals: "3"
+
+  - id: svc-headless
+    description: service redis is headless (clusterIP None)
+    why: >-
+      A Service with a cluster IP answers DNS with one virtual address and
+      load-balances across the pods; only a headless Service publishes one
+      record per pod, and session-api must reach each redis node by name.
+    resource:
+      apiVersion: v1
+      kind: Service
+      namespace: "{{ .Namespace }}"
+      name: redis
+    path: "{.spec.clusterIP}"
+    equals: None
+
+  - id: svc-endpoints
+    description: service redis has 3 ready endpoints, redis-0, redis-1 and redis-2
+    why: >-
+      The per-pod DNS records come from the ready endpoints of the headless
+      Service; a selector that misses a pod, or a pod that is not Ready,
+      leaves its name unresolved for every client.
+    depends_on: [svc-headless, sts-ready]
+    weight: 2
+    resource:
+      apiVersion: discovery.k8s.io/v1
+      kind: EndpointSlice
+      namespace: "{{ .Namespace }}"
+      selector: kubernetes.io/service-name=redis
+    path: "{.items[*].endpoints[?(@.conditions.ready==true)].targetRef.name}"
+    matches: "^redis-[0-2] redis-[0-2] redis-[0-2]$"
+
+  - id: redis-2-dns-ping
+    description: redis-2.redis.{{ .Namespace }}.svc.cluster.local resolves and answers PING on port 6379
+    why: >-
+      session-api connects to each redis node by its stable name; a name that
+      does not resolve or a port that does not answer means the logins mapped
+      to that node fail, whatever the StatefulSet status says.
+    depends_on: [svc-endpoints]
+    weight: 2
+    probe:
+      image: redis:7.4-alpine@sha256:6ba19c50b56777f5c11c58eff8ddb69d0d5f27ba131cffb63f180ccfd43c66af
+      command: ["redis-cli", "-h", "redis-2.redis.{{ .Namespace }}.svc.cluster.local", "-p", "6379", "ping"]
+      timeout: 30s
+    contains: PONG
+
+  - id: pvcs-bound
+    description: persistentvolumeclaims data-redis-0, data-redis-1 and data-redis-2 are Bound
+    why: >-
+      Each redis pod keeps its data on its own claim, named after the
+      volumeClaimTemplate and the pod; without a Bound claim the pod loses
+      every session it stored the next time it restarts.
+    script: kubectl -n "$TASK_NS" get pvc data-redis-0 data-redis-1 data-redis-2 -o jsonpath='{range .items[*]}{.metadata.name}={.status.phase} {end}' 2>&1
+    equals: data-redis-0=Bound data-redis-1=Bound data-redis-2=Bound
+
+  - id: variant-setting
+    description: "{{ .Vars.goal }}"
+    why: >-
+      The session team's runbooks depend on this setting; a StatefulSet that
+      is Ready without it behaves differently on the next restart, restore or
+      memory spike than the team expects.
+    depends_on: [sts-ready]
+    script: |
+      set -u
+      if [ "$VAR_CONFIG" = none ]; then
+        p=$(kubectl -n "$TASK_NS" get statefulset redis -o jsonpath='{.spec.podManagementPolicy}')
+        echo "statefulset redis podManagementPolicy: ${p:-<unset>}"
+        [ "$p" = "$VAR_POLICY" ]
+      else
+        rc=0
+        for pod in redis-0 redis-1 redis-2; do
+          v=$(kubectl -n "$TASK_NS" exec "$pod" -- redis-cli config get maxmemory-policy 2>&1 | tail -n 1)
+          echo "$pod maxmemory-policy: $v"
+          [ "$v" = allkeys-lru ] || rc=1
+        done
+        exit "$rc"
+      fi
+    exit_code: 0

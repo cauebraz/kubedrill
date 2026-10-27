@@ -1,0 +1,3 @@
+kubectl -n {{ .Namespace }} rollout history deployment/checkout
+kubectl -n {{ .Namespace }} rollout undo deployment/checkout --to-revision=1
+kubectl -n {{ .Namespace }} rollout status deployment/checkout --timeout=120s

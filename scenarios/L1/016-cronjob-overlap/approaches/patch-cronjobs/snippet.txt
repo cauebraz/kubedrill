@@ -1,0 +1,3 @@
+kubectl -n {{ .Namespace }} patch cronjob invoice --type=merge -p '{"spec":{"concurrencyPolicy":"Forbid"}}'
+kubectl -n {{ .Namespace }} patch cronjob invoice-legacy --type=merge -p '{"spec":{"suspend":true}}'
+kubectl -n {{ .Namespace }} get jobs -l app.kubernetes.io/name=invoice

@@ -1,0 +1,268 @@
+customer:
+  name: Priya
+  role: Shop on-call engineer
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Ask me for a hint whenever you are
+    stuck: each hint goes one step further, from where to look to what to
+    change, and the last one waits until you name a cause.
+
+meeting:
+  opening: >-
+    Thanks for picking this up. An alert has been paging me since 07:40 and
+    I cannot tell from it which pod it is about. Nothing is down, but I would
+    like it found, tagged and quiet before the day gets busy. What do you
+    need from me?
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What exactly does the alert say, word for word?
+          reply: >-
+            "A pod in the shop namespace restarted more than 5 times in the
+            last hour." That is all. No pod name, no service, and the
+            namespace runs about 40 pods across 14 services.
+          feedback: >-
+            Good first question. The exact text tells you the symptom is a
+            restart count, which Kubernetes keeps per pod, and that the search
+            space is 40 pods: sorting the list beats reading it.
+          best: true
+          fact: The alert counts restarts (more than 5 in an hour) for one unnamed pod among about 40 in the namespace.
+        - say: Can you restart all the shop services so the alert clears?
+          reply: >-
+            I would rather not. Thirteen of them are fine and a restart
+            resets the counter, so we would lose the only clue we have.
+          feedback: >-
+            A restart resets the restart count, which is the evidence. Ask
+            what the alert says before touching anything.
+        - say: Did anything get deployed this morning?
+          reply: >-
+            Not that I know of. The last shop deploy was two days ago and
+            the alert started today at 07:40.
+          feedback: >-
+            Useful to rule out a fresh deploy, but a restart loop can start
+            long after a change (a cache that grew, a probe that only fails
+            under load). The exact alert text narrows the search more.
+    - prompt: You want to know how urgent this is. What do you ask?
+      choices:
+        - say: Is anything failing for customers right now?
+          reply: >-
+            No. Checkout, search and the storefront pages all work. Whatever
+            is restarting is not on the customer path, or has enough copies.
+          feedback: >-
+            This sets the pace: triage, not mitigation. You have time to read
+            the pod's state and logs before you change anything, which is
+            exactly the order the troubleshooting loop asks for.
+          best: true
+          fact: No customer impact; this is triage, so observe before changing anything.
+        - say: Should we scale every service up so one restart matters less?
+          reply: >-
+            More copies of a pod that keeps dying are more restarts, not
+            fewer. And nothing is down.
+          feedback: >-
+            Scaling multiplies whatever a pod does, including failing. Ask
+            about impact first; it decides whether you mitigate or observe.
+        - say: Is the node out of memory?
+          reply: >-
+            The node dashboards look normal, 1% memory in use. It is one pod,
+            not the node.
+          feedback: >-
+            A fair suspicion; the answer rules it out and brings you back to
+            the pod. A node problem would show on many pods at once.
+    - prompt: Find out what the dashboard needs from you.
+      choices:
+        - say: How does the on-call dashboard decide which pods to show?
+          reply: >-
+            It lists every pod with the label triage=yes. Put that label on
+            the pod and whoever takes the next shift sees it at the top, with
+            its restart count and events.
+          feedback: >-
+            Now the deliverable is concrete: a label on a pod, selected by
+            key and value. Keep in mind that labels live on the pod object,
+            and a pod that is replaced takes its labels with it.
+          best: true
+          fact: The dashboard lists pods labeled triage=yes; the label goes on the pod itself.
+        - say: Can I annotate the Deployment instead of the pod?
+          reply: >-
+            The dashboard reads pod labels, not Deployment annotations. It
+            would not show up.
+          feedback: >-
+            Annotations and labels are different fields and the dashboard
+            reads one of them on one kind of object. Ask how it selects.
+    - prompt: Agree on what done means before you touch anything.
+      choices:
+        - say: What does fixed look like for you, and what must I not change?
+          reply: >-
+            The pod found, labeled triage=yes, running with zero restarts,
+            and the other 13 services untouched: same names, same replica
+            counts, 40 pods in total. Do not delete the namespace or the
+            ConfigMaps.
+          feedback: >-
+            The end state and the constraints up front are what let you
+            verify the fix the same way Priya will: one labeled pod, zero
+            restarts, 40 pods across 14 Deployments.
+          best: true
+          fact: "Done: one pod labeled triage=yes, running with 0 restarts; 14 Deployments and 40 pods unchanged; keep the namespace and the ConfigMaps."
+        - say: Can I delete the restarting pod to get a clean one?
+          reply: >-
+            It would come back the same; it has already been replaced a few
+            times by its own restarts. And I want to keep its history.
+          feedback: >-
+            A pod is a copy of its Deployment's template; deleting it makes
+            another copy with the same fault, and discards the previous logs.
+            Ask what done looks like instead.
+  closing: >-
+    That is everything I know. Ping me when it is labeled and quiet.
+
+diagram:
+  nodes:
+    - id: alert
+      label: Restart alert
+      note: a pod restarted more than 5 times; no name
+    - id: pods
+      label: Pods x40
+      note: 14 Deployments; RESTARTS is counted per pod
+    - id: deploy
+      label: Deployment reviews
+      note: template with command, probes, memory limit, mounts
+    - id: pod
+      label: Pod reviews-xxxx
+      note: one copy of the template, container web
+    - id: kubelet
+      label: kubelet
+      note: restarts the container when it stops or fails liveness
+    - id: config
+      label: ConfigMap reviews-config
+      note: reviews.conf, mounted at a path the template chooses
+    - id: dashboard
+      label: On-call dashboard
+      note: lists pods labeled triage=yes
+  edges:
+    - from: alert
+      to: pods
+      label: which one?
+    - from: pods
+      to: pod
+      label: sort by restarts
+    - from: deploy
+      to: pod
+      label: creates from template
+    - from: config
+      to: pod
+      label: mounted
+    - from: kubelet
+      to: pod
+      label: probes, restarts
+    - from: pod
+      to: dashboard
+      label: label triage=yes
+
+quiz:
+  - question: The namespace has 40 pods and the alert names none. Which command finds the restarting one fastest?
+    choices:
+      - text: kubectl get pods sorted by the restart count of the first container.
+        correct: true
+        explain: >-
+          --sort-by='.status.containerStatuses[0].restartCount' puts the pod
+          with the most restarts last. Reading 40 rows by eye works too, but
+          sorting takes one command and scales to 400.
+      - text: kubectl get events, because every restart is an event.
+        explain: >-
+          Events list the restarts, but 40 pods produce many Normal events
+          and the API server deletes events after one hour; the restart
+          count on the pod is the durable number.
+      - text: kubectl logs on each pod until one shows an error.
+        explain: >-
+          Forty commands, and the current log of a restarted container is
+          the new run, which may show no error yet. Find the pod first, then
+          read its previous log.
+  - question: You labeled the restarting pod triage=yes, then fixed the Deployment. Now no pod has the label. Why?
+    choices:
+      - text: The fix rolled out a new pod from the template; the old pod, and its labels, are gone.
+        correct: true
+        explain: >-
+          Labels live on the object. A Deployment change replaces the pod
+          with a new one built from the template, which has only the
+          template's labels. Label the pod that exists after the rollout.
+      - text: kubectl label only lasts for a few minutes.
+        explain: >-
+          A label stays until the object is deleted or the label removed.
+          Here the object itself was replaced.
+      - text: The Deployment removed the label because it is not in the template.
+        explain: >-
+          The Deployment never edits a running pod's labels. It created a new
+          pod and deleted the old one; the new pod was never labeled.
+  - question: describe pod shows Last State Terminated, Reason OOMKilled, Exit Code 137. What killed the container?
+    choices:
+      - text: The kernel, because the container used more memory than its limit allows.
+        correct: true
+        explain: >-
+          OOMKilled is the kernel enforcing limits.memory; 137 is 128 plus
+          signal 9. Raise the limit to what the process needs, or make the
+          process need less.
+      - text: The kubelet, because the liveness probe failed.
+        explain: >-
+          A liveness kill also ends with code 137 but the Reason is Error,
+          and the Events say "failed liveness probe, will be restarted".
+          OOMKilled names the memory limit.
+      - text: The program itself, because it found a bug and exited.
+        explain: >-
+          A program that exits on purpose sets its own exit code, usually 1,
+          and the Reason is Error. 137 means a kill signal from outside.
+
+guide:
+  - title: Sort the pods by restarts
+    body: >-
+      The workstation shell already points at the episode namespace. Forty
+      rows are too many to read, so let kubectl sort them by the restart
+      count of the first container: the pod with the most restarts is the
+      last row. Every other pod shows 0.
+    command: kubectl get pods --sort-by='.status.containerStatuses[0].restartCount'
+  - title: Read why it restarts
+    body: >-
+      describe prints the Last State of the container (Reason and Exit
+      Code), its Limits, probes and Mounts, and the Events at the end. The
+      label selector picks the reviews pod so you never type its random
+      name. Note the Exit Code and the path under Mounts.
+    command: kubectl describe pod -l app=reviews
+  - title: Read what the container said before it died
+    body: >-
+      --previous prints the log of the run that ended; deployment/reviews
+      resolves to its pod without typing the name. The entrypoint says
+      which file it waited for and where. Compare that path with the one
+      listed under Mounts in the previous step: they differ by one letter.
+    command: kubectl logs deployment/reviews --previous
+  - title: Label the pod for the dashboard
+    body: >-
+      The dashboard lists pods labeled triage=yes. Put the label on the pod
+      the alert is about. Keep an eye on this check after the next step.
+    command: kubectl label pod -l app=reviews triage=yes
+    check: pod-labeled
+  - title: Fix the mount path in the Deployment
+    body: >-
+      The pod is a copy of the Deployment template, so the change goes
+      there: the config volume (the second entry of volumeMounts) must be
+      mounted at /etc/reviews, the directory the entrypoint reads. One
+      field, one patch. The Deployment replaces the pod with a corrected one.
+    command: >-
+      kubectl patch deployment reviews --type json -p '[{"op": "replace", "path": "/spec/template/spec/containers/0/volumeMounts/1/mountPath", "value": "/etc/reviews"}]'
+  - title: Wait for the rollout
+    body: >-
+      rollout status waits until the new pod is Ready. The new pod starts
+      with 0 restarts; the labeled check above turned red, because the pod
+      you labeled is gone and the new one has only the template's labels.
+    command: kubectl rollout status deployment/reviews
+    check: restarts-zero
+  - title: Label the pod that runs now
+    body: >-
+      Labels live on the pod object, and a rollout replaced it. Run the
+      label command again; the selector finds the new pod by its app label.
+    command: kubectl label pod -l app=reviews triage=yes
+    check: label-on-right-pod
+  - title: Confirm the fleet is untouched
+    body: >-
+      Fourteen Deployments, READY equal to the replica count on every row,
+      40 pods in total. Then press Validate to grade the assignment.
+    command: kubectl get deployments
+    check: fleet-healthy

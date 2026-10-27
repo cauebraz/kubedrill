@@ -4,28 +4,9 @@ import (
 	"errors"
 	"io"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
-
-// syncBuilder is a strings.Builder safe for one writer and one reader.
-type syncBuilder struct {
-	mu sync.Mutex
-	b  strings.Builder
-}
-
-func (s *syncBuilder) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *syncBuilder) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
-}
 
 func TestPromptsEndOnInterrupt(t *testing.T) {
 	tests := []struct {

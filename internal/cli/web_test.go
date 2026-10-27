@@ -231,7 +231,7 @@ func TestWebBackendPreviewReloadsTheCatalog(t *testing.T) {
 	f := newFixture(t)
 	b := f.webBackend(t)
 	calls := 0
-	b.a.f.Catalog = func(string) (Catalog, error) { calls++; return f.catalog, nil }
+	b.a.f.Catalog = func(string, []string) (Catalog, error) { calls++; return f.catalog, nil }
 	b.reload = true
 	for i := 0; i < 2; i++ {
 		if _, err := b.Assignment(context.Background(), "001"); err != nil {
@@ -333,6 +333,9 @@ func TestWebExamSubmitAndExpiry(t *testing.T) {
 		if _, err := b.Validate(ctx); err == nil {
 			t.Error("Validate during an exam: got nil error, want the exam refusal")
 		}
+		if d, err := b.Debrief(ctx, sess.Active.EpisodeID); err == nil {
+			t.Errorf("Debrief of the running exam: got %+v, want a refusal that keeps the walkthrough hidden", d)
+		}
 		v, err := b.Submit(ctx)
 		if err != nil {
 			t.Fatal(err)
@@ -342,6 +345,9 @@ func TestWebExamSubmitAndExpiry(t *testing.T) {
 		}
 		if _, err := b.Submit(ctx); err == nil {
 			t.Error("second submit: got nil error")
+		}
+		if d, err := b.Debrief(ctx, sess.Active.EpisodeID); err != nil || d.Outcome != "solved" || d.Solution == "" {
+			t.Errorf("Debrief after the submit: got %+v, %v", d, err)
 		}
 	})
 	t.Run("past the deadline the exam expires", func(t *testing.T) {

@@ -1,0 +1,2 @@
+kubectl -n {{ .Namespace }} patch deployment api --type=json -p '[{"op":"add","path":"/spec/template/spec/volumes/0/secret/items","value":[{"key":"password","path":"db-password"}]}]'
+kubectl -n {{ .Namespace }} rollout status deployment/api --timeout=120s

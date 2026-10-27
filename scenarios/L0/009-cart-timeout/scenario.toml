@@ -1,0 +1,27 @@
+[scenario]
+id = "009-cart-timeout"
+title = "Cart checkout times out but the cart pods are Running"
+level = "L0"
+module = "L0.3"
+type = "break-fix"
+minutes = 10
+namespace = "shop"
+exam = ["CKA:networking", "CKAD:networking"]
+concepts = ["readiness-and-endpoints", "labels-and-selectors"]
+fix_targets = ["core/services/cart", "apps/deployments/cart"]
+images = ["nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10"]
+
+[[variant]]
+name = "wrong-app-label"
+vars = { selector_app = "carts", selector_tier = "", target_port = "80" }
+root_cause = "Service cart selects app=carts while the cart pods carry app=cart, so the EndpointSlice is empty and kube-proxy rejects every connection to the Service."
+
+[[variant]]
+name = "wrong-target-port"
+vars = { selector_app = "cart", selector_tier = "", target_port = "8080" }
+root_cause = "Service cart forwards port 80 to targetPort 8080, but the nginx container listens on 80, so the endpoints exist and every connection to the pod port is refused."
+
+[[variant]]
+name = "stale-tier-selector"
+vars = { selector_app = "cart", selector_tier = "api", target_port = "80" }
+root_cause = "Service cart selects app=cart,tier=api, but release 2.3 relabeled the cart pods tier=web; only the old ReplicaSet's pods carried tier=api, so the EndpointSlice is empty."

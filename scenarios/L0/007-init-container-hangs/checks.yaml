@@ -1,0 +1,58 @@
+checks:
+  - id: db-ready
+    description: deployment db has 1 ready replica
+    why: >-
+      The migration waits for the database before anything else starts; with
+      no Ready db pod every api fix keeps waiting, so this is the first fact
+      to settle.
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: db
+    path: "{.status.readyReplicas}"
+    equals: "1"
+
+  - id: api-ready
+    description: deployment api has 2 ready replicas
+    why: >-
+      readyReplicas counts pods whose Ready condition is true; a pod whose
+      init container is still running has no app container at all, so 0 here
+      means no api anywhere, not a slow one.
+    critical: true
+    weight: 2
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: api
+    path: "{.status.readyReplicas}"
+    equals: "2"
+
+  - id: api-endpoints
+    description: service api has at least one ready endpoint
+    why: >-
+      A Service only routes to pods that are Ready; with no ready endpoint
+      kube-proxy refuses every connection to api, and every caller in the
+      cluster gets connection refused.
+    depends_on: [api-ready]
+    resource:
+      apiVersion: discovery.k8s.io/v1
+      kind: EndpointSlice
+      namespace: "{{ .Namespace }}"
+      selector: kubernetes.io/service-name=api
+    path: "{.items[*].endpoints[?(@.conditions.ready==true)].addresses[*]}"
+    not_empty: true
+
+  - id: api-serves
+    description: service api answers 200 to an in-cluster request
+    why: >-
+      Ready endpoints prove the kubelet's probe passed; a request through
+      the Service is what the other teams' pods do, and the status code is
+      what their clients act on.
+    depends_on: [api-endpoints]
+    probe:
+      image: curlimages/curl:8.14.1@sha256:9a1ed35addb45476afa911696297f8e115993df459278ed036182dd2cd22b67b
+      command: ["curl", "-sS", "-m", "5", "-o", "/dev/null", "-w", "%{http_code}", "http://api.{{ .Namespace }}.svc/"]
+      timeout: 30s
+    equals: "200"

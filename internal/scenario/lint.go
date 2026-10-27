@@ -150,6 +150,52 @@ func Lint(root string, refs Refs) []error {
 	return out
 }
 
+// LintPack lints the scenarios of a pack root the way Lint does, without the
+// template and the concept library: refs carries the pack's modules and the
+// scenario ids they list, so a scenario outside a module or a module naming
+// a missing directory is reported.
+func LintPack(root string, refs Refs) []error {
+	var out []error
+	report := func(dir string, err error) {
+		rel, rerr := filepath.Rel(root, dir)
+		if rerr != nil {
+			rel = dir
+		}
+		for _, e := range flatten(err) {
+			out = append(out, fmt.Errorf("%s: %s", rel, e.Error()))
+		}
+	}
+	lr := lintRefs{modules: setOf(refs.Modules), exams: setOf(refs.ExamDomains), planned: refs.Planned}
+	dirs, err := scenarioDirs(root)
+	if err != nil {
+		return []error{fmt.Errorf("%s: %w", dirScenarios, err)}
+	}
+	seen := map[string]string{}
+	for _, dir := range dirs {
+		s, err := Load(dir)
+		if err != nil {
+			report(dir, err)
+			continue
+		}
+		if other, dup := seen[s.Meta.ID]; dup {
+			report(dir, fmt.Errorf("%s: scenario.id %q is also defined in %s", fileMeta, s.Meta.ID, other))
+		}
+		seen[s.Meta.ID] = dir
+		report(dir, lintScenario(s, true, lr))
+	}
+	ids := make([]string, 0, len(lr.planned))
+	for id := range lr.planned {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		if _, ok := seen[id]; !ok {
+			out = append(out, fmt.Errorf("pack.yaml: module %s lists scenario %q, which has no directory under %s", lr.planned[id], id, dirScenarios))
+		}
+	}
+	return out
+}
+
 func lintScenario(s *Scenario, real bool, lr lintRefs) error {
 	var errs []error
 	if real && s.Meta.Level != "L0" && len(s.Variants) < 2 {

@@ -1,0 +1,29 @@
+[scenario]
+id = "014-rotate-plaintext-secret"
+title = "Payments token ended up in a pull request; security wants it rotated today"
+level = "L0"
+module = "L0.4"
+type = "build"
+minutes = 10
+namespace = "payments"
+exam = ["CKA:workloads", "CKAD:environment"]
+concepts = ["what-changed", "pod-lifecycle"]
+fix_targets = [
+  "core/secrets/payments-token",
+  "core/secrets/payments-token-old",
+  "apps/deployments/payments",
+  "apps/deployments/payments-worker",
+]
+images = ["busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662"]
+
+[[variant]]
+name = "worker-on-new-secret"
+vars = { old_token = "acme-pay-7f3c9a1d2e4b", new_token = "acme-pay-b84e2d61c0f7", worker_secret = "payments-token", rotated = "2026-10" }
+
+[[variant]]
+name = "worker-on-old-copy"
+vars = { old_token = "acme-pay-51d9e7a2c3b8", new_token = "acme-pay-9e04c7f1a62d", worker_secret = "payments-token-old", rotated = "2026-10" }
+
+[[variant]]
+name = "worker-on-old-copy-audit-label"
+vars = { old_token = "acme-pay-3c8b2f6d9a01", new_token = "acme-pay-e27a5b90d4c3", worker_secret = "payments-token-old", rotated = "sec-4412" }

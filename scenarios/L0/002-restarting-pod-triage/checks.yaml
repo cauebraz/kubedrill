@@ -1,0 +1,70 @@
+checks:
+  - id: pod-labeled
+    description: exactly one pod in the namespace carries the label triage=yes
+    why: >-
+      The on-call dashboard lists the pods labeled triage=yes; with none the
+      restart alert keeps paging, and with two the team opens the wrong pod
+      first.
+    resource:
+      apiVersion: v1
+      kind: Pod
+      namespace: "{{ .Namespace }}"
+      selector: triage=yes
+    path: "{.items[*].metadata.name}"
+    matches: "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
+
+  - id: label-on-right-pod
+    description: the pod labeled triage=yes is a pod of the service that was restarting
+    why: >-
+      The label is a pointer for the team that takes over; on a healthy pod
+      it sends them to the wrong service, and on a pod that a rollout
+      already replaced it points at nothing. Label the pod that runs now.
+    depends_on: [pod-labeled]
+    script: >-
+      app=$(kubectl -n {{ .Namespace }} get pods -l triage=yes
+      -o jsonpath='{.items[*].metadata.labels.app}');
+      [ "$app" = "reviews" ]
+    exit_code: 0
+
+  - id: restarts-zero
+    description: the service that was restarting runs one pod with 0 restarts
+    why: >-
+      A restart count that grows means the kubelet keeps replacing the
+      container; one pod of this service with 0 restarts since the change
+      is the proof that the cause is gone, not only the symptom.
+    weight: 2
+    resource:
+      apiVersion: v1
+      kind: Pod
+      namespace: "{{ .Namespace }}"
+      selector: app=reviews
+    path: "{.items[*].status.containerStatuses[*].restartCount}"
+    equals: "0"
+
+  - id: pod-ready
+    description: the service that was restarting has its pod Running and Ready
+    why: >-
+      A pod that is Running but not Ready gets no traffic; Ready means the
+      container started, stayed up and answers its readiness probe.
+    depends_on: [restarts-zero]
+    resource:
+      apiVersion: v1
+      kind: Pod
+      namespace: "{{ .Namespace }}"
+      selector: app=reviews
+    path: "{.items[*].status.conditions[?(@.type=='Ready')].status}"
+    equals: "True"
+
+  - id: fleet-healthy
+    description: every deployment in the namespace has all its replicas available (14 deployments, 40 pods)
+    why: >-
+      The other 39 pods were fine when the ticket came in; a fix that scales,
+      deletes or breaks a neighbor trades one alert for another.
+    script: >-
+      kubectl -n {{ .Namespace }} get deployments -o
+      jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.replicas}{" "}{.status.availableReplicas}{"\n"}{end}'
+      | awk '{ n++; want += $2; if ($3 == "") $3 = 0;
+      if ($2 != $3) { printf "%s: %s of %s available\n", $1, $3, $2; bad = 1 } }
+      END { if (n != 14 || want != 40) { printf "%d deployments with %d replicas, expected 14 with 40\n", n, want; bad = 1 }
+      exit bad }'
+    exit_code: 0

@@ -1,4 +1,14 @@
-# kubedrill
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-dark.svg">
+    <img src="docs/images/logo-light.svg" alt="kubedrill" width="236" height="48">
+  </picture>
+</h1>
+
+[Source](https://github.com/cauebraz/kubedrill) /
+[Issues](https://github.com/cauebraz/kubedrill/issues) /
+[Contributing](CONTRIBUTING.md) /
+[Docs](docs/)
 
 Practice Kubernetes on the tickets platform and SRE teams get at work.
 
@@ -31,7 +41,10 @@ gateway,kwok` adds Envoy Gateway and KWOK to the cluster.
 
 ## Your first assignment
 
-Each assignment runs in the browser, in six stages:
+The first visit opens a three-minute welcome: the five steps every ticket
+follows (describe the symptom, two candidate causes, the observation that
+splits them, one change, verify), each on a worked ticket with the reason it
+exists. Then each assignment runs in the browser, in six stages:
 
 1. **Meet the customer.** Chat with the person who opened the ticket and
    pick the questions a good engineer would ask. Each good question adds a
@@ -90,11 +103,20 @@ verify. `kubedrill learn troubleshooting-loop` explains it.
 | Read this                                            | When you want to                                              |
 |------------------------------------------------------|---------------------------------------------------------------|
 | [docs/study-flow.md](docs/study-flow.md)             | Understand grading, hints, the debrief, mastery and exam mode |
-| [docs/workstation.md](docs/workstation.md)           | Learn the workstation panes, tools and recording              |
+| [docs/workstation.md](docs/workstation.md)           | Learn the workstation terminal, tools and recording           |
 | [docs/cli.md](docs/cli.md)                           | Look up a command, flag, message or exit code                 |
 | [docs/concepts/](docs/concepts/README.md)            | Read about a mechanism a ticket uses                          |
 | [CONTRIBUTING.md](CONTRIBUTING.md)                   | Write a scenario                                              |
 | [docs/scenario-format.md](docs/scenario-format.md)   | Look up a scenario file or field                              |
+
+## Scenario packs
+
+Scenarios can come from other repositories. `kubedrill pack add <git url>`
+fetches a pack (a `pack.yaml` plus a `scenarios/` tree in this
+repository's format), pins it to a commit, lints it, lists every script it
+would run on your machine and asks before enabling it. Its scenarios then
+join the catalog and the ladder. `docs/scenario-format.md` describes
+`pack.yaml`.
 
 ## Your data stays local
 
@@ -111,6 +133,8 @@ New scenarios are welcome, especially ones you lived through. Start with
 
 ## License
 
-[MIT](LICENSE), except the upstream manifests vendored in `cluster/addons/`,
-which keep their [Apache-2.0](LICENSES/Apache-2.0.txt) license
-([details](cluster/addons/README.md)).
+[Apache-2.0](LICENSE) for everything in this repository, scenarios included;
+attributions in [NOTICE](NOTICE). The upstream manifests vendored in
+`cluster/addons/` are Apache-2.0 as well ([details](cluster/addons/README.md)).
+Contributions are accepted under the same license with a DCO sign-off
+(the `-s` flag when committing, see [CONTRIBUTING.md](CONTRIBUTING.md)).

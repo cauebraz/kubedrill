@@ -398,8 +398,6 @@ func TestStateDirRequired(t *testing.T) {
 	}
 }
 
-func ptr(t time.Time) *time.Time { return &t }
-
 func shellHarness(t *testing.T, scripts map[string]string) (*Manager, *fakeRunner, string, string, string) {
 	t.Helper()
 	root := writeRepo(t)

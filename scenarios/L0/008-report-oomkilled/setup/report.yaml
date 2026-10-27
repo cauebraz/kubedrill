@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: report
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: report
+    app.kubernetes.io/part-of: finance
+    team: finance
+spec:
+  replicas: 1
+  minReadySeconds: 10
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: report
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: report
+        app.kubernetes.io/part-of: finance
+        team: finance
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: report
+          image: registry.k8s.io/e2e-test-images/agnhost:2.53@sha256:99c6b4bb4a1e1df3f0b3752168c89358794d02258ebebc26bf21c29399011a85
+          args:
+            - stress
+            - --mem-total=48Mi
+            - --mem-alloc-size=4Mi
+            - --mem-alloc-sleep=50ms
+{{- if ne .Vars.report_limit "" }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: {{ .Vars.report_request }}
+            limits:
+              memory: {{ .Vars.report_limit }}
+{{- end }}
+{{- if eq .Vars.sidecar "true" }}
+        - name: log-shipper
+          image: registry.k8s.io/e2e-test-images/agnhost:2.53@sha256:99c6b4bb4a1e1df3f0b3752168c89358794d02258ebebc26bf21c29399011a85
+          args:
+            - stress
+            - --mem-total=16Mi
+            - --mem-alloc-size=4Mi
+            - --mem-alloc-sleep=50ms
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 16Mi
+{{- end }}

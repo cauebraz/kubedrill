@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Vars.deploy_name }}
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Vars.app_label }}
+    app.kubernetes.io/part-of: shop
+    team: catalog
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Vars.app_label }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Vars.app_label }}
+        app.kubernetes.io/part-of: shop
+        team: catalog
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+      volumes:
+        - name: html
+          configMap:
+            name: catalog-html

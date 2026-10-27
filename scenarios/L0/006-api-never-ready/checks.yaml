@@ -1,0 +1,58 @@
+checks:
+  - id: deploy-exists
+    description: deployment api exists
+    why: >-
+      The Deployment is the object the team owns; if it is gone, nothing below
+      it (ReplicaSet, pods) can recover and the fix is a redeploy, not a patch.
+    critical: true
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: api
+    exists: true
+
+  - id: ready-replicas
+    description: deployment api has 2 ready replicas
+    why: >-
+      readyReplicas counts pods whose Ready condition is true. A pod that is
+      Running but not Ready gets no traffic from the Service, so 0 here is the
+      outage the frontend sees, even though no container crashed.
+    depends_on: [deploy-exists]
+    critical: true
+    weight: 2
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: api
+    path: "{.status.readyReplicas}"
+    equals: "2"
+
+  - id: service-endpoints
+    description: service api has at least one ready endpoint
+    why: >-
+      A Service is only a selector; its EndpointSlices hold the pod IPs whose
+      Ready condition is true. With no ready endpoint kube-proxy refuses every
+      connection to api, which is the connection refused the frontend logs.
+    depends_on: [ready-replicas]
+    resource:
+      apiVersion: discovery.k8s.io/v1
+      kind: EndpointSlice
+      namespace: "{{ .Namespace }}"
+      selector: kubernetes.io/service-name=api
+    path: "{.items[*].endpoints[?(@.conditions.ready==true)].addresses[*]}"
+    not_empty: true
+
+  - id: api-answers
+    description: service api answers a request with the ACME API 3.2.0 body
+    why: >-
+      Ready endpoints prove the probe passes, not that clients get an answer;
+      one in-cluster request through the Service is what the frontend does,
+      and the body proves the pods serve the build the team shipped.
+    depends_on: [service-endpoints]
+    probe:
+      image: curlimages/curl:8.14.1@sha256:9a1ed35addb45476afa911696297f8e115993df459278ed036182dd2cd22b67b
+      command: ["curl", "-fsS", "-m", "3", "--retry", "4", "--retry-delay", "1", "--retry-all-errors", "http://api.{{ .Namespace }}.svc/"]
+      timeout: 30s
+    contains: "ACME API 3.2.0"

@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: worker-files
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: worker
+    app.kubernetes.io/part-of: billing
+data:
+  worker.conf: |
+    batch_size = 50
+    retry_limit = 3
+    poll_interval_seconds = 60
+  run.sh: |
+    #!/bin/sh
+    set -eu
+    workers=1
+    for arg in "$@"; do
+      case "$arg" in
+        --workers=*) workers="${arg#--workers=}" ;;
+        *)
+          echo "worker: unknown flag $arg (accepted: --workers=N)" >&2
+          exit 2
+          ;;
+      esac
+    done
+    if [ -z "${QUEUE_URL:-}" ]; then
+      echo "worker: QUEUE_URL is empty; the queue address must be set in the environment" >&2
+      exit 1
+    fi
+    if [ -z "${QUEUE_TOKEN:-}" ]; then
+      echo "worker: QUEUE_TOKEN is empty; the queue token must be set in the environment" >&2
+      exit 1
+    fi
+    conf=/etc/worker/worker.conf
+    if [ ! -f "$conf" ]; then
+      echo "worker: cannot read config file $conf (missing or not a regular file)" >&2
+      exit 1
+    fi
+    echo "worker started: name=${WORKER_NAME:-worker} queue=$QUEUE_URL workers=$workers config=$conf"
+    touch /tmp/worker.ready
+    while true; do
+      echo "worker: polling $QUEUE_URL"
+      sleep 60
+    done

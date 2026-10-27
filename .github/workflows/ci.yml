@@ -15,6 +15,25 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  dco:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Every commit carries a Signed-off-by line
+        run: |
+          set -euo pipefail
+          missing=0
+          for c in $(git rev-list "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"); do
+            if ! git log -1 --format=%B "$c" | grep -q '^Signed-off-by: '; then
+              echo "::error::commit $c has no Signed-off-by line (sign the commit with -s)"
+              missing=1
+            fi
+          done
+          exit "$missing"
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 10

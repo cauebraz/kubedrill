@@ -21,7 +21,8 @@ func (a *app) rootCommand() *cobra.Command {
 		Long: "kubedrill drives a local kind cluster, deploys one scenario per episode and\n" +
 			"grades the end state. Without arguments it runs kubedrill web: it checks the\n" +
 			"tools, creates the cluster and opens the workspace on 127.0.0.1 in the\n" +
-			"browser, where every assignment is practiced.",
+			"browser, where every assignment is practiced. Source, issues and new\n" +
+			"scenarios: " + repoURL,
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -41,6 +42,7 @@ func (a *app) rootCommand() *cobra.Command {
 	root.AddCommand(
 		a.doctorCommand(),
 		a.upCommand(),
+		a.packCommand(),
 		a.downCommand(),
 		a.listCommand(),
 		a.startCommand(),

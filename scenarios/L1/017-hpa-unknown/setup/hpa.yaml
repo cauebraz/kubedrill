@@ -1,0 +1,23 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: orders
+    team: orders
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Vars.target }}
+  minReplicas: 1
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: {{ .Vars.metric }}
+        target:
+          type: Utilization
+          averageUtilization: 50

@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: admin-html
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: admin
+    app.kubernetes.io/part-of: backoffice
+data:
+  index.html: |
+    <!doctype html>
+    <html>
+      <head><title>ACME Admin</title></head>
+      <body>
+        <h1>ACME Admin 3.2.0</h1>
+        <p>Orders, refunds and catalog edits for the operations team.</p>
+      </body>
+    </html>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: admin-nginx
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: admin
+    app.kubernetes.io/part-of: backoffice
+data:
+  default.conf: |
+    server {
+        listen {{ .Vars.port }};
+        server_name _;
+        location / {
+            root /usr/share/nginx/html;
+            index index.html;
+        }
+    }
+{{ if eq .Vars.canary "true" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: admin-canary-html
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: admin
+    app.kubernetes.io/part-of: backoffice
+    track: canary
+data:
+  index.html: |
+    <!doctype html>
+    <html>
+      <head><title>ACME Admin (canary)</title></head>
+      <body>
+        <h1>ACME Admin 3.3.0-rc1 (canary)</h1>
+        <p>Internal build under test by the admin team. Not for QA.</p>
+      </body>
+    </html>
+{{ end }}

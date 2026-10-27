@@ -1,0 +1,101 @@
+checks:
+  - id: storefront-ready
+    description: deployment storefront has 2 ready replicas
+    why: >-
+      readyReplicas counts pods that exist and pass readiness; a pod the
+      ResourceQuota refused at admission never exists, so the storefront
+      serves nothing however healthy its template is.
+    critical: true
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: storefront
+    path: "{.status.readyReplicas}"
+    equals: "2"
+
+  - id: catalog-ready
+    description: deployment catalog has 2 ready replicas
+    why: >-
+      readyReplicas counts pods that exist and pass readiness; with fewer
+      than 2 the catalog runs without redundancy or not at all, and the
+      ReplicaSet keeps retrying a pod admission refuses.
+    critical: true
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: catalog
+    path: "{.status.readyReplicas}"
+    equals: "2"
+
+  - id: cart-ready
+    description: deployment cart has 1 ready replica
+    why: >-
+      readyReplicas counts pods that exist and pass readiness; cart has a
+      single replica, so 0 here means no customer can add an item.
+    critical: true
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: cart
+    path: "{.status.readyReplicas}"
+    equals: "1"
+
+  - id: all-guaranteed
+    description: every shop pod has QoS class Guaranteed
+    why: >-
+      Under node memory pressure the kubelet evicts BestEffort and Burstable
+      pods first; only Guaranteed pods, with requests equal to limits in every
+      container, keep their place until the node itself fails.
+    depends_on: [storefront-ready, catalog-ready, cart-ready]
+    weight: 2
+    resource:
+      apiVersion: v1
+      kind: Pod
+      namespace: "{{ .Namespace }}"
+      selector: app.kubernetes.io/part-of=shop
+    path: "{.items[*].status.qosClass}"
+    matches: "^Guaranteed( Guaranteed)*$"
+
+  - id: none-pending
+    description: no shop pod is Pending
+    why: >-
+      A Pending pod holds its share of the quota without serving traffic, and
+      the next rollout needs that headroom to start its new pods.
+    depends_on: [storefront-ready, catalog-ready, cart-ready]
+    resource:
+      apiVersion: v1
+      kind: Pod
+      namespace: "{{ .Namespace }}"
+      selector: app.kubernetes.io/part-of=shop
+    path: "{.items[?(@.status.phase==\"Pending\")].metadata.name}"
+    equals: ""
+
+  - id: quota-in-use
+    description: resourcequota shop counts the CPU limits of the running pods
+    why: >-
+      status.used is what the quota charged for the pods it admitted; 0
+      means no pod got through admission, so the namespace runs nothing.
+    resource:
+      apiVersion: v1
+      kind: ResourceQuota
+      namespace: "{{ .Namespace }}"
+      name: shop
+    path: "{.status.used.limits\\.cpu}"
+    not_empty: true
+    not_equals: "0"
+
+  - id: quota-unchanged
+    description: resourcequota shop still caps requests and limits at {{ .Vars.cpu }} CPU and {{ .Vars.memory }} memory
+    why: >-
+      The quota is the budget finance agreed for the shop namespace; raising
+      it makes the pods fit by spending capacity other teams were promised.
+    resource:
+      apiVersion: v1
+      kind: ResourceQuota
+      namespace: "{{ .Namespace }}"
+      name: shop
+    path: "{.spec.hard}"
+    equals: '{"limits.cpu":"{{ .Vars.cpu }}","limits.memory":"{{ .Vars.memory }}","requests.cpu":"{{ .Vars.cpu }}","requests.memory":"{{ .Vars.memory }}"}'

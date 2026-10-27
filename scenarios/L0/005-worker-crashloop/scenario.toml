@@ -1,0 +1,26 @@
+[scenario]
+id = "005-worker-crashloop"
+title = "worker is CrashLoopBackOff since the last deploy"
+level = "L0"
+module = "L0.2"
+type = "break-fix"
+minutes = 10
+namespace = "billing"
+exam = ["CKA:troubleshooting", "CKAD:observability"]
+concepts = ["pod-lifecycle", "what-changed"]
+fix_targets = ["apps/deployments/worker", "core/configmaps/worker-env", "core/configmaps/worker-files"]
+
+[[variant]]
+name = "renamed-key"
+vars = { queue_key = "BROKER_URL", flag = "--workers=4", conf_subpath = "worker.conf" }
+root_cause = "ConfigMap worker-env holds the queue address under the key BROKER_URL, but the worker reads QUEUE_URL from its environment (envFrom copies keys as variable names), so the variable is empty and the process exits 1 at startup."
+
+[[variant]]
+name = "unknown-flag"
+vars = { queue_key = "QUEUE_URL", flag = "--concurrency=4", conf_subpath = "worker.conf" }
+root_cause = "The Deployment passes the argument --concurrency=4 to the worker, a flag the script does not accept (it takes --workers=N), so the process exits 2 before reading any configuration."
+
+[[variant]]
+name = "wrong-subpath"
+vars = { queue_key = "QUEUE_URL", flag = "--workers=4", conf_subpath = "worker.cfg" }
+root_cause = "The volumeMount for /etc/worker/worker.conf uses subPath worker.cfg, a key ConfigMap worker-files does not have, so the kubelet mounts an empty directory there and the worker exits 1 because it cannot read its config file."

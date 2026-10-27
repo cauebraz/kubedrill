@@ -1,0 +1,27 @@
+[scenario]
+id = "006-api-never-ready"
+title = "api never becomes Ready; the dev says it starts in 2 seconds"
+level = "L0"
+module = "L0.2"
+type = "break-fix"
+minutes = 10
+namespace = "api"
+exam = ["CKA:troubleshooting", "CKAD:observability"]
+concepts = ["readiness-and-endpoints", "pod-lifecycle"]
+fix_targets = ["apps/deployments/api", "core/configmaps/api-html"]
+images = ["nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10"]
+
+[[variant]]
+name = "wrong-path"
+vars = { probe = "http", path = "/healthz", port = "80" }
+root_cause = "The readiness probe requests /healthz, a path this nginx build does not serve (only / exists in the api-html ConfigMap), so every probe gets 404 and the kubelet never marks the pod Ready."
+
+[[variant]]
+name = "wrong-port"
+vars = { probe = "http", path = "/", port = "8080" }
+root_cause = "The readiness probe connects to port 8080 while nginx listens on 80 only, so every probe is refused and the kubelet never marks the pod Ready."
+
+[[variant]]
+name = "missing-ready-file"
+vars = { probe = "exec", path = "/", port = "80" }
+root_cause = "The readiness probe runs cat /tmp/ready with failureThreshold 1, and nothing in the image or the pod ever creates /tmp/ready, so every probe fails and the kubelet never marks the pod Ready."

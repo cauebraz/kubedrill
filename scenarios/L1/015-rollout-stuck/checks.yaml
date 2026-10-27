@@ -1,0 +1,77 @@
+checks:
+  - id: ready-replicas
+    description: deployment checkout has 4 ready replicas
+    why: >-
+      readyReplicas counts the checkout pods that pass readiness across every
+      ReplicaSet; below 4 the Service runs short of capacity during the
+      checkout peak, and a rollout that never finishes keeps it there.
+    critical: true
+    weight: 2
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: checkout
+    path: "{.status.readyReplicas}"
+    equals: "4"
+
+  - id: updated-replicas
+    description: deployment checkout has 4 up-to-date replicas
+    why: >-
+      updatedReplicas counts pods built from the current pod template; until
+      it reaches 4, two versions of checkout serve traffic side by side and
+      the next deploy starts from a half-finished one.
+    depends_on: [ready-replicas]
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: checkout
+    path: "{.status.updatedReplicas}"
+    equals: "4"
+
+  - id: rollout-complete
+    description: deployment checkout reports Progressing with reason NewReplicaSetAvailable
+    why: >-
+      The Progressing condition is what kubectl rollout status and every
+      deploy pipeline read; ProgressDeadlineExceeded fails the next deploy,
+      and only NewReplicaSetAvailable says the current template is fully
+      rolled out.
+    depends_on: [ready-replicas]
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: checkout
+    path: '{.status.conditions[?(@.type=="Progressing")].reason}'
+    equals: NewReplicaSetAvailable
+
+  - id: service-endpoints
+    description: service checkout has 4 ready endpoints
+    why: >-
+      The Service sends traffic only to the ready addresses in its
+      EndpointSlices; fewer than 4 means every remaining pod carries more
+      than its share of the checkout load.
+    depends_on: [ready-replicas]
+    resource:
+      apiVersion: discovery.k8s.io/v1
+      kind: EndpointSlice
+      namespace: "{{ .Namespace }}"
+      selector: kubernetes.io/service-name=checkout
+    path: "{.items[*].endpoints[?(@.conditions.ready==true)].addresses[*]}"
+    matches: "^\\S+( \\S+){3}$"
+
+  - id: no-pending-pods
+    description: no checkout pod is stuck in Pending
+    why: >-
+      A Pending pod is one that has no node or no started container; it holds
+      a slot of the rollout budget (maxSurge, maxUnavailable) and blocks the
+      next replica from being replaced.
+    depends_on: [ready-replicas]
+    resource:
+      apiVersion: v1
+      kind: Pod
+      namespace: "{{ .Namespace }}"
+      selector: app.kubernetes.io/name=checkout
+    path: "{.items[*].status.phase}"
+    matches: "^(Running|Succeeded)( (Running|Succeeded))*$"

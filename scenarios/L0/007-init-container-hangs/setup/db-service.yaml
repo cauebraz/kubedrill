@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: db
+    app.kubernetes.io/part-of: billing
+spec:
+  selector:
+    app.kubernetes.io/name: db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

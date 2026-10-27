@@ -1,0 +1,13 @@
+kubedrill
+Copyright 2026 Caue Braz
+
+Licensed under the Apache License, Version 2.0; see LICENSE.
+
+This product includes manifests vendored from upstream projects under
+cluster/addons/, each Apache-2.0 and listed with its source, version and
+local changes in cluster/addons/README.md: metrics-server
+(kubernetes-sigs/metrics-server), kwok (kubernetes-sigs/kwok) and Envoy
+Gateway (envoyproxy/gateway).
+
+The browser workspace embeds xterm.js and its fit addon (MIT), listed with
+sources and checksums in internal/web/static/vendor/README.md.

@@ -126,7 +126,7 @@ func factories(stderr io.Writer, getenv func(string) string, now func() time.Tim
 			return m
 		},
 		Journal:  func(dir string) (cli.Journal, error) { return journal.Open(dir) },
-		Catalog:  func(root string) (cli.Catalog, error) { return scenario.NewCatalog(root) },
+		Catalog:  func(root string, packs []string) (cli.Catalog, error) { return scenario.NewCatalog(root, packs...) },
 		Concepts: func(root string) (cli.Concepts, error) { return concepts.Load(root) },
 		Workstation: func(root, dataDir string) cli.Workstation {
 			if state.err != nil {

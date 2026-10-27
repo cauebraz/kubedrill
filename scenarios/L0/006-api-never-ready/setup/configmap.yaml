@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-html
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: shop
+data:
+  index.html: |
+    {"service": "ACME API 3.2.0", "status": "ok"}

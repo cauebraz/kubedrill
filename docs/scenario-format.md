@@ -363,6 +363,10 @@ command history, so several valid fixes pass.
 - A `critical` check that fails, errors or is skipped forces the score to 0.
 - Every check has a 30 second budget. A probe check gets
   `max(30s, probe.timeout + 30s)`.
+- A probe that exits non-zero runs once more after 3 seconds, when the
+  budget allows: an endpoint that became ready just before the check can
+  refuse connections until kube-proxy syncs, and the second run tells that
+  apart from a Service that is broken. The second result is the one graded.
 - A probe fails at once, without waiting for its timeout, on
   `InvalidImageName`, `ErrImageNeverPull`, `CreateContainerConfigError`
   (with the kubelet message) and on a Forbidden or Unauthorized answer.
@@ -648,6 +652,40 @@ exactly two files:
 Both are templates, so a snippet names the namespace with `-n {{ .Namespace
 }}`: `kubectl -n {{ .Namespace }} set image deployment/storefront
 web=nginx:1.27-alpine`.
+
+## Packs
+
+A pack ships scenarios outside this repository. Its root holds `pack.yaml`
+and `scenarios/<level>/<id>/` directories in the format above:
+
+```yaml
+name: incidents
+title: Incidents from the on-call rota
+source: https://example.com/postmortems
+authors: [alice]
+modules:
+  - level: L2
+    id: L2.incidents
+    title: Incidents
+    summary: Tickets from the rota
+    exam: ["CKA:troubleshooting"]
+    concepts: [troubleshooting-loop]
+    scenarios:
+      - id: 101-coredns-oom
+        ticket: CoreDNS OOMKilled under a retry storm
+        type: break-fix
+        feasibility: kind
+```
+
+`name` matches `^[a-z0-9]+(-[a-z0-9]+)*$` and becomes the install
+directory; `source` and `authors` are optional; each module names an
+existing level, has an id that starts with it and is unique across the
+ladder, and lists only scenario ids that exist in the pack. Each
+scenario's `scenario.toml` sets `module` to one of the pack's module ids.
+`kubedrill pack add` lints the pack with the rules below before enabling
+it; scenario ids must not collide with the catalog, and `allow_privileged =
+true` needs `--allow-privileged`. Pack scripts run on the learner's
+machine, so `pack add` lists them and asks first ([cli.md](cli.md#pack)).
 
 ## What lint and smoke enforce
 

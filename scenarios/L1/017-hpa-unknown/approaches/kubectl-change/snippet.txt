@@ -1,0 +1,2 @@
+{{ if eq .Variant "no-cpu-request" }}kubectl -n {{ .Namespace }} set resources deployment/api -c api --requests=cpu=50m{{ else if eq .Variant "wrong-target" }}kubectl -n {{ .Namespace }} patch hpa api --type=merge -p '{"spec":{"scaleTargetRef":{"apiVersion":"apps/v1","kind":"Deployment","name":"api"}}}'{{ else }}kubectl -n {{ .Namespace }} patch hpa api --type=json -p '[{"op":"replace","path":"/spec/metrics/0/resource/name","value":"cpu"}]'{{ end }}
+kubectl -n {{ .Namespace }} get hpa api --watch

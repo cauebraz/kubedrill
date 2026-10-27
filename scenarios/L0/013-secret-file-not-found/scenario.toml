@@ -1,0 +1,27 @@
+[scenario]
+id = "013-secret-file-not-found"
+title = "db-password is mounted but the api says file not found"
+level = "L0"
+module = "L0.4"
+type = "break-fix"
+minutes = 10
+namespace = "billing"
+exam = ["CKA:workloads", "CKAD:environment"]
+concepts = ["pod-lifecycle", "what-changed"]
+fix_targets = ["apps/deployments/api", "core/secrets/db-credentials"]
+images = ["busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662"]
+
+[[variant]]
+name = "mount-path-typo"
+vars = { mount_path = "/etc/secret", secret_ref = "db-credentials", secret_key = "db-password" }
+root_cause = "The volumeMount in Deployment api mounts the Secret at /etc/secret, while the app reads /etc/secrets/db-password, so the file lands one directory away from where the app looks and the container exits."
+
+[[variant]]
+name = "key-name"
+vars = { mount_path = "/etc/secrets", secret_ref = "db-credentials", secret_key = "password" }
+root_cause = "Secret db-credentials holds the key password, so the volume creates /etc/secrets/password; the app reads /etc/secrets/db-password, which no key produces, and the container exits."
+
+[[variant]]
+name = "wrong-secret-name"
+vars = { mount_path = "/etc/secrets", secret_ref = "db-credential", secret_key = "db-password" }
+root_cause = "The volume in Deployment api references Secret db-credential, which does not exist (the Secret is db-credentials), so the kubelet cannot mount it and the pod stays in ContainerCreating."

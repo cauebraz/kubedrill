@@ -1,0 +1,24 @@
+[scenario]
+id = "011-expose-admin-nodeport"
+title = "Expose admin on NodePort 30080 for the QA laptop"
+level = "L0"
+module = "L0.3"
+type = "build"
+minutes = 10
+namespace = "backoffice"
+exam = ["CKA:networking", "CKAD:networking"]
+concepts = ["readiness-and-endpoints", "labels-and-selectors"]
+fix_targets = ["core/services/admin"]
+images = ["curlimages/curl:8.14.1@sha256:9a1ed35addb45476afa911696297f8e115993df459278ed036182dd2cd22b67b"]
+
+[[variant]]
+name = "plain-port-80"
+vars = { port = "80", canary = "false" }
+
+[[variant]]
+name = "listens-on-8080"
+vars = { port = "8080", canary = "false" }
+
+[[variant]]
+name = "canary-shares-label"
+vars = { port = "80", canary = "true" }

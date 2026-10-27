@@ -1,0 +1,2 @@
+kubectl -n {{ .Namespace }} edit deployment report
+kubectl -n {{ .Namespace }} rollout status deployment/report --timeout=120s

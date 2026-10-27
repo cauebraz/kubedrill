@@ -1,0 +1,275 @@
+customer:
+  name: Priya
+  role: Finance tooling developer
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Ask me for a hint whenever you are
+    stuck: each hint goes one step further, from where to look to what to
+    change, and the last one waits until you name a cause.
+
+meeting:
+  opening: >-
+    Thanks for taking this. Our report service keeps getting killed on the
+    new cluster and the month-end page never loads. Our developer swears it
+    only uses about 50 MB and has no leak. Where do you want to start?
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What changed right before it started getting killed?
+          reply: >-
+            Yesterday we moved it from the old VM to the shared cluster. Same
+            image, same code. We copied the Deployment from the platform
+            team's example and did not tune any numbers in it.
+          feedback: >-
+            Good first question. The code did not change, the place it runs
+            did, and "copied from an example without tuning the numbers" says
+            the new environment brought settings nobody on the team chose.
+          best: true
+          fact: It started right after the move from the VM to the shared cluster; the Deployment was copied from the platform team's example without tuning.
+        - say: Can you ask the developer to look for a memory leak?
+          reply: >-
+            He already did. The process loads the month's data once at start
+            and then stays flat; on his laptop it never grew.
+          feedback: >-
+            Blaming the code before reading what the cluster recorded sends
+            the developer hunting for a bug that does not exist. Ask what
+            changed around the code first.
+        - say: Should we just restart the pod a few times until it sticks?
+          reply: >-
+            It restarts on its own every few seconds already. It has never
+            stayed up longer than that.
+          feedback: >-
+            The cluster is already restarting it, and every restart gets
+            the same result. Restarting adds no information; ask what
+            changed.
+    - prompt: You need the exact symptom. What do you ask?
+      choices:
+        - say: What exactly does kubectl show for the pod, word for word?
+          reply: >-
+            The STATUS column flips between OOMKilled and CrashLoopBackOff, the
+            RESTARTS number keeps going up, and the Deployment says 0
+            available.
+          feedback: >-
+            OOMKilled is a precise word: the kernel killed a container for
+            using more memory than its limit allowed. That rules out a crash
+            in the code and points at a limit, which the pod description
+            shows per container.
+          best: true
+          fact: The pod flips between OOMKilled and CrashLoopBackOff, RESTARTS climbs, and the Deployment has 0 available.
+        - say: Is the node running out of memory?
+          reply: >-
+            I do not know how to tell. Other teams' pods on the cluster look
+            fine.
+          feedback: >-
+            A node short of memory evicts pods and marks them Evicted, not
+            OOMKilled, and it would hit other teams too. Ask for the exact
+            status instead of guessing the layer.
+        - say: Can we give the cluster bigger nodes?
+          reply: >-
+            That is a platform decision, and the cluster has plenty of free
+            memory as far as I know.
+          feedback: >-
+            Bigger nodes do not raise a container's own limit; the kill would
+            repeat. Find out what the symptom is before choosing a change.
+    - prompt: Find out what worked before.
+      choices:
+        - say: How much memory did the service use on the old VM, and what limited it?
+          reply: >-
+            The VM had 2 GB and ran nothing else. Nothing limited the
+            process. Its dashboard showed it around 60 MB once the dataset was
+            loaded, a bit more than the laptop number.
+          feedback: >-
+            Now you have the reference: about 60 MB of real use with no
+            ceiling. Any container ceiling below that number gets the
+            container killed on every start.
+          best: true
+          fact: On the VM nothing limited it and it held about 60 MB once the dataset was loaded.
+        - say: Which version of the language runtime does the image use?
+          reply: >-
+            The same one as on the VM. We did not rebuild the image.
+          feedback: >-
+            Same image means same runtime. Ask what the process needed and
+            what limited it, which is what differs between the VM and the
+            cluster.
+    - prompt: Agree on what done means before you touch anything.
+      choices:
+        - say: What does "fixed" look like for you, and what must I not change?
+          reply: >-
+            One report pod that stays up without restarts, with the full
+            month's dataset loaded. Keep the Deployment and container names,
+            do not touch the command or its args, and do not delete the
+            namespace. Using more memory than the laptop number is fine.
+          feedback: >-
+            Agreeing on the end state and the constraints up front rules out
+            the shortcut of loading less data and lets you verify the fix
+            the way the team will.
+          best: true
+          fact: "Done: 1 available report pod with no OOMKilled container, still loading its 48Mi dataset; keep the names, the args and the namespace."
+        - say: Can I cut the dataset in half so it fits?
+          reply: >-
+            Then the report would show half the month. Finance needs all of
+            it.
+          feedback: >-
+            Shrinking the work hides the symptom and breaks the report. Ask
+            what done looks like and what you must keep.
+  closing: >-
+    That is everything I know. I will keep the report page open; ping me
+    when it loads.
+
+diagram:
+  nodes:
+    - id: deploy
+      label: Deployment report
+      note: keeps 1 pod from its template, resources included
+    - id: limitrange
+      label: LimitRange (optional)
+      note: fills in a default limit when the template sets none
+    - id: rs
+      label: ReplicaSet
+      note: creates the pod
+    - id: pod
+      label: Pod report
+      note: one or more containers, each with its own memory limit
+    - id: kernel
+      label: Node kernel
+      note: kills a container past its limit, exit 137 OOMKilled
+    - id: kubelet
+      label: kubelet
+      note: restarts it with a growing pause, CrashLoopBackOff
+  edges:
+    - from: deploy
+      to: rs
+      label: creates
+    - from: rs
+      to: pod
+      label: creates
+    - from: limitrange
+      to: pod
+      label: default at admission
+    - from: pod
+      to: kernel
+      label: memory limit
+    - from: kernel
+      to: kubelet
+      label: container killed
+
+quiz:
+  - question: "A container shows Last State: Terminated, Reason: OOMKilled, Exit Code: 137. What happened?"
+    choices:
+      - text: The container used more memory than its own limit, and the kernel killed it.
+        correct: true
+        explain: >-
+          OOMKilled is recorded per container when it crosses its memory
+          limit. Exit code 137 is 128 plus signal 9, the kill the kernel
+          sends.
+      - text: The node ran out of memory and Kubernetes removed the pod.
+        explain: >-
+          A node short of memory evicts pods, and the pod shows Evicted. An
+          OOMKilled container hit its own ceiling while the node still had
+          memory to spare.
+      - text: The program crashed on a bug and exited by itself.
+        explain: >-
+          A program that exits on its own shows Reason Error and its own exit
+          code, usually with a stack trace in kubectl logs --previous.
+  - question: The pod shows a memory limit of 32Mi, but the Deployment's template has no resources at all. Where did the 32Mi come from?
+    choices:
+      - text: A LimitRange default in the namespace, filled in when the pod was created.
+        correct: true
+        explain: >-
+          A LimitRange adds its default request and limit to every new
+          container that sets none. The pod shows the value; the Deployment
+          never does.
+      - text: The kubelet gives every container 32Mi unless told otherwise.
+        explain: >-
+          Without a limit and without a LimitRange, a container has no memory
+          ceiling at all; the kubelet does not invent one.
+      - text: The scheduler copied it from the node's free memory.
+        explain: >-
+          The scheduler only chooses a node from the requests. It never
+          writes limits into a pod.
+  - question: A pod reads 1/2 in the READY column and its RESTARTS count grows. Which container needs the fix?
+    choices:
+      - text: The one whose block in kubectl describe pod shows OOMKilled and a growing Restart Count.
+        correct: true
+        explain: >-
+          Each container has its own state, limit and restart count. The
+          block with the kill names the container to change; the other one
+          is fine.
+      - text: Always the first container, because it is the application.
+        explain: >-
+          The order says nothing about which container is failing. A helper
+          next to the application can be the one being killed.
+      - text: Every container in the pod, with the same new limit.
+        explain: >-
+          Changing a container that runs fine adds a change you did not need
+          and hides which number was wrong.
+  - question: Why does deleting the OOMKilled pod not fix it?
+    choices:
+      - text: The ReplicaSet creates a new pod from the same template, with the same limit.
+        correct: true
+        explain: >-
+          The limit lives in the template or the namespace default, not in
+          the pod. A new pod gets it again and is killed again.
+      - text: It does fix it, the new pod starts with a fresh memory budget.
+        explain: >-
+          The budget is the limit, and the new pod gets the same one. The
+          kill repeats a second after the start.
+
+guide:
+  - title: List the pods
+    body: >-
+      The workstation shell already points at the episode namespace. Read
+      READY (ready containers out of the total), STATUS (OOMKilled or
+      CrashLoopBackOff) and RESTARTS: a number that grows while you watch
+      means the kill happens on every start.
+    command: kubectl get pods
+  - title: Read each container's Last State
+    body: >-
+      describe pod has one block per container under `Containers:`. In the
+      `report` block read `Args` (`--mem-total=48Mi`, the dataset), `Last
+      State: Terminated, Reason: OOMKilled, Exit Code: 137` and `Limits:
+      memory: 32Mi`. The container needs more than its dataset, and its
+      ceiling is below that. The label selector saves typing the pod name.
+    command: kubectl describe pod -l app.kubernetes.io/name=report
+  - title: Read the events
+    body: >-
+      The `BackOff` line repeats `Back-off restarting failed container
+      report`: it names the container the kubelet keeps restarting. No
+      `Evicted` and no `Liveness probe failed` line, so the node and a probe
+      are ruled out.
+    command: kubectl get events --sort-by=.lastTimestamp
+  - title: Find where the limit came from
+    body: >-
+      Print the `resources` the Deployment wrote for each container. Here
+      the template itself holds `"limits":{"memory":"32Mi"}`, so the
+      Deployment is the place to change. When it prints `{}` while the pod
+      shows a limit, a LimitRange default filled it in.
+    command: kubectl get deployment report -o jsonpath='{.spec.template.spec.containers[*].resources}{"\n"}'
+  - title: Check the namespace defaults
+    body: >-
+      `No resources found` means no LimitRange sets defaults here, which
+      confirms the 32Mi is the Deployment's own number.
+    command: kubectl get limitrange
+  - title: Raise the limit of the killed container
+    body: >-
+      Change one thing: the memory of container `report`. The request (64Mi)
+      covers the steady state of about 58Mi, the limit (128Mi) leaves room
+      for peaks. The Deployment creates a new ReplicaSet and replaces the
+      pod.
+    command: kubectl set resources deployment/report -c report --requests=memory=64Mi --limits=memory=128Mi
+  - title: Watch the rollout finish
+    body: >-
+      rollout status waits until the new pod has been Ready for
+      `minReadySeconds` (10s) without a restart. It ends with `successfully
+      rolled out`; that is the verification.
+    command: kubectl rollout status deployment/report
+    check: available-replicas
+  - title: Measure the real use
+    body: >-
+      top shows about 58Mi for `report`, well under its new 128Mi limit, and
+      `get pods` shows RESTARTS 0. metrics-server can take up to a minute
+      to report a new pod. Then press Validate to grade the assignment.
+    command: kubectl top pod --containers
+    check: no-oomkill

@@ -1,0 +1,5 @@
+kubectl -n {{ .Namespace }} create service clusterip redis --clusterip=None --tcp=6379:6379
+kubectl -n {{ .Namespace }} create deployment redis --image=redis:7.4-alpine --replicas=3 --dry-run=client -o yaml > sts.yaml
+vi sts.yaml   # kind: StatefulSet, add serviceName: redis and volumeClaimTemplates, remove strategy and status
+kubectl -n {{ .Namespace }} apply -f sts.yaml
+kubectl -n {{ .Namespace }} rollout status statefulset/redis --timeout=240s

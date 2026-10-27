@@ -1,0 +1,290 @@
+customer:
+  name: Priya
+  role: Catalog team lead
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Ask me for a hint whenever you are
+    stuck: each hint goes one step further, from where to look to what to
+    change, and the last one waits until you name a cause.
+
+meeting:
+  opening: >-
+    Thanks for picking this up. We moved the catalog into the shop namespace
+    this morning and now the storefront shows an empty catalog panel. Every
+    kubectl command said created and the pods are Running, so I am not sure
+    what to look at. Where do you want to start?
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What exactly did you change this morning?
+          reply: >-
+            I copied the catalog's Deployment and Service manifests from the
+            old catalog namespace, edited them by hand for the shop namespace
+            and applied them. The storefront was already there and I did not
+            touch it.
+          feedback: >-
+            Good first question. A failure that starts right after a change
+            usually comes from it, and "edited by hand during a copy" tells
+            you where to look: whatever was edited.
+          best: true
+          fact: The catalog Deployment and Service were copied from the old namespace, edited by hand and applied this morning; the storefront was not touched.
+        - say: Can you restart the catalog pods?
+          reply: >-
+            I already deleted them once. The new ones came back Running and
+            the panel is still empty.
+          feedback: >-
+            Restarting pods rebuilds them from the same template with the
+            same labels and ports; it changes nothing in how the Service
+            finds them. Ask what changed first.
+        - say: Is the storefront code broken?
+          reply: >-
+            No, the storefront is the same release as yesterday and it
+            served the catalog panel fine until the move.
+          feedback: >-
+            Ruling out the storefront is useful, but the move is the only
+            thing that changed. "What exactly did you change?" points there
+            directly.
+    - prompt: You need the exact symptom. What do you ask?
+      choices:
+        - say: What does the storefront see when it calls the catalog?
+          reply: >-
+            From the storefront pod, wget http://catalog/ answers Connection
+            refused right away. It is not a timeout, it fails in a
+            millisecond.
+          feedback: >-
+            Precise symptoms split the causes. A name that resolves and is
+            refused at once means the request reached the Service and found
+            no pod to go to, or reached a pod on a port nothing listens on.
+            Neither is a DNS or firewall problem.
+          best: true
+          fact: wget http://catalog/ from the storefront pod answers Connection refused at once, not a timeout.
+        - say: Should we add more catalog replicas?
+          reply: >-
+            We have 2 and both show Running and 1/1. More copies of the same
+            thing would not change anything, would they?
+          feedback: >-
+            Scaling multiplies the pods, not the way the Service finds them.
+            Find out what the storefront sees before choosing a change.
+        - say: Is DNS broken in the shop namespace?
+          reply: >-
+            The name resolves to the Service address fine. The connection is
+            refused after that.
+          feedback: >-
+            Reasonable suspicion, and the answer rules it out: a name that
+            resolves and refuses at once is not a DNS failure.
+    - prompt: Find out what the catalog looks like everywhere else.
+      choices:
+        - say: How is the catalog set up in the other environments?
+          reply: >-
+            A Deployment named catalog with 2 pods labeled
+            app.kubernetes.io/name=catalog, nginx 1.27-alpine listening on
+            port 80 and serving the files of the catalog-html ConfigMap,
+            behind a Service named catalog on port 80. Same everywhere.
+          feedback: >-
+            Now you have a reference to compare against. Every name, label
+            and port in this namespace that differs from that description is
+            a candidate.
+          best: true
+          fact: "Reference: Deployment catalog, pods labeled app.kubernetes.io/name=catalog, nginx on port 80 serving catalog-html, Service catalog on port 80."
+        - say: Which image does the catalog run?
+          reply: >-
+            nginx 1.27-alpine, the same as the storefront. The pods pulled
+            it fine, they are Running.
+          feedback: >-
+            The image is not in question when the pods are Running and
+            Ready. Ask for the whole reference: names, labels and ports.
+    - prompt: Agree on what done means before you touch anything.
+      choices:
+        - say: What does "fixed" look like for you, and is there anything I must not change?
+          reply: >-
+            A Deployment named catalog with 2 ready pods, the Service catalog
+            serving the ACME Catalog 3.2.0 page, and nothing left over from
+            the copy. Keep the Service name and the catalog-html ConfigMap,
+            leave the storefront alone, do not delete the namespace.
+          feedback: >-
+            Agreeing on the end state and the constraints up front is what
+            lets you verify your fix the same way the customer will.
+          best: true
+          fact: "Done: Deployment catalog with 2 ready pods, Service catalog serves ACME Catalog 3.2.0, no stray Deployment; keep the Service and ConfigMap names, leave the storefront alone."
+        - say: Can I delete everything catalog-related and redeploy from the old namespace?
+          reply: >-
+            Please do not. The old namespace is already gone, and the
+            storefront in this namespace must keep running.
+          feedback: >-
+            Starting over destroys the evidence and the old source is gone.
+            Ask what done looks like and what you must keep.
+  closing: >-
+    That is everything I know. I will keep the storefront page open; ping me
+    when the catalog panel fills up again.
+
+diagram:
+  nodes:
+    - id: storefront
+      label: Storefront pod
+      note: calls http://catalog/ for the product list
+    - id: service
+      label: Service catalog
+      note: a selector and a targetPort, no list of pods
+    - id: slice
+      label: EndpointSlice
+      note: Ready pods whose labels match the selector
+    - id: pods
+      label: Pods x2
+      note: carry the template labels, listen on port 80
+    - id: deploy
+      label: Deployment
+      note: keeps 2 pods from its template, labels included
+      column: 1
+    - id: configmap
+      label: ConfigMap catalog-html
+      note: the product page
+      column: 2
+  edges:
+    - from: storefront
+      to: service
+      label: wget
+    - from: service
+      to: slice
+      label: computed from selector
+    - from: slice
+      to: pods
+      label: forwards on targetPort
+    - from: deploy
+      to: pods
+      label: creates
+    - from: configmap
+      to: pods
+      label: mounted
+
+quiz:
+  - question: The catalog pods are Running and 1/1 Ready, and http://catalog/ answers Connection refused at once. What does that rule out?
+    choices:
+      - text: A crash, a failing probe and DNS; the mismatch is between the Service and the pods.
+        correct: true
+        explain: >-
+          Ready pods passed their probe, and a refusal from a resolved
+          address means the lookup worked. What is left is the match the
+          Service makes: selector and targetPort against the pod labels and
+          port.
+      - text: Nothing, the pods could still be failing their readiness probe.
+        explain: >-
+          1/1 READY means the readiness probe passes. A pod that fails it
+          shows 0/1 and stays Running.
+      - text: A Service problem, because the Service name resolves.
+        explain: >-
+          Resolving the name proves the Service object exists, not that its
+          selector or targetPort match any pod. The refusal comes right
+          after the lookup.
+  - question: The Service selector is app.kubernetes.io/name=catalog and the pods carry app.kubernetes.io/name=catalog-tmp. Where can the fix go?
+    choices:
+      - text: Either side, but only one of them matches what every other environment runs.
+        correct: true
+        explain: >-
+          Changing the selector to catalog-tmp gives the Service endpoints,
+          yet it leaves a Deployment and a label nobody else expects. The
+          reference says the pods are labeled catalog, so the Deployment is
+          the side to correct.
+      - text: Only the Service; pod labels cannot be changed.
+        explain: >-
+          Pod labels come from the Deployment template, and a Deployment can
+          be replaced by one with the right labels. The selector of an
+          existing Deployment is immutable, which is why it is replaced, not
+          edited.
+      - text: Only the pods; edit their labels with kubectl label.
+        explain: >-
+          The Deployment's ReplicaSet recreates pods from its template, so a
+          label added to a running pod is lost on the next restart, and the
+          ReplicaSet drops a pod whose labels no longer match its own
+          selector.
+  - question: The EndpointSlice lists two addresses with port 8080 and the connection is still refused. What does the refusal tell you?
+    choices:
+      - text: The pods are reached, but nothing listens on 8080 inside them; the targetPort is wrong.
+        correct: true
+        explain: >-
+          With endpoints present, kube-proxy forwards the connection to a
+          pod. A refusal then comes from the pod's kernel because no process
+          listens on that port. Compare targetPort with containerPort.
+      - text: kube-proxy refused it because the Service has no endpoints.
+        explain: >-
+          The EndpointSlice shows two addresses, so the Service has
+          endpoints. kube-proxy refuses only when the list is empty.
+      - text: A NetworkPolicy blocks the storefront.
+        explain: >-
+          A policy drops packets, and the client sees a timeout, not an
+          immediate refusal.
+
+guide:
+  - title: Reproduce what Priya saw
+    body: >-
+      The workstation shell already points at the episode namespace. Run the
+      same request the storefront makes, from inside the storefront pod. Read
+      the answer: an address in parentheses means the name resolved, and
+      "Connection refused" means the Service had nowhere to send the
+      connection or sent it to a closed port. Nothing is blocking the path.
+    command: kubectl exec deploy/storefront -- wget -qO- -T 5 http://catalog/
+  - title: List the Deployments
+    body: >-
+      Read the NAME column against the reference, a Deployment named catalog.
+      This namespace holds the storefront and something named during the copy
+      instead. Read READY too: 2/2 means the pods run and pass their probe,
+      so the pods are healthy and the problem is in how the Service finds
+      them.
+    command: kubectl get deployments
+  - title: Read the Service and the pod labels side by side
+    body: >-
+      describe service prints Selector, TargetPort and Endpoints next to each
+      other. The Endpoints line is empty. Then read the LABELS column of the
+      pods and compare the exact value of app.kubernetes.io/name with the
+      selector. The pods carry a temporary value from the copy; the selector
+      asks for the real one.
+    command: kubectl describe service catalog
+  - title: Confirm which labels the pods carry
+    body: >-
+      The Service matches a pod only when every key and value of the
+      selector appears in the pod's labels. One different word means no
+      match, no endpoint, and a refused connection.
+    command: kubectl get pods --show-labels
+  - title: Export the stray Deployment
+    body: >-
+      A Deployment cannot be renamed and its selector cannot be edited, so
+      the stray one is replaced: export it to a file, correct it, apply it
+      as the real catalog, then remove the stray one.
+    command: kubectl get deployment catalog-shop-tmp -o yaml > catalog.yaml
+  - title: Correct the name and the label value
+    body: >-
+      Every occurrence of the stray name becomes catalog, and every
+      app.kubernetes.io/name value becomes catalog, in the Deployment labels,
+      the selector and the pod template. The ConfigMap name catalog-html is
+      untouched.
+    command: >-
+      sed -i.bak -e 's/catalog-shop-tmp/catalog/g'
+      -e 's/app.kubernetes.io\/name: catalog-tmp/app.kubernetes.io\/name: catalog/g'
+      catalog.yaml
+  - title: Apply the corrected Deployment
+    body: >-
+      apply creates Deployment catalog from the file. The exported
+      resourceVersion, uid and status are ignored on creation.
+    command: kubectl apply -f catalog.yaml
+    check: deploy-exists
+  - title: Wait for the rollout
+    body: >-
+      rollout status returns when both pods are Ready. From that moment the
+      Service selector matches them and the EndpointSlice fills.
+    command: kubectl rollout status deployment/catalog
+    check: ready-replicas
+  - title: Remove the stray Deployment
+    body: >-
+      The right catalog is serving, so the copy under the temporary name can
+      go. Deleting it second, not first, kept two ready pods available at
+      every moment.
+    command: kubectl delete deployment catalog-shop-tmp
+    check: no-stray-deployment
+  - title: Confirm the Service reaches the pods
+    body: >-
+      The EndpointSlice lists the addresses the Service forwards to, with
+      the port. Two addresses under port 80 mean the storefront's next
+      request gets the page. Then press Validate to grade the assignment.
+    command: kubectl get endpointslices -l kubernetes.io/service-name=catalog
+    check: service-endpoints

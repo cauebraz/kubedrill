@@ -1,0 +1,3 @@
+kubectl -n {{ .Namespace }} edit deployment api
+kubectl -n {{ .Namespace }} rollout status deployment/api --timeout=120s
+kubectl -n {{ .Namespace }} logs -l app=api --tail=5

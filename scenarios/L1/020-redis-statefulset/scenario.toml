@@ -1,0 +1,24 @@
+[scenario]
+id = "020-redis-statefulset"
+title = "Build a 3-replica redis StatefulSet with stable DNS and a headless Service"
+level = "L1"
+module = "L1.2"
+type = "build"
+minutes = 20
+namespace = "sessions"
+exam = ["CKAD:design-build"]
+concepts = ["cluster-dns", "readiness-and-endpoints", "labels-and-selectors"]
+fix_targets = ["apps/statefulsets/redis", "core/services/redis"]
+images = ["redis:7.4-alpine@sha256:6ba19c50b56777f5c11c58eff8ddb69d0d5f27ba131cffb63f180ccfd43c66af"]
+
+[[variant]]
+name = "ordered-startup"
+vars = { policy = "OrderedReady", config = "none", goal = "statefulset redis starts its pods one at a time (podManagementPolicy OrderedReady)" }
+
+[[variant]]
+name = "parallel-startup"
+vars = { policy = "Parallel", config = "none", goal = "statefulset redis starts its pods all at once (podManagementPolicy Parallel)" }
+
+[[variant]]
+name = "tuned-config"
+vars = { policy = "OrderedReady", config = "redis-config", goal = "every redis pod runs with maxmemory-policy allkeys-lru from configmap redis-config" }

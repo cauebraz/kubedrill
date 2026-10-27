@@ -1,0 +1,16 @@
+{{- if eq .Vars.limitrange "true" }}
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: namespace-defaults
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: platform-team
+spec:
+  limits:
+    - type: Container
+      default:
+        memory: 32Mi
+      defaultRequest:
+        memory: 32Mi
+{{- end }}

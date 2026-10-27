@@ -1,0 +1,211 @@
+customer:
+  name: Priya
+  role: Platform engineer, capacity
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Ask me for a hint whenever you are
+    stuck: each hint goes one step further, from where to look to what to
+    change, and the last one waits until you name a cause.
+
+meeting:
+  opening: >-
+    Thanks for taking this. The shop namespace has a budget now and since we
+    set it, storefront, catalog and cart run nothing at all. We need them back
+    inside the budget, and protected from evictions this time.
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What changed right before the services stopped?
+          reply: >-
+            We created the ResourceQuota shop in the namespace. Nobody touched
+            the Deployments; their manifests never had a resources section.
+          feedback: >-
+            Good first question. The quota is the only change, and a quota acts
+            at admission, when a pod is created, so it can stop pods from ever
+            existing.
+          best: true
+          fact: The ResourceQuota shop was added; the Deployments declare no resources.
+        - say: Can you restart the Deployments?
+          reply: >-
+            The storefront team already did. Still zero pods.
+          feedback: >-
+            A restart creates new pods from the same template, and admission
+            judges them the same way. Ask what changed first.
+        - say: Are the nodes out of CPU?
+          reply: >-
+            The nodes are mostly idle. The cluster runs other teams' services
+            without trouble.
+          feedback: >-
+            A full node leaves pods Pending, and these pods do not exist at
+            all. Asking what changed points at the layer that refuses them.
+    - prompt: Pin down the budget. What do you ask?
+      choices:
+        - say: What exactly does the quota cap, and at what values?
+          reply: >-
+            Requests and limits, both for CPU and memory, at {{ .Vars.cpu }} CPU and
+            {{ .Vars.memory }} of memory. Finance signed off on those numbers.
+          feedback: >-
+            A quota on limits as well as requests means every container must
+            declare both, and the sum of the limits has to fit too.
+          best: true
+          fact: "Quota shop: requests and limits of {{ .Vars.cpu }} CPU and {{ .Vars.memory }} memory, fixed by finance."
+        - say: Can we raise the quota until everything fits?
+          reply: >-
+            No. That number is the budget; raising it is a conversation with
+            finance, not a fix.
+          feedback: >-
+            Changing the constraint hides the problem. Learn what the quota
+            caps, then size the workloads to fit it.
+    - prompt: Find out what has to fit inside it.
+      choices:
+        - say: How many pods and containers do the three services run, and how much do they use?
+          reply: >-
+            storefront and catalog run 2 replicas, cart runs 1, all nginx.
+            Check the pod templates for extra containers. At idle each nginx
+            uses a few millicores and about 15Mi.
+          feedback: >-
+            The quota adds up every container of every replica, so the count
+            of containers, not of Deployments, is the divisor.
+          best: true
+          fact: "5 pods: storefront 2, catalog 2, cart 1; nginx idles at about 5m CPU and 15Mi."
+        - say: Which image versions do the services run?
+          reply: >-
+            nginx 1.27-alpine everywhere, the same as before the quota.
+          feedback: >-
+            The image did not change and admission never pulls it. Ask what
+            the quota will be adding up.
+    - prompt: Agree on what done means.
+      choices:
+        - say: What does done look like, and is there anything I must not change?
+          reply: >-
+            All 5 pods running, all of them Guaranteed, the quota showing real
+            usage, and the quota itself untouched. Keep the names and the
+            replica counts.
+          feedback: >-
+            Guaranteed is a precise target: requests equal to limits for CPU
+            and memory in every container.
+          best: true
+          fact: "Done: all 5 pods Ready and Guaranteed, quota used but unchanged, names and replica counts kept."
+        - say: Can I scale catalog down to one replica so the rest fits?
+          reply: >-
+            Please do not. Two catalog replicas is our minimum for a node
+            restart.
+          feedback: >-
+            Fewer replicas fit the budget by giving up availability. Ask what
+            done means before trading anything away.
+  closing: >-
+    That is all I know. Ping me when the three services are back inside the
+    budget.
+
+diagram:
+  nodes:
+    - id: deploy
+      label: Deployments x3
+      note: storefront 2, catalog 2, cart 1
+    - id: rs
+      label: ReplicaSets
+      note: ask for each pod; refusals land here as Events
+    - id: quota
+      label: ResourceQuota shop
+      note: every container must declare cpu and memory; the sum must fit
+    - id: limitrange
+      label: LimitRange (optional)
+      note: fills missing values at admission
+      column: 1
+    - id: pods
+      label: Pods x5
+      note: requests == limits -> Guaranteed
+  edges:
+    - from: deploy
+      to: rs
+      label: creates
+    - from: rs
+      to: quota
+      label: pod create
+    - from: limitrange
+      to: quota
+      label: defaults first
+    - from: quota
+      to: pods
+      label: admitted
+
+quiz:
+  - question: The Deployments show 0 ready and kubectl get pods lists nothing. Where is the reason written?
+    choices:
+      - text: In the FailedCreate Events of the ReplicaSets.
+        correct: true
+        explain: >-
+          Admission refused the pods, so they never existed. The ReplicaSet is
+          the object that asked for them, and the refusal is recorded on it.
+      - text: In the Events of the pods.
+        explain: >-
+          A refused pod is never stored, so it has no Events and cannot be
+          described.
+      - text: In the container logs.
+        explain: >-
+          No container started, so there is no log. Logs explain crashes, not
+          admission.
+  - question: Which resources make a pod Guaranteed?
+    choices:
+      - text: Every container sets CPU and memory requests equal to its limits.
+        correct: true
+        explain: >-
+          Both resources, every container. One sidecar without values, or a
+          request below its limit, makes the pod Burstable.
+      - text: The main container sets requests and limits; sidecars do not count.
+        explain: >-
+          The QoS class looks at every container. A sidecar without resources
+          makes the pod Burstable, and under this quota it is refused anyway.
+      - text: Limits set high enough that the pod never hits them.
+        explain: >-
+          The class is computed from the spec, not from usage: requests must
+          equal limits.
+  - question: You set 500m CPU per pod against a 1500m quota. What happens?
+    choices:
+      - text: Three pods are admitted and the others are refused with exceeded quota.
+        correct: true
+        explain: >-
+          The quota admits pods one at a time while the sum fits, then refuses
+          the next one, so some Deployments stay short of their replicas.
+      - text: All pods start and are throttled to share 1500m.
+        explain: >-
+          A quota does not throttle; it refuses at admission. Throttling comes
+          from each container's own CPU limit.
+
+guide:
+  - title: See how far the Deployments got
+    body: >-
+      The workstation shell already points at the episode namespace. Compare
+      the DESIRED and CURRENT columns of the ReplicaSets: they want pods and
+      have none, so the pods were refused before they existed.
+    command: kubectl get deploy,rs,pods
+  - title: Read the refusal on a ReplicaSet
+    body: >-
+      The FailedCreate Event quotes the quota and lists, after "for:", every
+      container that declares no CPU or memory.
+    command: kubectl describe rs -l app.kubernetes.io/name=catalog
+  - title: Read the budget
+    body: >-
+      Hard is the budget, Used is what admitted pods take. Divide Hard by the
+      number of containers across all 5 pods.
+    command: kubectl describe resourcequota shop
+  - title: Size storefront
+    body: >-
+      Requests equal to limits, for CPU and memory, make the pods Guaranteed.
+      Without -c the command sets every container of the template.
+    command: kubectl set resources deployment/storefront --requests=cpu=250m,memory=256Mi --limits=cpu=250m,memory=256Mi
+    check: storefront-ready
+  - title: Size catalog and cart
+    body: >-
+      Same values for the other two Deployments. Each one rolls out a new
+      ReplicaSet whose pods the quota can count.
+    command: kubectl set resources deployment/catalog deployment/cart --requests=cpu=250m,memory=256Mi --limits=cpu=250m,memory=256Mi
+    check: cart-ready
+  - title: Confirm the QoS class and the quota
+    body: >-
+      Every pod should say Guaranteed and Running, and the quota should show
+      Used below Hard. Then press Validate to grade the assignment.
+    command: kubectl get pods -o custom-columns=NAME:.metadata.name,QOS:.status.qosClass,PHASE:.status.phase
+    check: all-guaranteed

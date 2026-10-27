@@ -1,0 +1,229 @@
+customer:
+  name: Priya
+  role: Media team lead
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Ask me for a hint whenever you are
+    stuck: each hint goes one step further, from where to look to what to
+    change, and the last one waits until you name a cause.
+
+meeting:
+  opening: >-
+    Thanks for taking this. Since yesterday customers cannot attach images to
+    their listings. The uploads service never started on the new cluster and
+    its storage claim says Pending. Where do you want to start?
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What changed right before uploads stopped working?
+          reply: >-
+            We moved it to the new cluster yesterday. Same manifests as the old
+            cluster, applied by the same pipeline, and the pipeline went green.
+          feedback: >-
+            Good first question. Manifests copied between clusters carry the
+            old cluster's assumptions, and storage is the part that differs
+            most between clusters.
+          best: true
+          fact: It broke after the move to the new cluster, with the manifests from the old one.
+        - say: Can you delete the pod so it gets rescheduled?
+          reply: >-
+            We did twice. The new pod sits in Pending exactly like the old one.
+          feedback: >-
+            A new pod asks for the same claim and waits the same way. Acting
+            before observing hides evidence; ask what changed first.
+        - say: Is the disk on the new cluster full?
+          reply: >-
+            I do not know how to check that. Nothing ever got written, the
+            service never started.
+          feedback: >-
+            A full disk fails writes from a running pod; here nothing started.
+            "What changed?" narrows the search faster.
+    - prompt: You need the exact symptom. What do you ask?
+      choices:
+        - say: What exactly do kubectl and your dashboard show for the pod and the claim?
+          reply: >-
+            The Deployment is 0 of 1 ready, the pod has been Pending since
+            yesterday, and kubectl get pvc shows uploads-data as Pending.
+          feedback: >-
+            Precise symptoms split the causes. A Pending pod never got a node,
+            so no container ran; a crash or a probe is ruled out, and the
+            claim is the lead.
+          best: true
+          fact: The pod is Pending (never scheduled) and PVC uploads-data is Pending.
+        - say: Should we give the pod more CPU and memory?
+          reply: >-
+            It never ran, so I doubt it is short on anything. The other pods on
+            the new cluster run fine.
+          feedback: >-
+            Resources can keep a pod Pending, but the scheduler would say so in
+            its event. Find out what the cluster reports before choosing a
+            change.
+    - prompt: Find out what the claim expects from the cluster.
+      choices:
+        - say: What storage did uploads use on the old cluster, and what does the new one offer?
+          reply: >-
+            The old cluster had its own storage classes; I never checked what
+            the new one has. Our claim is 1Gi for one pod, nothing shared.
+          feedback: >-
+            Now you have something to compare: the class, the access mode and
+            the claim name in the manifests against what kubectl get
+            storageclass lists on this cluster.
+          best: true
+          fact: The claim is 1Gi for one pod; nobody checked which storage classes the new cluster offers.
+        - say: Can you open a ticket with the storage vendor?
+          reply: >-
+            This is a local cluster, there is no vendor. The storage comes from
+            whatever the cluster runs.
+          feedback: >-
+            Escalating before reading the cluster's own Events skips the
+            evidence that is one command away.
+    - prompt: Agree on what done means before you touch anything.
+      choices:
+        - say: What does fixed look like for you, and what must I keep?
+          reply: >-
+            The claim uploads-data Bound, the pod Running, and the service
+            able to write files under /data. Keep the names uploads and
+            uploads-data, one replica is enough, and leave the namespace alone.
+          feedback: >-
+            Agreeing on the end state and the constraints first is what lets
+            you verify the fix the way the team will.
+          best: true
+          fact: "Done: uploads-data Bound, uploads 1/1 ready and writing under /data; keep the names, one replica, the namespace."
+        - say: Can I mount an emptyDir instead so it starts right away?
+          reply: >-
+            Then every upload disappears when the pod restarts. We need the
+            files to survive.
+          feedback: >-
+            An emptyDir hides the symptom and loses data. Ask what done means
+            before choosing a shortcut.
+  closing: >-
+    That is everything I know. Ping me when customers can upload again.
+
+diagram:
+  nodes:
+    - id: deploy
+      label: Deployment uploads
+      note: 1 pod, mounts claimName at /data
+    - id: pod
+      label: Pod
+      note: Pending until its claim is Bound
+    - id: pvc
+      label: PVC uploads-data
+      note: class, access mode, 1Gi
+    - id: sc
+      label: StorageClass standard
+      note: local-path, WaitForFirstConsumer
+    - id: pv
+      label: PersistentVolume
+      note: a directory on the pod's node
+  edges:
+    - from: deploy
+      to: pod
+      label: creates
+    - from: pod
+      to: pvc
+      label: claimName
+    - from: pvc
+      to: sc
+      label: storageClassName
+    - from: sc
+      to: pv
+      label: provisions
+
+quiz:
+  - question: The pod is Pending and the claim shows only the event WaitForFirstConsumer. What does that tell you?
+    choices:
+      - text: The claim is waiting for a pod that uses it to be scheduled; look at why the pod is not scheduled.
+        correct: true
+        explain: >-
+          With WaitForFirstConsumer the provisioner acts only after the
+          scheduler places a pod that mounts the claim. A healthy claim stays
+          Pending until then.
+      - text: The provisioner is broken and must be restarted.
+        explain: >-
+          A broken provisioner leaves ExternalProvisioning or
+          ProvisioningFailed events. WaitForFirstConsumer is the claim waiting
+          by design.
+      - text: The claim is too large for the node.
+        explain: >-
+          A size problem would surface as ProvisioningFailed or a scheduling
+          event naming capacity, not as WaitForFirstConsumer.
+  - question: The claim asks for a StorageClass that does not exist. Why can you not just edit storageClassName?
+    choices:
+      - text: A PVC's spec is immutable after creation, except the requested size on a bound claim.
+        correct: true
+        explain: >-
+          The API server answers "spec is immutable after creation". The
+          claim is recreated with the same name, which is safe while it was
+          never Bound.
+      - text: kubectl edit does not support PersistentVolumeClaims.
+        explain: >-
+          kubectl edit works on any object; the API server is what refuses
+          the change to the claim's spec.
+      - text: The pod holds a lock on the claim.
+        explain: >-
+          A Pending pod was never scheduled, so the pvc-protection finalizer
+          does not hold the claim. The refusal comes from the API validation.
+  - question: Why does local-path refuse ReadWriteMany?
+    choices:
+      - text: It creates a directory on one node, which other nodes cannot mount.
+        correct: true
+        explain: >-
+          ReadWriteMany needs storage that several nodes reach at once, such
+          as NFS or EFS. Node-local and block storage are ReadWriteOnce.
+      - text: ReadWriteMany needs more than 1Gi.
+        explain: >-
+          Access mode and size are independent. The provisioner rejects the
+          mode, whatever the size.
+
+guide:
+  - title: List the storage the cluster offers
+    body: >-
+      StorageClasses belong to the whole cluster. Note the NAME, the
+      PROVISIONER and the VOLUMEBINDINGMODE: a claim must name one of these
+      classes, or none to get the default.
+    command: kubectl get storageclass
+  - title: Read the claim
+    body: >-
+      The STORAGECLASS column shows what the claim asks for. Compare it with
+      the list above, then read the Events at the end of describe: the
+      ProvisioningFailed line names what went wrong.
+    command: kubectl describe pvc uploads-data
+  - title: Read the pod's view
+    body: >-
+      The FailedScheduling event says why the scheduler found no node, and the
+      Volumes section shows which claim the pod asks for.
+    command: kubectl describe pod -l app.kubernetes.io/name=uploads
+  - title: Save the old claim
+    body: >-
+      A claim's spec cannot be edited after creation, so the fix is to
+      recreate it. Keep a copy first; it never bound, so there is no data to
+      lose.
+    command: kubectl get pvc uploads-data -o yaml > uploads-data.yaml
+  - title: Remove the claim
+    body: >-
+      The Pending pod is not scheduled, so nothing holds the claim and the
+      delete returns at once.
+    command: kubectl delete pvc uploads-data
+  - title: Create the claim with the class this cluster has
+    body: >-
+      Same name, storageClassName standard, ReadWriteOnce, 1Gi. The Pending
+      pod asks for the claim by name and picks up the new one on its own.
+    command: >-
+      printf '%s\n' 'apiVersion: v1' 'kind: PersistentVolumeClaim' 'metadata: {name: uploads-data}' 'spec: {storageClassName: standard, accessModes: [ReadWriteOnce], resources: {requests: {storage: 1Gi}}}' | kubectl apply -f -
+    check: pvc-bound
+  - title: Watch the pod start
+    body: >-
+      Once the scheduler places the pod, local-path creates the volume on that
+      node, the claim turns Bound and the container starts.
+    command: kubectl rollout status deployment/uploads
+    check: ready-replicas
+  - title: Write to the volume
+    body: >-
+      A Ready pod proves the server listens. A write and a read under /data
+      prove uploads land on the volume. Then press Validate to grade the
+      assignment.
+    command: kubectl exec deploy/uploads -- sh -c 'echo test > /data/probe.txt && cat /data/probe.txt'
+    check: data-writable

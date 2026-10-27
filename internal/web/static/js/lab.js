@@ -5,12 +5,25 @@ import { el, clear, store, toast, onLeave, duration, icons } from "./dom.js";
 import { bind, pushOverlay } from "./keys.js";
 
 export function renderLab(stage, a, next, stageId) {
+  const route = location.hash;
+  const examKey = "kd:exam:" + a.id;
   clear(stage, el("p", { class: "loading", text: "Checking the environment..." }));
   api.get("/api/session").then((s) => {
+    if (location.hash !== route) { return; }
     const act = s.active;
     if (act && act.scenarioId === a.id && act.stage === stageId) { workspace(stage, a, stageId, act); return; }
+    const ended = stageId === "exam" ? store(examKey) : null;
+    if (ended && !(act && act.episodeId === ended)) {
+      store(examKey, null);
+      location.hash = debriefRoute(a, ended);
+      return;
+    }
     launchPanel(stage, a, stageId, act);
-  }).catch((e) => clear(stage, el("p", { class: "loading", text: e.message })));
+  }).catch((e) => { if (location.hash === route) { clear(stage, el("p", { class: "loading", text: e.message })); } });
+}
+
+function debriefRoute(a, episodeId) {
+  return "#/a/" + encodeURIComponent(a.id) + "/debrief/" + encodeURIComponent(episodeId);
 }
 
 const LAUNCH = {
@@ -38,6 +51,7 @@ function launchPanel(stage, a, stageId, act) {
       el("a", { class: "link", href: "#/a/" + encodeURIComponent(act.scenarioId) + "/" + (act.stage || "practice"), text: "Go back to it" }))) : null;
   const small = window.matchMedia("(max-width: 960px)").matches
     ? el("div", { class: "callout info", text: "The lab shows a terminal next to the steps; it needs a window at least 960 pixels wide." }) : null;
+  const route = location.hash;
   const launch = () => {
     btn.disabled = true;
     btn.textContent = "Launching...";
@@ -49,7 +63,8 @@ function launchPanel(stage, a, stageId, act) {
       steps.appendChild(last);
     }).then(() => {
       if (last) { last.classList.add("done"); }
-      renderLab(stage, a, null, stageId);
+      unbind();
+      if (location.hash === route) { renderLab(stage, a, null, stageId); }
     }).catch((e) => {
       if (last) { last.classList.add("failed"); }
       btn.disabled = false;
@@ -58,7 +73,7 @@ function launchPanel(stage, a, stageId, act) {
     });
   };
   btn.addEventListener("click", launch);
-  bind("Enter", "Launch the environment", () => { if (!btn.disabled) { launch(); } });
+  const unbind = bind("Enter", "Launch the environment", () => { if (btn.isConnected && !btn.disabled) { launch(); } });
   clear(stage, el("div", { class: "card launch" },
     el("div", { class: "eyebrow", text: copy.eyebrow }),
     el("h1", { text: copy.title }),
@@ -92,7 +107,9 @@ function workspace(stage, a, stageId, act) {
     sideBody);
   const termBox = el("div", { class: "term" });
   const termState = el("span", { class: "state", text: "connecting" });
-  const timer = el("span", { class: "timer", title: "Time since the run started, against the expected minutes" });
+  const timer = isExam
+    ? el("span", { class: "timer", role: "timer", "aria-label": "Time left in the exam", title: "Time left; the page submits at zero" })
+    : el("span", { class: "timer", role: "timer", "aria-label": "Time since the run started", title: "Time since the run started, against the expected minutes" });
   const reconnect = el("button", { class: "term-btn", hidden: true, title: "Open a new terminal", html: icons.refresh + "<span>Reconnect</span>" });
   const checksBar = el("div", { class: "checks", role: "status", "aria-label": "Live checks" });
   const validateBtn = el("button", { class: "btn primary", title: isExam ? "Grade once and end the exam" : "Grade the namespace now" }, isExam ? "Submit " : "Validate ", el("kbd", { class: "kbd on-accent", text: navigator.platform.includes("Mac") ? "Cmd Enter" : "Ctrl Enter" }));
@@ -119,16 +136,18 @@ function workspace(stage, a, stageId, act) {
 
   const started = new Date(act.startedAt).getTime();
   const deadline = act.deadline ? new Date(act.deadline).getTime() : 0;
-  let autoSubmitted = false;
+  let submitting = false, closeConfirm = null, gone = false;
+  const warned = {};
+  if (isExam) { store("kd:exam:" + a.id, act.episodeId); }
   const tick = () => {
     if (isExam && deadline) {
       const left = (deadline - Date.now()) / 1000;
       timer.textContent = duration(Math.max(0, left)) + " left";
       timer.classList.toggle("over", left < 120);
-      if (left <= 0 && !autoSubmitted) {
-        autoSubmitted = true;
-        submitExam(true);
+      for (const m of [5, 1]) {
+        if (left <= m * 60 && left > m * 60 - 30 && !warned[m]) { warned[m] = true; toast(m + (m === 1 ? " minute" : " minutes") + " left; the page submits at zero."); }
       }
+      if (left <= 0) { submitExam(true); }
       return;
     }
     const s = (Date.now() - started) / 1000;
@@ -227,10 +246,13 @@ function workspace(stage, a, stageId, act) {
   let delay = 5000, unchanged = 0, lastKey = "", timerID = 0;
   function poll() {
     clearTimeout(timerID);
-    if (document.hidden) { return; }
+    if (gone || document.hidden) { return; }
     api.get("/api/session" + (isExam ? "" : "?live=1")).then((s) => {
+      if (gone) { return; }
       if (!s.active || s.active.episodeId !== act.episodeId) {
-        if (isExam) { location.hash = "#/a/" + encodeURIComponent(a.id) + "/done"; }
+        gone = true;
+        if (closeConfirm) { closeConfirm(); }
+        location.hash = debriefRoute(a, act.episodeId);
         return;
       }
       act = s.active;
@@ -242,12 +264,12 @@ function workspace(stage, a, stageId, act) {
       delay = unchanged >= 12 ? 15000 : 5000;
       drawChecks(s);
       if (tab === "steps") { drawSide(); }
-    }).catch(() => {}).finally(() => { timerID = setTimeout(poll, delay); });
+    }).catch(() => {}).finally(() => { if (!gone) { timerID = setTimeout(poll, delay); } });
   }
   const onVisible = () => { if (!document.hidden) { unchanged = 0; poll(); } };
   document.addEventListener("visibilitychange", onVisible);
   term.onInput(() => { if (unchanged >= 12) { unchanged = 0; delay = 5000; clearTimeout(timerID); timerID = setTimeout(poll, 1500); } });
-  onLeave(() => { clearTimeout(timerID); document.removeEventListener("visibilitychange", onVisible); });
+  onLeave(() => { gone = true; clearTimeout(timerID); document.removeEventListener("visibilitychange", onVisible); });
 
   drawTabs();
   drawSide();
@@ -256,19 +278,33 @@ function workspace(stage, a, stageId, act) {
   const openMentorDrawer = () => openMentor(act, () => updateMentor());
   mentorBtn.addEventListener("click", openMentorDrawer);
   function submitExam(timedOut) {
+    if (submitting || gone) { return; }
+    submitting = true;
     validateBtn.disabled = true;
+    if (closeConfirm) { closeConfirm(); }
     api.post("/api/submit").then((v) => {
-      location.hash = "#/a/" + encodeURIComponent(a.id) + "/debrief/" + encodeURIComponent(v.episodeId);
-    }).catch((e) => { validateBtn.disabled = false; toast(e.message, true); });
-    if (timedOut) { toast("Time is up; the exam was submitted."); }
+      gone = true;
+      store("kd:exam:" + a.id, null);
+      if (timedOut) { toast("Time is up; the exam was submitted."); }
+      location.hash = debriefRoute(a, v.episodeId);
+    }).catch((e) => {
+      validateBtn.disabled = false;
+      toast(e.message, true);
+      setTimeout(() => { submitting = false; }, timedOut ? 5000 : 0);
+      poll();
+    });
   }
+  onLeave(() => { if (closeConfirm) { closeConfirm(); } });
   const validate = () => {
-    if (validateBtn.disabled) { return; }
-    if (isExam) { confirmSubmit(submitExam); return; }
+    if (validateBtn.disabled || submitting) { return; }
+    if (isExam) {
+      if (!closeConfirm) { closeConfirm = confirmSubmit(() => submitExam(false), () => { closeConfirm = null; term.focus(); }); }
+      return;
+    }
     validateBtn.disabled = true;
     api.post("/api/validate").then((v) => {
       if (v.passed) {
-        location.hash = "#/a/" + encodeURIComponent(a.id) + "/debrief/" + encodeURIComponent(v.episodeId);
+        location.hash = debriefRoute(a, v.episodeId);
         return;
       }
       showFailure(v, isDIY);
@@ -281,21 +317,24 @@ function workspace(stage, a, stageId, act) {
   bind("mod+-", "Smaller terminal text", () => term.zoom(-1));
 }
 
-// confirmSubmit asks before the one grade of an exam.
-function confirmSubmit(onYes) {
+// confirmSubmit asks before the one grade of an exam, with the focus on
+// Keep working so a stray Enter does not end the exam. It returns close.
+function confirmSubmit(onYes, onClose) {
   const back = el("div", { class: "modal-back", role: "dialog", "aria-modal": "true", "aria-label": "Submit the exam" });
-  let release = () => {};
-  const close = () => { release(); back.remove(); };
+  let release = () => {}, open = true;
+  const close = () => { if (!open) { return; } open = false; release(); back.remove(); onClose(); };
   release = pushOverlay(close);
   back.addEventListener("click", (e) => { if (e.target === back) { close(); } });
-  const yes = el("button", { class: "btn primary", text: "Submit and end the exam", onclick: () => { close(); onYes(false); } });
+  const keep = el("button", { class: "btn", text: "Keep working", onclick: close });
+  const yes = el("button", { class: "btn primary", text: "Submit and end the exam", onclick: () => { close(); onYes(); } });
   back.appendChild(el("div", { class: "modal narrow" },
     el("div", { class: "eyebrow", text: "Exam rehearsal" }),
     el("h2", { class: "modal-title", text: "Submit now?" }),
     el("p", { class: "muted", text: "The checks run once and the exam ends; there is no second try on this run." }),
-    el("div", { class: "modal-actions" }, el("button", { class: "btn", text: "Keep working", onclick: close }), yes)));
+    el("div", { class: "modal-actions" }, keep, yes)));
   document.body.appendChild(back);
-  yes.focus();
+  keep.focus();
+  return close;
 }
 
 function startTerminal(box, stateEl, reconnect) {

@@ -1,0 +1,4 @@
+kubectl -n {{ .Namespace }} get service catalog -o jsonpath='{.spec.selector}{" "}{.spec.ports[0].targetPort}{"\n"}'
+kubectl -n {{ .Namespace }} patch service catalog --type merge -p '{"spec":{"selector":{"app.kubernetes.io/name":"catalog"}}}'
+kubectl -n {{ .Namespace }} patch service catalog --type json -p '[{"op":"replace","path":"/spec/ports/0/targetPort","value":80}]'
+kubectl -n {{ .Namespace }} get endpointslices -l kubernetes.io/service-name=catalog

@@ -1,0 +1,218 @@
+customer:
+  name: Priya
+  role: Checkout team lead
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Ask me for a hint whenever you are
+    stuck: each hint goes one step further, from where to look to what to
+    change, and the last one waits until you name a cause.
+
+meeting:
+  opening: >-
+    Thanks for taking this. Our checkout release has been half deployed for
+    an hour, the pipeline gave up, and the evening peak starts soon. Where do
+    you want to start?
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What changed between the version that worked and this one?
+          reply: >-
+            We shipped release 2.5.0 an hour ago. 2.4.0 ran fine all week.
+            The Deployment has two revisions now, one per release.
+          feedback: >-
+            Good first question. The failure started with a deploy, so the
+            difference between the two revisions holds the cause, and the
+            last good revision is the way back.
+          best: true
+          fact: It started with the 2.5.0 deploy an hour ago; 2.4.0 (revision 1) ran fine all week.
+        - say: Can you delete the stuck pods so they start fresh?
+          reply: >-
+            Someone tried that already. New pods came back and got stuck the
+            same way.
+          feedback: >-
+            The ReplicaSet recreates pods from the same template, so the same
+            failure comes back. Ask what changed first.
+        - say: Should we scale checkout to 8 replicas before the peak?
+          reply: >-
+            We thought about it, but we are not sure the new copies would
+            even start.
+          feedback: >-
+            Scaling multiplies whatever the current template does, including
+            failing. Find out what changed before choosing a change.
+    - prompt: You need the exact symptom. What do you ask?
+      choices:
+        - say: What exactly did the pipeline and the dashboard report?
+          reply: >-
+            rollout status failed with "deployment checkout exceeded its
+            progress deadline", and the dashboard says not all 4 replicas run
+            2.5.0. Orders still go through.
+          feedback: >-
+            Precise symptoms split the causes. A progress deadline means the
+            new pods never became available, and orders still flowing means
+            the old pods are still serving.
+          best: true
+          fact: rollout status reports "exceeded its progress deadline"; not all 4 replicas run 2.5.0; orders still go through.
+        - say: Is the database for checkout down?
+          reply: >-
+            No, orders are being written right now, through the old pods.
+          feedback: >-
+            The answer rules out a shared dependency: the old pods use the
+            same database and work. The difference is in the new pods.
+    - prompt: Agree on what done means before you touch anything.
+      choices:
+        - say: What does fixed look like, and may I roll back to 2.4.0?
+          reply: >-
+            4 healthy replicas and a finished rollout, so the next deploy is
+            not blocked. Rolling back is fine; so is fixing 2.5.0 if you are
+            sure. Keep the names and the 4 replicas, and do not delete the
+            namespace.
+          feedback: >-
+            Agreeing on the end state and on whether a rollback is allowed
+            lets you mitigate first and verify the way the customer will.
+          best: true
+          fact: "Done: 4 ready and up-to-date replicas, Progressing NewReplicaSetAvailable, 4 endpoints; rollback or fix forward both fine; keep names and 4 replicas."
+        - say: Can I rewrite the Deployment from scratch with my own manifest?
+          reply: >-
+            Please do not. The pipeline owns that manifest and we would lose
+            the revision history.
+          feedback: >-
+            Replacing the object destroys the history that tells you what
+            changed and how to go back. Ask what done looks like instead.
+  closing: >-
+    That is all I know. Ping me when checkout is back to 4 and the rollout
+    is green.
+
+diagram:
+  nodes:
+    - id: deploy
+      label: Deployment checkout
+      note: 4 replicas, rolling update, progress deadline 30s
+    - id: rs1
+      label: ReplicaSet rev 1
+      note: release 2.4.0
+      column: 0
+    - id: rs2
+      label: ReplicaSet rev 2
+      note: release 2.5.0
+      column: 1
+    - id: oldpods
+      label: Old pods
+      note: Ready, still serving
+      column: 0
+    - id: newpods
+      label: New pods
+      note: never Ready
+      column: 1
+    - id: service
+      label: Service checkout
+      note: routes only to Ready pods
+    - id: users
+      label: Customers
+      note: orders still go through
+  edges:
+    - from: deploy
+      to: rs1
+      label: scales down
+    - from: deploy
+      to: rs2
+      label: scales up
+    - from: rs1
+      to: oldpods
+      label: creates
+    - from: rs2
+      to: newpods
+      label: creates
+    - from: service
+      to: oldpods
+      label: Ready only
+    - from: users
+      to: service
+      label: requests
+
+quiz:
+  - question: The Progressing condition says ProgressDeadlineExceeded. What does the Deployment do next by itself?
+    choices:
+      - text: Nothing; it reports the failure and keeps both ReplicaSets where they are.
+        correct: true
+        explain: >-
+          The progress deadline only changes the condition. A plain
+          Deployment never rolls back on its own; a person or a controller
+          has to act.
+      - text: It rolls back to the previous revision.
+        explain: >-
+          Automatic rollback is a feature of tools like Argo Rollouts or
+          Flagger, not of the Deployment controller.
+      - text: It deletes the new pods and retries the rollout.
+        explain: >-
+          The new ReplicaSet keeps its pods; the rollout stays where it
+          stopped until the template changes.
+  - question: Why do customers still get through while the rollout is stuck?
+    choices:
+      - text: The rolling update only removes old pods as new ones become available, so the old ReplicaSet keeps serving.
+        correct: true
+        explain: >-
+          maxUnavailable caps how many old pods may go before new ones are
+          ready, and the Service routes only to Ready pods.
+      - text: The Service routes to the new pods, which answer even when not Ready.
+        explain: >-
+          A pod that is not Ready is left out of the EndpointSlice, so the
+          Service never sends it traffic.
+  - question: The rollout is stuck right after a deploy and you are not sure of the cause yet. What is the first change?
+    choices:
+      - text: Roll back to the last revision that worked, then find the cause.
+        correct: true
+        explain: >-
+          Mitigation first: the old ReplicaSet still exists, undo is one
+          command, and it works whatever the cause is.
+      - text: Edit the field you think is wrong and see if the rollout moves.
+        explain: >-
+          A guess that is also wrong starts another revision and another
+          wait for the deadline. Fix forward when the cause is certain.
+
+guide:
+  - title: Read the rollout status
+    body: >-
+      The workstation shell already points at the episode namespace. rollout
+      status repeats what the pipeline saw: the rollout exceeded its progress
+      deadline.
+    command: kubectl rollout status deployment/checkout --timeout=10s
+  - title: List the revisions
+    body: >-
+      Every template change is a revision. Revision 1 is release 2.4.0, the
+      one that ran all week; revision 2 is release 2.5.0.
+    command: kubectl rollout history deployment/checkout
+  - title: Compare the ReplicaSets
+    body: >-
+      One ReplicaSet per revision. The old one has all its pods ready, the
+      new one has none: the rollout waits for new pods that never become
+      available.
+    command: kubectl get replicasets
+  - title: Ask a new pod why
+    body: >-
+      Pick a pod whose name carries the new ReplicaSet's hash and read the
+      Warning Events at the bottom. Here they say the readiness probe gets a
+      404: the container runs, but the probe asks for a path nginx does not
+      serve.
+    command: kubectl describe pod <pod-name>
+  - title: Roll back to the last good revision
+    body: >-
+      Mitigate first. undo copies the template of revision 1 back into the
+      Deployment; its ReplicaSet scales back to 4 and the broken one to 0.
+    command: kubectl rollout undo deployment/checkout --to-revision=1
+    check: updated-replicas
+  - title: Watch the rollout finish
+    body: >-
+      rollout status waits until the 4 pods are available and ends with
+      successfully rolled out; the Progressing condition is back to
+      NewReplicaSetAvailable.
+    command: kubectl rollout status deployment/checkout
+    check: rollout-complete
+  - title: Confirm the Service has 4 endpoints
+    body: >-
+      The Service routes only to Ready pods. Four addresses in its
+      EndpointSlice mean checkout has its full capacity for the peak. Then
+      press Validate to grade the assignment.
+    command: kubectl get endpointslices -l kubernetes.io/service-name=checkout
+    check: service-endpoints

@@ -1,0 +1,5 @@
+kubectl -n {{ .Namespace }} get secret db-credentials -o jsonpath='{.data.password}' | base64 -d > db-password
+kubectl -n {{ .Namespace }} create secret generic db-credentials --from-file=db-password --dry-run=client -o yaml | kubectl -n {{ .Namespace }} replace -f -
+rm db-password
+kubectl -n {{ .Namespace }} rollout restart deployment/api
+kubectl -n {{ .Namespace }} rollout status deployment/api --timeout=120s

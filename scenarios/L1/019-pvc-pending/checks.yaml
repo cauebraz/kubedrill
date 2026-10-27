@@ -1,0 +1,43 @@
+checks:
+  - id: pvc-bound
+    description: persistentvolumeclaim uploads-data is Bound
+    why: >-
+      A claim that is not Bound has no volume behind it; every pod that mounts
+      it stays Pending, and nothing the app writes can survive a restart.
+    critical: true
+    resource:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      namespace: "{{ .Namespace }}"
+      name: uploads-data
+    path: "{.status.phase}"
+    equals: Bound
+
+  - id: ready-replicas
+    description: deployment uploads has 1 ready replica
+    why: >-
+      readyReplicas counts pods whose Ready condition is true; 0 means the
+      upload service accepts no file and the storefront shows broken images.
+    depends_on: [pvc-bound]
+    weight: 2
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: uploads
+    path: "{.status.readyReplicas}"
+    equals: "1"
+
+  - id: data-writable
+    description: the uploads pod writes and reads a file on the volume mounted at /data
+    why: >-
+      A Ready pod proves the server listens, not that uploads land on the
+      persistent volume; a write and a read on the /data mount is what a
+      customer upload does.
+    depends_on: [ready-replicas]
+    script: >-
+      kubectl -n "$TASK_NS" exec deploy/uploads -c uploads --
+      sh -c 'grep -q " /data " /proc/mounts || { echo "/data is not a mount"; exit 1; };
+      echo kubedrill-write-ok > /data/.kubedrill-check && cat /data/.kubedrill-check && rm -f /data/.kubedrill-check'
+    exit_code: 0
+    contains: kubedrill-write-ok

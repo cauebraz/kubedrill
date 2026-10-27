@@ -1,0 +1,2 @@
+kubectl -n {{ .Namespace }} set resources deployment/report -c report --requests=memory=64Mi --limits=memory=128Mi
+kubectl -n {{ .Namespace }} rollout status deployment/report --timeout=120s

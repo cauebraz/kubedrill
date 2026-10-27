@@ -1,0 +1,302 @@
+customer:
+  name: Priya
+  role: Payments team lead
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Nothing is down this time: the job
+    is to change a value in every place that holds it and prove each one has
+    it. Ask me for a hint whenever you are stuck; the last one waits until
+    you name what you found.
+
+meeting:
+  opening: >-
+    Thanks for taking this. Security says our payments token leaked and the
+    old one stops working at 18:00. The service is up, so there is no fire
+    yet, but I want this done right. Where do you want to start?
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What exactly happened, and how did the token leak?
+          reply: >-
+            A pull request yesterday included the full YAML of the Secret
+            payments-token, with the token in it. The repo is internal, but
+            security treats it as leaked and already issued a new token.
+          feedback: >-
+            Good. A leaked value is a rotation, not a bug: the fix is a new
+            value everywhere the old one lives, and the first question tells
+            you how the old one got out, which is also how not to put the new
+            one back in.
+          best: true
+          fact: The Secret payments-token was committed as YAML in a pull request; security issued a new token and revokes the old one at 18:00.
+        - say: Is the service down right now?
+          reply: >-
+            No, everything is green. The pods are running and payments go
+            through.
+          feedback: >-
+            Useful to know, but it does not move the ticket: the symptom here
+            is a value, not a state. Ask what happened to learn where the
+            value lives.
+        - say: Can we revert the pull request and move on?
+          reply: >-
+            We already reverted it, but git keeps the history and people
+            cloned the repo. Security says the token is burned either way.
+          feedback: >-
+            A revert hides the value from the branch, not from history, forks
+            or CI logs. Once a secret is out, it is rotated.
+    - prompt: You need the new value and where the old one lives. What do you ask?
+      choices:
+        - say: What is the new token, and which workloads use the old one?
+          reply: >-
+            The new token is in the ticket, 21 characters. The payments API
+            and the payments-worker both read it as API_TOKEN from a Secret.
+            And Tom saved a copy of the old Secret, payments-token-old, just
+            in case.
+          feedback: >-
+            Now you have the value and the list of places: the Secret, the
+            pods of two Deployments, and a copy. Each one is a place the old
+            token can survive.
+          best: true
+          fact: The new token is in the ticket; payments and payments-worker read API_TOKEN from a Secret; a copy named payments-token-old exists.
+        - say: Can you paste the new token into the manifest in the repo so I can apply it?
+          reply: >-
+            That is exactly how the old one leaked. Security asked us not to
+            put the token in any file we keep.
+          feedback: >-
+            The manifest in git is the leak path. Build the Secret from a
+            file you delete, or from a literal, and never commit the data.
+        - say: Should we scale the API up in case the rotation causes trouble?
+          reply: >-
+            It is not a load problem. Two replicas are plenty.
+          feedback: >-
+            More replicas with the old token are more copies to replace.
+            Ask what the value is and who uses it.
+    - prompt: Priya mentions that last time was painful. What do you want to know?
+      choices:
+        - say: What happened the last time you changed a Secret?
+          reply: >-
+            We updated the Secret and the app kept using the old value for
+            hours. Someone eventually restarted it and then it worked.
+          feedback: >-
+            That is the key fact of this ticket: a container reads its
+            environment once, at start. A changed Secret reaches a pod only
+            when the pod is replaced, so the rotation ends with a rollout
+            restart and a check inside a new pod.
+          best: true
+          fact: Last time the app kept the old Secret value for hours until the pods were restarted.
+        - say: Did you open a ticket with the provider last time?
+          reply: >-
+            We did, and they said the token we sent was the old one. It took
+            a while to believe them.
+          feedback: >-
+            The provider was right and the cluster was right; the pods were
+            stale. Ask what the team did and saw, that is where the lesson
+            is.
+    - prompt: Agree on what done means before you touch anything.
+      choices:
+        - say: What does done look like, and is there anything I must keep?
+          reply: >-
+            The Secret holds the new token exactly, labeled rotated so the
+            audit finds it, both workloads actually run with it, and Tom's
+            copy is gone. Keep the names, keep the namespace, and do not
+            leave the token in a file.
+          feedback: >-
+            Agreeing on the end state up front is what lets you verify the
+            rotation the same way security will: by reading each copy.
+          best: true
+          fact: "Done: Secret payments-token holds the new value exactly with the rotated label, both Deployments run with it, payments-token-old is deleted; keep the names and the namespace."
+        - say: Can I delete both Secrets and recreate everything from scratch?
+          reply: >-
+            Please not both at once. If a pod restarts while the Secret is
+            missing, payments stop.
+          feedback: >-
+            A Secret that is missing for even a minute fails every pod that
+            starts in that minute. Ask what done means and what to keep.
+  closing: >-
+    That is everything I know. Ping me when the three copies show the new
+    token and Tom's copy is gone; I will tell security.
+
+diagram:
+  nodes:
+    - id: secret
+      label: Secret payments-token
+      note: key token, stored base64-encoded
+    - id: copy
+      label: Secret payments-token-old
+      note: Tom's copy of the leaked value
+      column: 1
+    - id: deploy
+      label: Deployment payments
+      note: template says API_TOKEN comes from payments-token
+    - id: worker
+      label: Deployment payments-worker
+      note: template names a Secret; read which one
+      column: 1
+    - id: pods
+      label: Pods payments x2
+      note: API_TOKEN copied into the environment at start
+    - id: wpod
+      label: Pod payments-worker
+      note: same, from whichever Secret its Deployment names
+      column: 1
+    - id: provider
+      label: Payment provider
+      note: rejects the old token after 18:00
+  edges:
+    - from: secret
+      to: deploy
+      label: secretKeyRef
+    - from: secret
+      to: worker
+      label: secretKeyRef (or the copy)
+    - from: copy
+      to: worker
+      label: in some episodes
+    - from: deploy
+      to: pods
+      label: creates
+    - from: worker
+      to: wpod
+      label: creates
+    - from: pods
+      to: provider
+      label: API_TOKEN
+    - from: wpod
+      to: provider
+      label: API_TOKEN
+
+quiz:
+  - question: You rewrote Secret payments-token with the new value. What does printenv API_TOKEN print inside a pod that was already running?
+    choices:
+      - text: The old value, until the pod is replaced.
+        correct: true
+        explain: >-
+          The kubelet builds the container's environment once, when the
+          container starts. The pod keeps its own copy in memory; a changed
+          Secret reaches it only through a new pod.
+      - text: The new value, within about a minute.
+        explain: >-
+          That is how a Secret mounted as a file behaves (the kubelet
+          rewrites the file), not an environment variable. Env vars never
+          change in a running container.
+      - text: Nothing; the pod crashes because its Secret changed.
+        explain: >-
+          A running container does not watch the Secret. It keeps the value
+          it started with and keeps working.
+  - question: payments-worker reads API_TOKEN from payments-token-old. What happens if you delete that Secret before changing the Deployment?
+    choices:
+      - text: The running worker pod keeps working, but the next worker pod cannot start.
+        correct: true
+        explain: >-
+          The running pod already has the value in memory. A new pod needs
+          the Secret to build its environment and stops at
+          CreateContainerConfigError with secret not found.
+      - text: Nothing; Kubernetes falls back to payments-token because the names are similar.
+        explain: >-
+          secretKeyRef names one Secret exactly. There is no fallback; the
+          Deployment has to be changed to name the right one.
+      - text: The worker pod is killed at once.
+        explain: >-
+          Deleting a Secret does not touch the pods that already consumed it.
+          The failure shows up on the next pod start.
+  - question: You wrote the token with echo and built the Secret with --from-file. What does the Secret hold?
+    choices:
+      - text: The token plus a trailing newline, because echo adds one and --from-file keeps every byte of the file.
+        correct: true
+        explain: >-
+          --from-file copies the file as it is. printf '%s' or echo -n writes
+          the value without the newline; base64 -d followed by od -c shows
+          the bytes.
+      - text: The token exactly; kubectl trims whitespace from files.
+        explain: >-
+          kubectl does not trim file contents. Only --from-literal takes the
+          string as typed on the command line.
+      - text: An error; Secrets cannot contain newlines.
+        explain: >-
+          A Secret value is arbitrary bytes, newlines included. That is why
+          the extra byte goes unnoticed until the provider rejects the token.
+
+guide:
+  - title: List the Secrets and Deployments
+    body: >-
+      The workstation shell already points at the episode namespace. Two
+      Secrets and two Deployments: the token lives in the Secret, in the pods
+      of each Deployment, and in Tom's copy.
+    command: kubectl get secrets,deployments
+  - title: Read the value the cluster stores
+    body: >-
+      The Secret stores the value base64-encoded; jsonpath picks the key and
+      base64 -d decodes it. This is the leaked value, and the prompt comes
+      right after it: no trailing newline.
+    command: kubectl get secret payments-token -o jsonpath='{.data.token}' | base64 -d
+  - title: Read the value a running pod has
+    body: >-
+      exec runs a command inside a container of the Deployment's pods.
+      printenv prints the one environment variable. Same value as the
+      Secret, for now; remember this command, it is how you prove the
+      rotation reached the pods.
+    command: kubectl exec deploy/payments -- printenv API_TOKEN
+  - title: Read which Secret each Deployment names
+    body: >-
+      secretKeyRef.name is the Secret a container's env var comes from. In
+      this run both Deployments read payments-token. In another episode the
+      worker may read payments-token-old, and then the patch step has to
+      come before the copy is deleted.
+    command: kubectl get deployment payments payments-worker -o jsonpath='{range .items[*]}{.metadata.name}{" reads "}{.spec.template.spec.containers[0].env[0].valueFrom.secretKeyRef.name}{"\n"}{end}'
+  - title: Write the new token to a file, without a newline
+    body: >-
+      printf '%s' writes exactly the characters. echo would add a newline,
+      and --from-file keeps every byte of the file.
+    command: printf '%s' '{{ .Vars.new_token }}' > token.txt
+  - title: Rebuild the Secret from the file
+    body: >-
+      create secret generic --from-file builds the Secret from the file;
+      --dry-run=client -o yaml prints the manifest instead of creating it,
+      and apply writes it over the existing Secret. The token never sits in
+      a manifest you keep. The warning about a missing last-applied
+      annotation is expected on the first apply.
+    command: kubectl create secret generic payments-token --from-file=token=token.txt --dry-run=client -o yaml | kubectl apply -f -
+    check: secret-token-new
+  - title: Add the audit label
+    body: >-
+      Security's audit lists rotated Secrets by this label.
+    command: kubectl label secret payments-token rotated={{ .Vars.rotated }} --overwrite
+    check: secret-labeled
+  - title: Point the worker at payments-token
+    body: >-
+      In this run the worker already reads payments-token and the patch
+      reports no change. When it reads payments-token-old, this is the step
+      that moves it before the copy goes away; kubectl edit does the same by
+      hand.
+    command: kubectl patch deployment payments-worker -p '{"spec":{"template":{"spec":{"containers":[{"name":"worker","env":[{"name":"API_TOKEN","valueFrom":{"secretKeyRef":{"name":"payments-token","key":"token"}}}]}]}}}}'
+  - title: Replace the pods
+    body: >-
+      The Secret is new, the pods still hold the old value in memory. A
+      rollout restart changes a timestamp in each pod template, so both
+      Deployments create new pods that read the Secret again.
+    command: kubectl rollout restart deployment/payments deployment/payments-worker
+  - title: Wait for the new pods
+    body: >-
+      rollout status waits until the new pods are ready and the old ones are
+      gone.
+    command: kubectl rollout status deployment/payments
+    check: payments-ready
+  - title: Prove the pods have the new value
+    body: >-
+      The same command as step 3, now against a new pod. It prints the new
+      token. Run it for payments-worker too.
+    command: kubectl exec deploy/payments -- printenv API_TOKEN
+    check: payments-env-new
+  - title: Delete Tom's copy and the file
+    body: >-
+      Last, because nothing reads the copy any more. Then remove token.txt;
+      the value should live only in the Secret.
+    command: kubectl delete secret payments-token-old
+    check: old-copy-gone
+  - title: Confirm the Secret list
+    body: >-
+      One Secret named payments-token with the rotated label and no
+      payments-token-old. Then press Validate to grade the assignment.
+    command: kubectl get secrets --show-labels
+    check: worker-env-new

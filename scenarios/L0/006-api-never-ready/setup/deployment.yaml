@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: shop
+    team: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api
+        app.kubernetes.io/part-of: shop
+        team: api
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: api
+          image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+{{- if eq .Vars.probe "exec" }}
+            exec:
+              command: ["cat", "/tmp/ready"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 1
+{{- else }}
+            httpGet:
+              path: {{ .Vars.path }}
+              port: {{ .Vars.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+{{- end }}
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+      volumes:
+        - name: html
+          configMap:
+            name: api-html

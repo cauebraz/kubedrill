@@ -1,0 +1,250 @@
+customer:
+  name: Priya
+  role: Ops engineer
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Nothing is broken this time: the
+    task is to read the right field of the right objects and record it. Ask
+    me for a hint whenever you are stuck; each hint goes one step further.
+
+meeting:
+  opening: >-
+    Thanks for picking this up. Security is auditing the images we run, and
+    I need the list for the shop namespace stored in the cluster so their
+    job can read it. I started with kubectl get deployments, but I am not
+    sure that is the right list. What do you want to know?
+
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What exactly should the inventory contain, and where does it go?
+          reply: >-
+            A ConfigMap named inventory with one key, images. The value is
+            every image that is running in the namespace, one per line,
+            sorted, no duplicates.
+          feedback: >-
+            Good first question. A build task starts from the deliverable:
+            the object, the key and the shape of the value decide which
+            commands you need.
+          best: true
+          fact: "Deliverable: ConfigMap inventory, key images, one running image per line, sorted, unique."
+        - say: Can you send me the output of kubectl get deployments -o wide?
+          reply: >-
+            Sure, it has an IMAGES column. But one of our Deployments is
+            scaled to zero right now and I do not know if that counts.
+          feedback: >-
+            The Deployment list is a template, not what runs. Ask what the
+            deliverable is before picking a source for it.
+        - say: Which scanner does security use?
+          reply: >-
+            No idea, they just need the list of image strings.
+          feedback: >-
+            The scanner does not change the task. Ask what the inventory
+            must contain.
+    - prompt: You need to know what "running" means to her. What do you ask?
+      choices:
+        - say: Do init containers and Deployments scaled to zero count as running?
+          reply: >-
+            No. An init container already finished, and a Deployment at zero
+            replicas runs nothing. Only containers that are up right now.
+          feedback: >-
+            This is the question that decides which objects you read. The
+            answer rules out the Deployment templates and the init images.
+          best: true
+          fact: "Running means main containers of existing pods: init containers and Deployments at 0 replicas do not count."
+        - say: Should I scale the zero-replica Deployment up so its image counts?
+          reply: >-
+            Please do not change any Deployment. This is a read-and-record
+            task.
+          feedback: >-
+            Changing the workloads to fit the report inverts the task. Ask
+            how the reporter defines running instead.
+        - say: Can I just list every image the nodes have pulled?
+          reply: >-
+            That would include images from other namespaces and old
+            rollouts. I need what runs in shop now.
+          feedback: >-
+            The node cache is wider than the namespace. Ask what counts as
+            running in her terms.
+    - prompt: The audit compares strings. What do you ask?
+      choices:
+        - say: Which spelling of the image do they compare, the manifest's or the runtime's?
+          reply: >-
+            The manifest's. Copy the string exactly as the pod spec writes
+            it, digest included if there is one.
+          feedback: >-
+            The same image appears as nginx:1.27-alpine in the spec and as
+            docker.io/library/nginx:1.27-alpine in the status. Knowing which
+            one the audit wants tells you which field to read.
+          best: true
+          fact: "Copy each image exactly as spec.containers[].image writes it, digest included."
+        - say: Should I strip the tags so the list is shorter?
+          reply: >-
+            No, the tag is the part they check. Keep the strings whole.
+          feedback: >-
+            Shortening the strings breaks a string compare. Ask which form
+            the audit expects.
+        - say: Can I give you the image IDs instead of the names?
+          reply: >-
+            The audit job matches names, not IDs. Names, please.
+          feedback: >-
+            An image ID is useful for a scanner, but it is not what this
+            audit reads. Ask which spelling they compare.
+    - prompt: Agree on what done means and what you must not touch.
+      choices:
+        - say: What does done look like, and is there anything I must not change?
+          reply: >-
+            The ConfigMap inventory exists with the images key, every running
+            image is in it and nothing else. Do not scale, change or delete
+            any Deployment, and keep the names.
+          feedback: >-
+            Agreeing on the end state and the constraints up front lets you
+            verify the result the same way the reporter will.
+          best: true
+          fact: "Done: ConfigMap inventory with key images, every running image and nothing else; no Deployment changed."
+        - say: Can I delete the namespace afterwards to clean up?
+          reply: >-
+            No, shop is a live namespace. Only add the ConfigMap.
+          feedback: >-
+            Cleaning up what you did not create destroys evidence and
+            workloads. Ask what done looks like and what to keep.
+  closing: >-
+    Perfect. Leave me the one-liner you used in the ticket when you are done;
+    I will run it for the other namespaces.
+
+diagram:
+  nodes:
+    - id: deploy
+      label: Deployments x5
+      note: templates; one may be at 0 replicas
+    - id: pods
+      label: Pods
+      note: what exists now
+    - id: init
+      label: spec.initContainers
+      note: ran once, exited; not running
+      column: 0
+    - id: main
+      label: spec.containers
+      note: running now, one image each; two containers mean two images
+      column: 1
+    - id: status
+      label: status.containerStatuses
+      note: the runtime's spelling of the same image
+      column: 2
+    - id: configmap
+      label: ConfigMap inventory
+      note: key images, one image per line
+    - id: audit
+      label: Security audit
+      note: compares strings with the approved list
+  edges:
+    - from: deploy
+      to: pods
+      label: creates N
+    - from: pods
+      to: init
+      label: holds
+    - from: pods
+      to: main
+      label: holds
+    - from: pods
+      to: status
+      label: reports
+    - from: main
+      to: configmap
+      label: images, sorted, unique
+    - from: configmap
+      to: audit
+      label: read by
+
+quiz:
+  - question: A Deployment shows 0/0 in READY and its template names an image. Does that image go into the running inventory?
+    choices:
+      - text: No, a Deployment at 0 replicas has no pod, so nothing runs that image.
+        correct: true
+        explain: >-
+          The Deployment is a wish for N copies, and N is 0. Running means a
+          container in a pod that exists.
+      - text: Yes, the Deployment exists and names it.
+        explain: >-
+          The template names what would run if replicas were above 0. With
+          0 replicas there is no pod and no container.
+      - text: Only if the image is still cached on a node.
+        explain: >-
+          The node cache holds images from other namespaces and old
+          rollouts. Running is a property of pods, not of node disks.
+  - question: A pod reads 2/2 in READY. How many images does it add to the inventory?
+    choices:
+      - text: Up to two, one per container in spec.containers, deduplicated against the other pods.
+        correct: true
+        explain: >-
+          The second number of READY counts the pod's main containers. Each
+          one runs its own image, and both are running.
+      - text: One, the first container's image.
+        explain: >-
+          A sidecar runs its own image for the life of the pod. Listing only
+          the first container misses it.
+      - text: Three, counting the init container.
+        explain: >-
+          An init container ran before the main ones and exited. The READY
+          numbers do not include it, and neither does the inventory.
+  - question: The spec says redis:7.4-alpine@sha256:6ba1... and kubectl describe shows Image sha256:c90c.... Which goes into the inventory?
+    choices:
+      - text: The spec string, digest included, because the audit compares strings with the manifest.
+        correct: true
+        explain: >-
+          status and describe show the runtime's spelling of the same image.
+          The audit matches spec.containers[].image, so copy that.
+      - text: The short tag redis:7.4-alpine, because the digest is noise.
+        explain: >-
+          The digest is part of the reference the kubelet pulled. Dropping
+          it makes the string differ from the manifest.
+      - text: The sha256 from describe, because that is what really runs.
+        explain: >-
+          That is the image config digest the runtime reports. It does not
+          match the manifest string the audit compares against.
+
+guide:
+  - title: List the Deployments
+    body: >-
+      The workstation shell already points at the episode namespace. Read
+      the READY column: one Deployment reads 0/0, so it has no pod and its
+      image runs nowhere. The Deployments describe what should run, not what
+      does.
+    command: kubectl get deployments
+  - title: List the pods
+    body: >-
+      These are the objects that run. The second number in READY is the
+      count of main containers in the pod. Note which Deployment from the
+      previous step has no pod here.
+    command: kubectl get pods
+  - title: Print the images of every pod
+    body: >-
+      One line per pod: the name, the init container image (empty for most
+      pods) and the main container images. The worker pod shows an init image
+      that ran and exited; it is not running. Two Deployments run the same
+      agnhost image, so the inventory lists it once.
+    command: kubectl get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.initContainers[*].image}{"\t"}{.spec.containers[*].image}{"\n"}{end}'
+  - title: Build the sorted list
+    body: >-
+      The nested range prints one main-container image per line for every
+      pod in phase Running; sort -u orders the lines and drops the
+      duplicate. The file is the list you can read before it is stored.
+    command: kubectl get pods --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{range .spec.containers[*]}{.image}{"\n"}{end}{end}' | sort -u > images.txt
+  - title: Store it in the ConfigMap
+    body: >-
+      --from-file=images=images.txt stores the file under the key images.
+      Without the images= prefix the key would be images.txt and the audit
+      job would read nothing.
+    command: kubectl create configmap inventory --from-file=images=images.txt
+    check: images-complete
+  - title: Read it back
+    body: >-
+      Print the stored value and compare it with the pod lines of step 3:
+      every running image once, nothing else. Then press Validate to grade
+      the assignment.
+    command: kubectl get configmap inventory -o jsonpath='{.data.images}{"\n"}'
+    check: images-exact

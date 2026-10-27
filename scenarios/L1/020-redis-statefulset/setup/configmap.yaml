@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: session-api-config
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: session-api
+    app.kubernetes.io/part-of: sessions
+data:
+  redis-nodes: |
+    redis-0.redis.{{ .Namespace }}.svc.cluster.local:6379
+    redis-1.redis.{{ .Namespace }}.svc.cluster.local:6379
+    redis-2.redis.{{ .Namespace }}.svc.cluster.local:6379
+{{- if ne .Vars.config "none" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: sessions
+data:
+  redis.conf: |
+    port 6379
+    dir /data
+    appendonly yes
+    maxmemory 48mb
+    maxmemory-policy allkeys-lru
+{{- end }}

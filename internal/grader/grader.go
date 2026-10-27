@@ -46,6 +46,10 @@ const DefaultCheckTimeout = 30 * time.Second
 const (
 	maxTextLen = 200
 	probeGrace = 30 * time.Second
+	// DefaultProbeSettle is how long a probe that exited non-zero waits
+	// before its one retry: the time kube-proxy needs to program an
+	// endpoint that became ready a moment before the check.
+	DefaultProbeSettle = 3 * time.Second
 )
 
 // WithCheckTimeout sets the time budget of each check.
@@ -54,6 +58,14 @@ func WithCheckTimeout(d time.Duration) Option {
 		if d > 0 {
 			r.timeout = d
 		}
+	}
+}
+
+// WithProbeSettle sets the pause before the one retry of a probe that
+// exited non-zero; zero disables the retry.
+func WithProbeSettle(d time.Duration) Option {
+	return func(r *Runner) {
+		r.settle = d
 	}
 }
 
@@ -91,11 +103,12 @@ type Runner struct {
 	env        []string
 	envFunc    EnvFunc
 	pathPrefix string
+	settle     time.Duration
 }
 
 // New returns a Runner that reads the cluster through k.
 func New(k Kube, opts ...Option) *Runner {
-	r := &Runner{k: k, timeout: DefaultCheckTimeout}
+	r := &Runner{k: k, timeout: DefaultCheckTimeout, settle: DefaultProbeSettle}
 	for _, o := range opts {
 		o(r)
 	}
@@ -230,7 +243,7 @@ func (r *Runner) runCheck(ctx context.Context, rd *scenario.Rendered, c scenario
 		setError(res, "exists applies to a resource source only")
 		return
 	case c.Probe != nil:
-		pr, err := r.k.RunProbe(ctx, rd.Namespace, *c.Probe)
+		pr, err := r.runProbe(ctx, rd.Namespace, *c.Probe)
 		if err != nil {
 			setError(res, fmt.Sprintf("probe %s: %v", c.Probe.Image, err))
 			return
@@ -255,6 +268,31 @@ func (r *Runner) runCheck(ctx context.Context, rd *scenario.Rendered, c scenario
 		return
 	}
 	validate(c, ex, res)
+}
+
+// runProbe runs the probe once and, when it exits non-zero and the settle
+// pause fits in the check budget, once more after the pause: a Service whose
+// endpoint became ready just before the check can still refuse connections
+// until kube-proxy syncs, and a second run a few seconds later tells that
+// apart from a Service that is broken.
+func (r *Runner) runProbe(ctx context.Context, ns string, p scenario.Probe) (kube.ProbeResult, error) {
+	pr, err := r.k.RunProbe(ctx, ns, p)
+	if err != nil || pr.ExitCode == 0 || r.settle <= 0 {
+		return pr, err
+	}
+	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < 2*r.settle {
+		return pr, nil
+	}
+	select {
+	case <-ctx.Done():
+		return pr, nil
+	case <-time.After(r.settle):
+	}
+	again, err := r.k.RunProbe(ctx, ns, p)
+	if err != nil {
+		return pr, nil
+	}
+	return again, nil
 }
 
 // checkTimeout is the time budget of one check: the configured timeout, or

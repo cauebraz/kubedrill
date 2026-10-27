@@ -1,0 +1,62 @@
+checks:
+  - id: deploy-exists
+    description: deployment report exists
+    why: >-
+      The Deployment is the object the finance team owns; if it is gone,
+      nothing below it (ReplicaSet, pod) can recover and the fix is a
+      redeploy, not a patch.
+    critical: true
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: report
+    exists: true
+
+  - id: available-replicas
+    description: deployment report has 1 available replica
+    why: >-
+      availableReplicas counts pods that stayed Ready for minReadySeconds (10s
+      here) without a restart; a pod that is killed and restarted every few
+      seconds never counts, and the report page never loads.
+    depends_on: [deploy-exists]
+    critical: true
+    weight: 2
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: report
+    path: "{.status.availableReplicas}"
+    equals: "1"
+
+  - id: no-oomkill
+    description: no container of the report pod was last terminated with OOMKilled
+    why: >-
+      A container that exceeds its memory limit is killed by the kernel with
+      exit code 137 and restarted with a growing backoff, so the pod spends
+      most of its life waiting instead of serving the report.
+    depends_on: [available-replicas]
+    resource:
+      apiVersion: v1
+      kind: Pod
+      namespace: "{{ .Namespace }}"
+      selector: app.kubernetes.io/name=report
+    path: '{.items[*].status.containerStatuses[?(@.lastState.terminated.reason=="OOMKilled")].name}'
+    equals: ""
+    spoiler: true
+
+  - id: dataset-kept
+    description: container report still loads its 48Mi dataset
+    why: >-
+      The report serves the month's dataset from memory; a pod that stays up
+      because it loads less data is not the report the finance team asked
+      for, so the fix has to make room for the data, not drop it.
+    depends_on: [deploy-exists]
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: report
+    path: '{.spec.template.spec.containers[?(@.name=="report")].args[*]}'
+    contains: "--mem-total=48Mi"

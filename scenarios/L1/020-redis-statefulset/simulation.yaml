@@ -1,0 +1,281 @@
+customer:
+  name: Marco
+  role: Session team lead
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Ask me for a hint whenever you are
+    stuck: each hint goes one step further, from where to look to what to
+    build, and the last one waits until you name what you are building.
+
+meeting:
+  opening: >-
+    Thanks for taking this. We want our login sessions on our own redis
+    instead of the shared cache. session-api is deployed and ready to go, but
+    it has nothing to talk to. What do you need from me?
+  turns:
+    - prompt: Start with how the client will use redis. What do you ask?
+      choices:
+        - say: How does session-api find the redis nodes, exactly?
+          reply: >-
+            Its ConfigMap lists three names, redis-0.redis, redis-1.redis and
+            redis-2.redis, each followed by the namespace, svc.cluster.local
+            and port 6379. It hashes each login to one of the three and
+            connects to that name.
+          feedback: >-
+            The names are the contract. A name of the form
+            pod.service.namespace.svc.cluster.local only exists for a pod with
+            a stable name behind a headless Service, so the client already
+            decided which objects you build.
+          best: true
+          fact: session-api connects to redis-0, redis-1 and redis-2 by name under the Service redis, port 6379, and picks the node itself.
+        - say: Can we put one Service with a cluster IP in front of three redis pods?
+          reply: >-
+            We tried that on the old platform. Each request landed on a random
+            node, so a login written to one node was missing on the next
+            request.
+          feedback: >-
+            A load-balanced address is right for stateless pods and wrong
+            for a client that shards: it needs every node by its own name.
+            Ask how the client addresses the nodes before picking a Service
+            type.
+        - say: Which redis version do you want?
+          reply: >-
+            redis 7.4 on the alpine image, the one we test against.
+          feedback: >-
+            Useful, and the ticket already says it. The question that shapes
+            the objects is how the client finds the nodes.
+    - prompt: Ask about the data.
+      choices:
+        - say: What should happen to a node's data when its pod restarts or moves?
+          reply: >-
+            It must come back with its own data. If redis-2 restarts empty,
+            everyone whose session lives there is logged out. 100Mi each is
+            plenty, on the standard storage class.
+          feedback: >-
+            One disk per node that follows the node's name is what
+            volumeClaimTemplates gives: claim data-redis-2 always goes back
+            to pod redis-2.
+          best: true
+          fact: Each node keeps its own 100Mi volume on the standard storage class across restarts.
+        - say: Can all three nodes share one volume?
+          reply: >-
+            They each write their own append-only file to /data, so sharing
+            one would mix three files in one place.
+          feedback: >-
+            Shared storage is a design for one writer or a clustered file
+            system. Ask what the data needs, then pick the volume shape.
+    - prompt: Find out what else the team needs from the setup.
+      choices:
+        - say: Is there anything about how the nodes start or are configured that your tooling depends on?
+          reply: >-
+            Yes, and it is in the last line of the ticket. Please read it
+            carefully; the start order or the config file matters to our
+            runbooks.
+          feedback: >-
+            A requirement the team's tooling depends on is part of done. Some
+            StatefulSet fields cannot change after the create, so ask before
+            the first apply.
+          best: true
+          fact: The last line of the ticket names one more setting the team's runbooks depend on.
+        - say: I will use the defaults and we can tune it later.
+          reply: >-
+            Some of it you cannot change later without recreating the whole
+            thing, so I would rather get it right once.
+          feedback: >-
+            podManagementPolicy, serviceName and volumeClaimTemplates are
+            immutable. Settle them before the first apply.
+    - prompt: Agree on what done means.
+      choices:
+        - say: What does working look like for you, and what must I leave alone?
+          reply: >-
+            All three nodes ready, each name resolving and answering PING,
+            three volumes bound, and session-api logging 3 of 3 reachable.
+            Name everything redis, call the volume template data, and do not
+            touch session-api or its ConfigMap.
+          feedback: >-
+            The end state is something you can check from the client's side,
+            and the constraints protect the names the client depends on.
+          best: true
+          fact: "Done: 3 Ready redis pods, each name resolves and answers PING, 3 Bound claims data-redis-N; names redis and data; leave session-api alone."
+        - say: Can I edit session-api to point at whatever I build?
+          reply: >-
+            Please do not. The node list is shared with other services that
+            will use the same redis.
+          feedback: >-
+            Changing the client to fit the build moves the problem. Ask what
+            done looks like and build to the contract.
+  closing: >-
+    Great. I will watch the session-api logs; ping me when they say 3 of 3.
+
+diagram:
+  nodes:
+    - id: client
+      label: Deployment session-api
+      note: connects to redis-N.redis by name
+    - id: dns
+      label: Cluster DNS
+      note: one record per Ready pod of a headless Service
+    - id: svc
+      label: Service redis
+      note: clusterIP None, selector app=redis
+    - id: sts
+      label: StatefulSet redis
+      note: serviceName redis, 3 replicas
+    - id: pods
+      label: Pods redis-0, redis-1, redis-2
+      note: stable names, readiness redis-cli ping
+    - id: pvcs
+      label: PVCs data-redis-0..2
+      note: one per pod from volumeClaimTemplate data
+  edges:
+    - from: client
+      to: dns
+      label: looks up
+    - from: dns
+      to: svc
+      label: reads endpoints
+    - from: svc
+      to: pods
+      label: selects Ready
+    - from: sts
+      to: pods
+      label: creates in order
+    - from: sts
+      to: pvcs
+      label: creates
+    - from: pvcs
+      to: pods
+      label: mounted at /data
+
+quiz:
+  - question: Why does redis-2.redis.<ns>.svc.cluster.local need a headless Service?
+    choices:
+      - text: Only a Service with clusterIP None makes DNS publish one record per pod.
+        correct: true
+        explain: >-
+          A Service with a cluster IP gets one record pointing at its virtual
+          address. A headless Service has no virtual address, so DNS answers
+          with the pods, and adds a record per pod named by the StatefulSet.
+      - text: A headless Service is faster because it skips kube-proxy.
+        explain: >-
+          It does skip the virtual IP, but that is a side effect. The reason
+          here is the per-pod record, which a cluster IP Service never has.
+      - text: Any Service works once the StatefulSet exists.
+        explain: >-
+          With a cluster IP, redis.<ns>.svc resolves but redis-2.redis... does
+          not. The record comes from the headless Service plus serviceName.
+  - question: The StatefulSet shows 3/3 but redis-2.redis does not resolve. What do you check first?
+    choices:
+      - text: That spec.serviceName is redis and the Service selector matches the pods.
+        correct: true
+        explain: >-
+          Ready pods get records only under the Service that serviceName names
+          and whose EndpointSlice lists them. A mismatch in either leaves the
+          name unresolved while the pods are healthy.
+      - text: CoreDNS, because DNS is broken.
+        explain: >-
+          Other names resolve, so CoreDNS works. Check the objects that feed
+          it the record before the DNS server.
+      - text: The PVCs, because the pods need their volumes.
+        explain: >-
+          The pods are Ready, so their volumes are mounted. The claim does not
+          take part in DNS.
+  - question: You created the StatefulSet with the default podManagementPolicy and the ticket asks for Parallel. What happens on edit?
+    choices:
+      - text: The API server refuses it; the StatefulSet has to be recreated, and its claims are reused.
+        correct: true
+        explain: >-
+          podManagementPolicy is one of the fields a StatefulSet cannot
+          change. Removing the StatefulSet keeps the claims data-redis-N, and
+          the new one mounts them again by name.
+      - text: The pods restart one by one with the new policy.
+        explain: >-
+          Only the pod template, replicas, updateStrategy and a few more
+          fields can change; the policy is not one of them.
+
+guide:
+  - title: Read what the client expects
+    body: >-
+      The workstation shell already points at the episode namespace. The
+      ConfigMap lists the three names session-api connects to. Read one right
+      to left: svc.cluster.local, the namespace, the Service redis, the pod
+      redis-2.
+    command: kubectl get configmap session-api-config -o yaml
+  - title: Read the client log
+    body: >-
+      Every 10 seconds session-api tries each name. "name does not resolve"
+      means DNS has no record yet: nothing called redis exists.
+    command: kubectl logs deploy/session-api --tail=4
+  - title: List what exists
+    body: >-
+      Only the session-api pod. A pod named redis-2 can only come from a
+      StatefulSet named redis, and the .redis. part needs a headless Service.
+    command: kubectl get statefulset,pods,pvc,svc
+  - title: Build the Service and the StatefulSet
+    body: |
+      Write both objects to a file `redis.yaml` (for example with
+      `cat > redis.yaml`, paste, then Ctrl-D) and apply it. The Service has no
+      cluster IP; the StatefulSet names it in `serviceName`, labels its pods
+      with the Service's selector, and files one claim per pod.
+
+      ```yaml
+      apiVersion: v1
+      kind: Service
+      metadata: {name: redis, labels: {app: redis}}
+      spec:
+        clusterIP: None
+        selector: {app: redis}
+        ports: [{name: redis, port: 6379, targetPort: 6379}]
+      ---
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata: {name: redis, labels: {app: redis}}
+      spec:
+        serviceName: redis
+        replicas: 3
+        podManagementPolicy: OrderedReady
+        selector: {matchLabels: {app: redis}}
+        template:
+          metadata: {labels: {app: redis}}
+          spec:
+            terminationGracePeriodSeconds: 1
+            containers:
+              - name: redis
+                image: redis:7.4-alpine
+                ports: [{name: redis, containerPort: 6379}]
+                readinessProbe:
+                  exec: {command: ["redis-cli", "ping"]}
+                  periodSeconds: 2
+                volumeMounts:
+                  - {name: data, mountPath: /data}
+        volumeClaimTemplates:
+          - metadata: {name: data}
+            spec:
+              accessModes: [ReadWriteOnce]
+              storageClassName: standard
+              resources: {requests: {storage: 100Mi}}
+      ```
+    command: kubectl apply -f redis.yaml
+    check: svc-headless
+  - title: Watch the pods start in order
+    body: >-
+      With OrderedReady, redis-1 is created only after redis-0 is Ready, and
+      redis-2 after redis-1. Each pod first gets its claim data-redis-N,
+      which binds when the pod is scheduled.
+    command: kubectl rollout status statefulset/redis --timeout=240s
+    check: sts-ready
+  - title: Confirm the Service lists the three pods
+    body: >-
+      Three addresses in the EndpointSlice mean three Ready pods behind the
+      headless Service, so DNS publishes three records.
+    command: kubectl get endpointslices -l kubernetes.io/service-name=redis -o wide
+    check: svc-endpoints
+  - title: Resolve redis-2 from the client
+    body: >-
+      The client's own resolver now answers with the IP of pod redis-2.
+      Within 10 seconds its log says 3 of 3 redis nodes reachable. Then press
+      Validate to grade the assignment.
+    command: kubectl exec deploy/session-api -- nslookup redis-2.redis.{{ .Namespace }}.svc.cluster.local
+    check: redis-2-dns-ping

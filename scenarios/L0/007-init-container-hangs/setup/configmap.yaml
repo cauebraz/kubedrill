@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: migrate-config
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: billing
+data:
+  schema-ready: "12"

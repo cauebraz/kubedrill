@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -372,36 +371,4 @@ func TestSmokeSolveGetsBinAndEpisode(t *testing.T) {
 	}
 	env := strings.Join(f.runs[0][1:], " ")
 	mustContain(t, env, "KUBEDRILL_BIN=/usr/local/bin/kubedrill", "KUBEDRILL_EPISODE=002-service-dns-")
-}
-
-// awaitOutput polls read until it contains want or ctx ends; it reports
-// whether want appeared.
-func awaitOutput(ctx context.Context, read func() string, want string) bool {
-	for {
-		if strings.Contains(read(), want) {
-			return true
-		}
-		select {
-		case <-ctx.Done():
-			return false
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
-}
-
-type lockedBuilder struct {
-	mu sync.Mutex
-	b  strings.Builder
-}
-
-func (l *lockedBuilder) Write(p []byte) (int, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.b.Write(p)
-}
-
-func (l *lockedBuilder) String() string {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.b.String()
 }

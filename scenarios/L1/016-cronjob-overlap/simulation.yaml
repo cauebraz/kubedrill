@@ -1,0 +1,210 @@
+customer:
+  name: Priya
+  role: Billing team lead
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Ask me for a hint whenever you are
+    stuck: each hint goes one step further, from where to look to what to
+    change, and the last one waits until you name a cause.
+
+meeting:
+  opening: >-
+    Thanks for taking this. Finance could not close yesterday because the
+    invoice file came out with rows from two runs mixed together. Nothing
+    alerted, every run looks fine on its own. Where do you want to start?
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What changed around the invoice export recently?
+          reply: >-
+            Last month we moved the export from an older setup to this
+            CronJob. The script itself has not changed in a year, but the
+            export takes longer on some nights now that we have more
+            invoices.
+          feedback: >-
+            Two changes in one answer: a migration, which can leave the old
+            scheduler behind, and a run time that grew, which can outlast the
+            interval. Both are candidates for "two runs at once".
+          best: true
+          fact: The export moved to this CronJob from an older setup last month, and some runs take longer than before.
+        - say: Can you add a file lock to the export script?
+          reply: >-
+            Maybe later, but that is a code change with a review cycle. We
+            need the nightly run safe tonight.
+          feedback: >-
+            A lock is a good long-term guard, but proposing a fix before you
+            know how two runs started skips the diagnosis. Ask what changed.
+        - say: Is the disk under invoices.csv failing?
+          reply: >-
+            No, the rows themselves are intact. They are just from two runs,
+            interleaved.
+          feedback: >-
+            Ruling out storage helps, but rows from two runs point at two
+            writers, not a bad disk. Ask what changed.
+    - prompt: You need the exact symptom. What do you ask?
+      choices:
+        - say: What exactly does the export log show for that night?
+          reply: >-
+            Two start lines for the same night, a few seconds or a minute
+            apart, and batch lines from both runs mixed after them.
+          feedback: >-
+            Two start lines means two pods ran the export. The question is
+            now which object started each one, which the cluster can answer.
+          best: true
+          fact: The export log shows two start lines for the same night, with batches of both runs interleaved.
+        - say: How many invoices were in the file?
+          reply: >-
+            About twice as many lines as we expected, with duplicates.
+          feedback: >-
+            It confirms the damage but not its cause. The log of the runs says
+            how many started and when.
+    - prompt: Find out how to reproduce it.
+      choices:
+        - say: Where can I see this happen without waiting for the night?
+          reply: >-
+            We copied the setup into the namespace {{ .Namespace }} with the
+            schedule set to every minute. It misbehaves within two minutes.
+          feedback: >-
+            A reproduction at a short interval lets you watch two ticks live
+            instead of reading yesterday's logs.
+          best: true
+          fact: "The copy in {{ .Namespace }} runs every minute and shows the problem within two minutes."
+        - say: Can you rerun last night's export by hand so I can watch it?
+          reply: >-
+            A single manual run always works fine; the problem only shows up
+            with the schedule.
+          feedback: >-
+            One run alone cannot overlap with anything. Ask for the scheduled
+            setup, which is where the second run comes from.
+    - prompt: Agree on what done means before you touch anything.
+      choices:
+        - say: What does "fixed" look like, and what must keep working?
+          reply: >-
+            Only one export may write the file at a time, never killed
+            halfway. The invoice CronJob keeps its schedule, and please do not
+            delete the namespace.
+          feedback: >-
+            Now the end state is clear: one active export, the invoice
+            CronJob still scheduled, nothing interrupted. That rules out
+            fixes that just stop the export.
+          best: true
+          fact: "Done: at most one export active, never killed mid-run; CronJob invoice keeps running every minute; keep the namespace."
+        - say: Can I just suspend the export until the script has a lock?
+          reply: >-
+            Then finance has no file at all tomorrow. The export has to keep
+            running.
+          feedback: >-
+            Stopping the work removes the symptom and the service with it.
+            Ask what done means first.
+  closing: >-
+    That is everything I know. Ping me when only one export can run at a time.
+
+diagram:
+  nodes:
+    - id: invoice
+      label: CronJob invoice
+      note: every minute; concurrencyPolicy decides overlap
+    - id: legacy
+      label: CronJob invoice-legacy
+      note: the older setup; suspend decides if it ticks
+      column: 1
+    - id: jobs
+      label: Jobs
+      note: one per tick, named after the CronJob
+    - id: pods
+      label: Pods
+      note: run the export, log start, batches, done
+    - id: file
+      label: invoices.csv
+      note: one writer at a time, or rows mix
+  edges:
+    - from: invoice
+      to: jobs
+      label: creates per tick
+    - from: legacy
+      to: jobs
+      label: creates unless suspended
+    - from: jobs
+      to: pods
+      label: creates
+    - from: pods
+      to: file
+      label: appends
+
+quiz:
+  - question: A CronJob runs every minute and its Job takes 90 seconds. What happens at the second tick with the default concurrencyPolicy?
+    choices:
+      - text: A second Job starts while the first one is still running.
+        correct: true
+        explain: >-
+          The default is Allow, which starts a new Job on every tick no
+          matter how many are active.
+      - text: The tick is skipped until the first Job completes.
+        explain: >-
+          That is Forbid, which you have to set. The default does not wait.
+      - text: The first Job is stopped and a new one starts.
+        explain: >-
+          That is Replace. The default leaves the running Job alone and adds
+          another.
+  - question: CronJob invoice has concurrencyPolicy Forbid, and a second CronJob runs the same export on the same schedule. Can two exports run at once?
+    choices:
+      - text: Yes, because the policy only looks at the Jobs of its own CronJob.
+        correct: true
+        explain: >-
+          Each CronJob tracks its own active Jobs in status.active. The
+          second CronJob starts its own Job regardless of the first.
+      - text: No, Forbid blocks every Job with the same command.
+        explain: >-
+          The controller never compares commands. It only counts the Jobs it
+          created itself.
+  - question: You set suspend true on a CronJob while one of its Jobs is running. What happens to that Job?
+    choices:
+      - text: It keeps running to the end; only future ticks stop.
+        correct: true
+        explain: >-
+          suspend stops the CronJob from creating new Jobs. Running Jobs are
+          separate objects and continue.
+      - text: It is stopped at once.
+        explain: >-
+          Nothing stops it. To stop a running Job you delete the Job.
+
+guide:
+  - title: List the CronJobs, Jobs and pods
+    body: >-
+      The workstation shell already points at the episode namespace. The
+      label selector lists every object of the export, whatever its name.
+      Count the CronJobs and read SCHEDULE, SUSPEND and ACTIVE.
+    command: kubectl get cronjobs,jobs,pods -l app.kubernetes.io/name=invoice
+  - title: Watch two ticks
+    body: >-
+      New lines appear as Jobs start and finish. At the second tick, check
+      whether the previous Job is still Running next to the new one. Stop
+      the watch with Ctrl-C after two new Jobs.
+    command: kubectl get jobs --watch
+  - title: Read the CronJob settings
+    body: >-
+      The POLICY column is concurrencyPolicy. Allow lets a new tick start a
+      Job next to a running one, which is what the watch showed.
+    command: kubectl get cronjobs -o custom-columns=NAME:.metadata.name,POLICY:.spec.concurrencyPolicy,SUSPEND:.spec.suspend,SCHEDULE:.spec.schedule
+  - title: Make invoice skip a tick while a run is active
+    body: >-
+      Change one field of the CronJob, not the Jobs: they are recreated every
+      minute from its template.
+    command: >-
+      kubectl patch cronjob invoice --type=merge -p '{"spec":{"concurrencyPolicy":"Forbid"}}'
+    check: forbid-overlap
+  - title: Remove the surplus running Job
+    body: >-
+      The new policy does not stop a Job that is already running. List the
+      Jobs and, if two are Running, delete the older one by name.
+    command: kubectl get jobs -l app.kubernetes.io/name=invoice
+    check: one-active-job
+  - title: Confirm only invoice schedules the export
+    body: >-
+      Only invoice should show SUSPEND False. Watch the next ticks: at most
+      one Job is Running at a time. Then press Validate to grade the
+      assignment.
+    command: kubectl get cronjobs -l app.kubernetes.io/name=invoice
+    check: single-scheduler

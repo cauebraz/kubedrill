@@ -262,6 +262,42 @@ func TestBrowser(t *testing.T) {
 	srv := httptest.NewServer(s.Handler())
 	defer srv.Close()
 	b := newBrowser(t, srv.URL+"/?t="+testToken+"#/")
+	b.wait("welcome gate", "location.hash === '#/welcome' && document.querySelector('.welcome h1')")
+	if v := b.eval("String(document.body.classList.contains('onboarding') && getComputedStyle(document.querySelector('.nav')).display === 'none')"); v != "true" {
+		t.Errorf("nav during the welcome flow: hidden=%s, want true", v)
+	}
+	b.shot("00-welcome")
+	b.key("Enter", 0)
+	b.wait("step 1", "document.querySelector('.step-num') && document.querySelector('.step-num').textContent === 'Step 1 of 5'")
+	b.key("1", 0)
+	b.wait("retry feedback", "document.querySelector('.feedback.retry')")
+	if v := b.eval("String(!!document.querySelector('.welcome-actions .btn.primary').hidden)"); v != "true" {
+		t.Errorf("next step offered after a wrong pick: hidden=%s, want true", v)
+	}
+	b.key("2", 0)
+	b.wait("good feedback", "document.querySelector('.feedback.good') && !document.querySelector('.welcome-actions .btn.primary').hidden")
+	b.shot("00b-welcome-step1")
+	for n, right := range []string{"1", "1", "1", "1"} {
+		b.key("Enter", 0)
+		b.wait(fmt.Sprintf("step %d", n+2), fmt.Sprintf("document.querySelector('.step-num') && document.querySelector('.step-num').textContent === 'Step %d of 5'", n+2))
+		b.key(right, 0)
+		b.wait("good feedback", "document.querySelector('.feedback.good')")
+		if n == 1 {
+			b.wait("reveal", "document.querySelector('.reveal pre')")
+			b.shot("00c-welcome-step3")
+		}
+	}
+	b.key("Enter", 0)
+	b.wait("close", "document.querySelector('.welcome .map')")
+	b.shot("00d-welcome-close")
+	b.key("Enter", 0)
+	b.wait("home", "location.hash === '#/' && document.querySelector('.continue h2')")
+	if v := b.eval("String(document.body.classList.contains('onboarding'))"); v != "false" {
+		t.Error("the onboarding class stayed on the body after the flow")
+	}
+	b.go_("#/welcome")
+	b.wait("welcome replays", "document.querySelector('.welcome h1')")
+	b.go_("#/")
 	b.wait("home", "document.querySelector('.continue h2')")
 	if got := b.text(".continue"); !strings.Contains(got, "Recommended next") || !strings.Contains(got, "Storefront is down") {
 		t.Errorf("continue card: got %q", got)
@@ -440,6 +476,63 @@ func TestBrowser(t *testing.T) {
 		b.wait("result", "location.hash.endsWith('/done')")
 	})
 
+	sub("a stray Enter keeps the exam and the deadline submits it", func(t *testing.T) {
+		fake.Lock()
+		fake.ExamTime = 10 * time.Second
+		fake.Unlock()
+		defer func() { fake.Lock(); fake.ExamTime = 0; fake.Unlock() }()
+		b.go_("#/a/001-storefront-down/exam")
+		b.wait("exam launch", "document.querySelector('.launch')")
+		b.key("Enter", 0)
+		b.wait("exam workspace", "document.querySelector('.term-bar .timer[role=timer]')")
+		b.key("Enter", modKey())
+		b.wait("confirm", "document.querySelector('.modal-title')")
+		b.key("Enter", modKey())
+		if n := b.eval("String(document.querySelectorAll('.modal-title').length)"); n != "1" {
+			t.Errorf("confirm dialogs after a second Cmd/Ctrl+Enter: got %s, want 1", n)
+		}
+		if got := b.eval("document.activeElement.textContent"); got != "Keep working" {
+			t.Errorf("focus in the confirm: got %q, want Keep working", got)
+		}
+		b.key("Enter", 0)
+		b.wait("confirm closed by Enter", "!document.querySelector('.modal-title')")
+		b.eval("document.activeElement.blur()")
+		b.key("Enter", 0)
+		if b.eval("String(!!document.querySelector('.lab .xterm'))") != "true" {
+			t.Error("Enter outside the terminal left the workspace")
+		}
+		b.key("Enter", modKey())
+		b.wait("confirm again", "document.querySelector('.modal-title')")
+		b.wait("auto-submit", "location.hash.includes('/debrief/') && document.querySelector('.debrief-hero h1')")
+		if got := b.text(".debrief-hero h1"); got != "Time is up" {
+			t.Errorf("debrief after the deadline: got %q, want Time is up", got)
+		}
+		if b.eval("String(!!document.querySelector('.modal-back'))") != "false" {
+			t.Error("the confirm dialog stayed open over the debrief")
+		}
+	})
+
+	sub("a run ended in the terminal opens its debrief", func(t *testing.T) {
+		b.go_("#/a/001-storefront-down/practice")
+		b.wait("practice launch", "document.querySelector('.launch')")
+		b.key("Enter", 0)
+		b.wait("workspace", "document.querySelector('.lab .xterm')")
+		fake.Fix()
+		fake.Finish()
+		b.wait("debrief", "location.hash.includes('/debrief/') && document.querySelector('.debrief-hero h1')")
+		if got := b.text(".debrief-hero h1"); got != "The customer is happy" {
+			t.Errorf("debrief title: got %q", got)
+		}
+		b.go_("#/a/001-storefront-down/exam")
+		b.wait("exam launch", "document.querySelector('.launch')")
+		b.key("Enter", 0)
+		b.wait("exam workspace", "document.querySelector('.lab .xterm')")
+		fake.Finish()
+		b.wait("exam debrief", "location.hash.includes('/debrief/') && document.querySelector('.debrief-hero h1')")
+		b.go_("#/a/001-storefront-down/exam")
+		b.wait("a fresh exam launch, not the old debrief", "location.hash.endsWith('/exam') && document.querySelector('.launch')")
+	})
+
 	sub("navigation shortcuts", func(t *testing.T) {
 		b.go_("#/")
 		b.wait("home", "document.querySelector('.continue')")
@@ -458,9 +551,9 @@ func TestBrowser(t *testing.T) {
 	sub("narrow windows", func(t *testing.T) {
 		for _, w := range []int{390, 900} {
 			b.call("Emulation.setDeviceMetricsOverride", map[string]any{"width": w, "height": 844, "deviceScaleFactor": 1, "mobile": w < 600})
-			for _, h := range []string{"#/", "#/catalog", "#/a/001-storefront-down/meeting"} {
+			for _, h := range []string{"#/", "#/catalog", "#/a/001-storefront-down/meeting", "#/welcome"} {
 				b.go_(h)
-				b.wait("render "+h, "document.querySelector('.page-inner, .stage-inner') && !document.querySelector('.skeleton')")
+				b.wait("render "+h, "document.querySelector('.page-inner, .stage-inner, .welcome-inner') && !document.querySelector('.skeleton')")
 				if over := b.eval("document.documentElement.scrollWidth > window.innerWidth + 1"); over != "false" {
 					t.Errorf("%s at %dpx scrolls horizontally (scrollWidth %s)", h, w, b.eval("String(document.documentElement.scrollWidth)"))
 				}

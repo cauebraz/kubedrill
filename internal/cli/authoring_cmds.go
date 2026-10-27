@@ -106,10 +106,14 @@ func (a *app) versionCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			a.println(versionLine(debug.ReadBuildInfo))
+			a.println("source: " + repoURL)
 			return nil
 		},
 	}
 }
+
+// repoURL is the public repository, printed by version and the root help.
+const repoURL = "https://github.com/cauebraz/kubedrill"
 
 func versionLine(read func() (*debug.BuildInfo, bool)) string {
 	info, ok := read()

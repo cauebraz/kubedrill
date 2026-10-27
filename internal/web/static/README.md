@@ -6,12 +6,14 @@ checksums in its README).
 
 | File | Role |
 |------|------|
-| `index.html` | Shell: top bar, banner, toast, the theme bootstrap that runs before the first paint |
+| `index.html` | Shell: top bar with the mark, banner, toast, the theme bootstrap that runs before the first paint |
+| `favicon.svg` | The mark (a five-step ring, one step and the center in the brand teal) with its own light and dark colors through `prefers-color-scheme`; the top bar draws the same paths with `--fg` and `--brand` |
 | `app.js` | Entry: routes (`#/`, `#/catalog`, `#/exams`, `#/a/<id>/<stage>`, `#/a/<id>/debrief/<episode>`, `#/kit`), navigation, theme, preview and server-down banners |
 | `js/api.js` | The JSON API, the NDJSON launch stream, the connection listener |
 | `js/dom.js` | `el`, `svg`, `clear`, `toast`, `store` (localStorage), `onLeave` cleanups, icons |
 | `js/keys.js` | Shortcuts per screen (`bind`), the overlay stack Esc closes, the `?` help |
 | `js/ui.js` | Shared components: stages, rings, dots, mastery meter, status pill, assignment row, skeleton, error state |
+| `js/welcome.js` | The welcome flow (`#/welcome`): the five steps of the loop on a worked ticket, shown once per journal before the workspace opens |
 | `js/home.js`, `js/catalog.js`, `js/exams.js` | The three top-level screens |
 | `js/assignment.js` | The assignment shell, stepper and concept drawer |
 | `js/meeting.js`, `js/quiz.js`, `js/learn.js`, `js/lab.js`, `js/result.js` | The stages: meeting, quiz, learn and diagram, practice and DIY lab, debrief and result |
@@ -45,6 +47,7 @@ surface that is dark in both).
 | Type | `--t-xs` 11 to `--t-3xl` 40; `--font-sans`, `--font-mono` | Inter-first system stack; mono for labels, ids and numbers |
 | Motion | `--fast` 120ms, `--base` 200ms, `--slow` 360ms, `--ease` | every transition; `prefers-reduced-motion` turns them off |
 | Effects | `--shadow-1..3`, `--glow`, `--ring` | depth, the home and badge glow, the focus ring |
+| Backdrops | `--backdrop`, `--backdrop-soft` | behind a dialog, behind a drawer |
 
 Rules:
 

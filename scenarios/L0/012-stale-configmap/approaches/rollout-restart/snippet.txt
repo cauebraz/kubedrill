@@ -1,0 +1,2 @@
+kubectl -n {{ .Namespace }} rollout restart deployment/banner
+kubectl -n {{ .Namespace }} rollout status deployment/banner --timeout=120s

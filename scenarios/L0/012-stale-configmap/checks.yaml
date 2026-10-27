@@ -1,0 +1,45 @@
+checks:
+  - id: ready-replicas
+    description: deployment banner has 2 ready replicas
+    why: >-
+      readyReplicas counts pods whose Ready condition is true; a fix that
+      replaces the pods is not done until the new ones pass the readiness
+      probe, and a rollout stuck at 1 of 2 halves the capacity of the banner.
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: banner
+    path: "{.status.readyReplicas}"
+    equals: "2"
+
+  - id: page-served
+    description: service banner serves the Winter sale 2026 banner
+    why: >-
+      The ConfigMap in the API is not what visitors read; the body a request
+      through the Service returns is. A stale body with a fresh ConfigMap
+      means the running containers never received the new value.
+    critical: true
+    depends_on: [ready-replicas]
+    probe:
+      image: curlimages/curl:8.14.1@sha256:9a1ed35addb45476afa911696297f8e115993df459278ed036182dd2cd22b67b
+      command: ["curl", "-fsS", "-m", "5", "http://banner.{{ .Namespace }}.svc/"]
+      timeout: 30s
+    contains: "Winter sale 2026"
+
+  - id: no-stale-pod
+    description: no running banner pod still serves the Summer sale 2025 banner
+    why: >-
+      The Service balances every request over all ready pods, so one pod that
+      kept the old text makes every second reload show the old banner, and a
+      single curl that happens to hit a fresh pod hides it.
+    depends_on: [ready-replicas]
+    spoiler: true
+    script: |
+      stale=""
+      for p in $(kubectl -n {{ .Namespace }} get pods -l app.kubernetes.io/name=banner -o jsonpath='{range .items[?(@.status.phase=="Running")]}{.metadata.name}{" "}{.metadata.deletionTimestamp}{"\n"}{end}' | awk 'NF==1 {print $1}'); do
+        body=$(kubectl -n {{ .Namespace }} exec "$p" -c web -- wget -qO- http://127.0.0.1/ 2>/dev/null || true)
+        case "$body" in *"Summer sale 2025"*) stale="$stale $p" ;; esac
+      done
+      if [ -z "$stale" ]; then echo "stale pods: none"; else echo "stale pods:$stale"; fi
+    equals: "stale pods: none"

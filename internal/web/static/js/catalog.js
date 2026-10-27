@@ -115,7 +115,7 @@ function levelBlock(lv, shown, byID, filtering, open) {
   details.appendChild(el("div", { class: "modules" }, (filtering ? visible : mods.filter((x) => x.m.assignments.length || x.m.planned)).map(({ m, list }) =>
     el("article", { class: "card module" },
       el("div", { class: "module-top" },
-        el("div", null, el("div", { class: "eyebrow", text: m.id }), el("h3", { text: m.title }), el("p", { class: "summary", text: m.summary })),
+        el("div", null, el("div", { class: "eyebrow" }, m.id, m.pack ? [" ", el("span", { class: "pill brand", text: "pack " + m.pack })] : null), el("h3", { text: m.title }), el("p", { class: "summary", text: m.summary })),
         m.assignments.length ? ring(m.assignments.filter(isDone).length, m.assignments.length, m.badge) : null),
       list.length ? el("div", { class: "assign-list" }, list.map((a) => assignmentRow(a, byID, true))) : el("div", { class: "planned", text: "Nothing written yet" }),
       m.planned && !filtering ? el("div", { class: "planned", text: plural(m.planned, "more assignment") + " planned" }) : null))));

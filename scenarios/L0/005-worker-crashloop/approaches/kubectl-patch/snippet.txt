@@ -1,0 +1,5 @@
+kubectl -n {{ .Namespace }} patch configmap worker-env --type merge -p '{"data":{"QUEUE_URL":"amqp://queue.billing.svc:5672/invoices","BROKER_URL":null}}'
+kubectl -n {{ .Namespace }} rollout restart deployment/worker
+kubectl -n {{ .Namespace }} patch deployment worker --type json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/args","value":["--workers=4"]}]'
+kubectl -n {{ .Namespace }} patch deployment worker --type json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/volumeMounts/1/subPath","value":"worker.conf"}]'
+kubectl -n {{ .Namespace }} rollout status deployment/worker --timeout=120s

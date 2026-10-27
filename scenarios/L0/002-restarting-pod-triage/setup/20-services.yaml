@@ -1,0 +1,545 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: storefront
+  namespace: {{ .Namespace }}
+  labels:
+    app: storefront
+    app.kubernetes.io/part-of: shop
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: storefront
+  template:
+    metadata:
+      labels:
+        app: storefront
+        app.kubernetes.io/part-of: shop
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+          command: ["httpd", "-f", "-p", "8080", "-h", "/www"]
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          volumeMounts:
+            - name: pages
+              mountPath: /www
+              readOnly: true
+      volumes:
+        - name: pages
+          configMap:
+            name: shop-pages
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog
+  namespace: {{ .Namespace }}
+  labels:
+    app: catalog
+    app.kubernetes.io/part-of: shop
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: catalog
+  template:
+    metadata:
+      labels:
+        app: catalog
+        app.kubernetes.io/part-of: shop
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+          command: ["httpd", "-f", "-p", "8080", "-h", "/www"]
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          volumeMounts:
+            - name: pages
+              mountPath: /www
+              readOnly: true
+      volumes:
+        - name: pages
+          configMap:
+            name: shop-pages
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search
+  namespace: {{ .Namespace }}
+  labels:
+    app: search
+    app.kubernetes.io/part-of: shop
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: search
+  template:
+    metadata:
+      labels:
+        app: search
+        app.kubernetes.io/part-of: shop
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+          command: ["httpd", "-f", "-p", "8080", "-h", "/www"]
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          volumeMounts:
+            - name: pages
+              mountPath: /www
+              readOnly: true
+      volumes:
+        - name: pages
+          configMap:
+            name: shop-pages
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cart
+  namespace: {{ .Namespace }}
+  labels:
+    app: cart
+    app.kubernetes.io/part-of: shop
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: cart
+  template:
+    metadata:
+      labels:
+        app: cart
+        app.kubernetes.io/part-of: shop
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+          command: ["httpd", "-f", "-p", "8080", "-h", "/www"]
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          volumeMounts:
+            - name: pages
+              mountPath: /www
+              readOnly: true
+      volumes:
+        - name: pages
+          configMap:
+            name: shop-pages
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout
+  namespace: {{ .Namespace }}
+  labels:
+    app: checkout
+    app.kubernetes.io/part-of: shop
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: checkout
+  template:
+    metadata:
+      labels:
+        app: checkout
+        app.kubernetes.io/part-of: shop
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+          command: ["httpd", "-f", "-p", "8080", "-h", "/www"]
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          volumeMounts:
+            - name: pages
+              mountPath: /www
+              readOnly: true
+      volumes:
+        - name: pages
+          configMap:
+            name: shop-pages
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pricing
+  namespace: {{ .Namespace }}
+  labels:
+    app: pricing
+    app.kubernetes.io/part-of: shop
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: pricing
+  template:
+    metadata:
+      labels:
+        app: pricing
+        app.kubernetes.io/part-of: shop
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+          command: ["httpd", "-f", "-p", "8080", "-h", "/www"]
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          volumeMounts:
+            - name: pages
+              mountPath: /www
+              readOnly: true
+      volumes:
+        - name: pages
+          configMap:
+            name: shop-pages
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory
+  namespace: {{ .Namespace }}
+  labels:
+    app: inventory
+    app.kubernetes.io/part-of: shop
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: inventory
+  template:
+    metadata:
+      labels:
+        app: inventory
+        app.kubernetes.io/part-of: shop
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+          command: ["httpd", "-f", "-p", "8080", "-h", "/www"]
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          volumeMounts:
+            - name: pages
+              mountPath: /www
+              readOnly: true
+      volumes:
+        - name: pages
+          configMap:
+            name: shop-pages
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recommendations
+  namespace: {{ .Namespace }}
+  labels:
+    app: recommendations
+    app.kubernetes.io/part-of: shop
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: recommendations
+  template:
+    metadata:
+      labels:
+        app: recommendations
+        app.kubernetes.io/part-of: shop
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+          command: ["httpd", "-f", "-p", "8080", "-h", "/www"]
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          volumeMounts:
+            - name: pages
+              mountPath: /www
+              readOnly: true
+      volumes:
+        - name: pages
+          configMap:
+            name: shop-pages
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: accounts
+  namespace: {{ .Namespace }}
+  labels:
+    app: accounts
+    app.kubernetes.io/part-of: shop
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: accounts
+  template:
+    metadata:
+      labels:
+        app: accounts
+        app.kubernetes.io/part-of: shop
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+          command: ["httpd", "-f", "-p", "8080", "-h", "/www"]
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          volumeMounts:
+            - name: pages
+              mountPath: /www
+              readOnly: true
+      volumes:
+        - name: pages
+          configMap:
+            name: shop-pages
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: images
+  namespace: {{ .Namespace }}
+  labels:
+    app: images
+    app.kubernetes.io/part-of: shop
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: images
+  template:
+    metadata:
+      labels:
+        app: images
+        app.kubernetes.io/part-of: shop
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+          command: ["httpd", "-f", "-p", "8080", "-h", "/www"]
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          volumeMounts:
+            - name: pages
+              mountPath: /www
+              readOnly: true
+      volumes:
+        - name: pages
+          configMap:
+            name: shop-pages
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments
+  namespace: {{ .Namespace }}
+  labels:
+    app: payments
+    app.kubernetes.io/part-of: shop
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payments
+  template:
+    metadata:
+      labels:
+        app: payments
+        app.kubernetes.io/part-of: shop
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+          command: ["httpd", "-f", "-p", "8080", "-h", "/www"]
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          volumeMounts:
+            - name: pages
+              mountPath: /www
+              readOnly: true
+      volumes:
+        - name: pages
+          configMap:
+            name: shop-pages
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shipping
+  namespace: {{ .Namespace }}
+  labels:
+    app: shipping
+    app.kubernetes.io/part-of: shop
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: shipping
+  template:
+    metadata:
+      labels:
+        app: shipping
+        app.kubernetes.io/part-of: shop
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+          command: ["httpd", "-f", "-p", "8080", "-h", "/www"]
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          volumeMounts:
+            - name: pages
+              mountPath: /www
+              readOnly: true
+      volumes:
+        - name: pages
+          configMap:
+            name: shop-pages
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifications
+  namespace: {{ .Namespace }}
+  labels:
+    app: notifications
+    app.kubernetes.io/part-of: shop
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: notifications
+  template:
+    metadata:
+      labels:
+        app: notifications
+        app.kubernetes.io/part-of: shop
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+          command: ["httpd", "-f", "-p", "8080", "-h", "/www"]
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          volumeMounts:
+            - name: pages
+              mountPath: /www
+              readOnly: true
+      volumes:
+        - name: pages
+          configMap:
+            name: shop-pages

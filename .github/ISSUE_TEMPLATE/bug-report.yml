@@ -1,0 +1,36 @@
+name: Bug report
+description: kubedrill, the workspace, the workstation or a scenario misbehaves
+title: "bug: <what happened>"
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command or the screen, the message, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ./start.sh
+        2. open 001-storefront-down, practice
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Output of `kubedrill version` and `kubedrill doctor`, OS and architecture, browser if the workspace is involved.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The terminal output, or the server lines kubedrill web printed. Remove anything private.
+      render: text

@@ -1,0 +1,5 @@
+kubectl explain statefulset.spec --recursive | grep -E 'serviceName|podManagementPolicy|volumeClaimTemplates'
+vi redis.yaml   # Service redis (clusterIP None) and StatefulSet redis (serviceName redis), separated by ---
+kubectl -n {{ .Namespace }} apply --dry-run=server -f redis.yaml
+kubectl -n {{ .Namespace }} apply -f redis.yaml
+kubectl -n {{ .Namespace }} rollout status statefulset/redis --timeout=240s

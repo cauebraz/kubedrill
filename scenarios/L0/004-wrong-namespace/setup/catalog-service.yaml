@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: catalog
+    app.kubernetes.io/part-of: shop
+spec:
+  selector:
+    app.kubernetes.io/name: {{ .Vars.selector }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: {{ .Vars.target_port }}

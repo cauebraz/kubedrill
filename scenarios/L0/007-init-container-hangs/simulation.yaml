@@ -1,0 +1,278 @@
+customer:
+  name: Priya
+  role: Billing team lead
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Ask me for a hint whenever you are
+    stuck: each hint goes one step further, from where to look to what to
+    change, and the last one waits until you name a cause.
+
+meeting:
+  opening: >-
+    Thanks for joining. The billing api has been down since we moved it to
+    the new cluster this morning. The pipeline was green, nothing is
+    crashing, and still nobody can reach it. Where do you want to start?
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What changed right before it stopped working?
+          reply: >-
+            We moved the api to the new cluster with the same manifests we
+            run on the old one. Same image, same migration script, same
+            ConfigMap from the DBA team. The pipeline applied them and went
+            green.
+          feedback: >-
+            Good first question. A failure that starts right after a change
+            usually comes from that change, and "same manifests on a new
+            cluster" is a strong lead: the manifests carry the old cluster's
+            names and paths with them.
+          best: true
+          fact: It broke right after the move to the new cluster, with the manifests copied from the old one.
+        - say: Can you restart the pods and see if it comes back?
+          reply: >-
+            We did, twice. The new pods come up exactly like the old ones
+            and sit there.
+          feedback: >-
+            Acting before observing hides evidence and rarely fixes a problem
+            in the blueprint: new pods are built from the same template. Ask
+            what changed first.
+        - say: Is the database down?
+          reply: >-
+            No, the db pod is Running and Ready, and the DBA team can query
+            it from their tools.
+          feedback: >-
+            A fair suspicion for an api that waits on a database, and the
+            answer rules it out. "What changed?" narrows the search faster.
+    - prompt: You need the exact symptom. What do you ask?
+      choices:
+        - say: What exactly do the dashboard and the pods show?
+          reply: >-
+            The dashboard shows 0 of 2 ready for forty minutes. The pods say
+            Init:0/1 with zero restarts, and the internal URL refuses the
+            connection right away.
+          feedback: >-
+            Precise symptoms split the candidate causes. "Init:0/1 with zero
+            restarts" says the pod never left its first init container and
+            that container is not crashing: it is waiting. A refused
+            connection says the Service has nowhere to send traffic.
+          best: true
+          fact: "Both api pods show Init:0/1 with 0 restarts; the Service refuses connections."
+        - say: Should we bump the replicas to 4 so at least some come up?
+          reply: >-
+            We tried 3 for a while. The third pod did exactly what the other
+            two do.
+          feedback: >-
+            Scaling multiplies whatever the pods do, including waiting. Find
+            out what the symptom is before choosing a change.
+        - say: Does the app container log any error?
+          reply: >-
+            There is no app container log at all. kubectl logs complains
+            that the container is waiting to start.
+          feedback: >-
+            A useful fact, and it tells you where not to look: the app
+            container does not exist yet. Ask for the full symptom, the pod
+            STATUS names the step that is stuck.
+    - prompt: Find out what the migrate step does.
+      choices:
+        - say: What does the migrate step wait for, and how did it work on the old cluster?
+          reply: >-
+            It is a small shell loop. It polls the database host and port
+            from its environment until something answers, then waits for
+            the schema flag file the DBA team ships in the migrate-config
+            ConfigMap, then applies the migrations. On the old cluster it
+            printed "migrations done" after two seconds.
+          feedback: >-
+            Now you know the two conditions the loop needs and that they held
+            on the old cluster. Whatever the new cluster offers that differs
+            from "a database at that host and port" and "a file at that
+            path" is suspicious.
+          best: true
+          fact: migrate polls DB_HOST:DB_PORT, then waits for the flag file from ConfigMap migrate-config; on the old cluster it finished in 2 seconds.
+        - say: Which database password does migrate use?
+          reply: >-
+            None for the wait itself; the loop only checks that the port
+            answers before the real migration runs.
+          feedback: >-
+            Credentials matter once a connection is made; this loop never
+            gets that far. Ask what the step waits for, not how it
+            authenticates.
+        - say: Can the DBA team run the migrations by hand so we can skip the step?
+          reply: >-
+            They could, but the step is in every environment and we would
+            rather know why it hangs here.
+          feedback: >-
+            Skipping the guard restores service and hides the cause. Ask
+            what the loop waits for first; the fix is usually one value.
+    - prompt: Agree on what done means before you touch anything.
+      choices:
+        - say: What does "fixed" look like for you, and is there anything I must not change?
+          reply: >-
+            Two api pods ready and the Service answering requests. Keep the
+            Deployment, Service and ConfigMap names, keep the db Service on
+            port 5432 because other teams connect to it, and do not delete
+            the namespace.
+          feedback: >-
+            Agreeing on the end state and the constraints up front is what
+            lets you verify your fix the same way the customer will, and it
+            rules out "fixes" that move the database instead of the api.
+          best: true
+          fact: "Done: 2 ready api pods and the Service answers 200; keep the names, keep db on 5432, keep the namespace."
+        - say: Can I delete the namespace and redeploy everything from scratch?
+          reply: >-
+            Please do not. The database lives in that namespace and other
+            teams use it.
+          feedback: >-
+            Starting over destroys the evidence and the database. Ask what
+            done looks like and what you must keep.
+  closing: >-
+    That is everything I know. I will be watching the dashboard; ping me
+    when the api is back.
+
+diagram:
+  nodes:
+    - id: deploy
+      label: Deployment api
+      note: keeps 2 pods from its template, init container included
+    - id: pods
+      label: Pods x2
+      note: init container migrate runs first, then the api container
+    - id: dbsvc
+      label: Service db
+      note: the name and port the loop polls
+      column: 1
+    - id: configmap
+      label: ConfigMap migrate-config
+      note: the schema flag, mounted at a path
+      column: 2
+    - id: dbpod
+      label: Pod db
+      note: Running and Ready
+      column: 1
+    - id: service
+      label: Service api
+      note: routes only to Ready pods
+    - id: users
+      label: Other teams
+      note: connection refused while no pod is Ready
+  edges:
+    - from: deploy
+      to: pods
+      label: creates
+    - from: dbsvc
+      to: pods
+      label: polled by migrate
+    - from: dbsvc
+      to: dbpod
+      label: routes to
+    - from: configmap
+      to: pods
+      label: mounted
+    - from: service
+      to: pods
+      label: Ready only
+    - from: users
+      to: service
+      label: requests
+
+quiz:
+  - question: Both api pods show Init:0/1 with 0 restarts. What does that tell you?
+    choices:
+      - text: The first init container is still running; the app container has not started.
+        correct: true
+        explain: >-
+          Init:0/1 means zero of one init containers finished. The kubelet
+          starts the app container only after the last init container exits
+          0, so nothing after it can be the cause yet.
+      - text: The init container keeps crashing and the kubelet restarts it.
+        explain: >-
+          A crashing init container shows Init:CrashLoopBackOff or Init:Error
+          and a growing restart count. Zero restarts means it never exited.
+      - text: The readiness probe of the api container is failing.
+        explain: >-
+          The probe runs against a started container. With the init container
+          still running, the api container does not exist, so no probe runs.
+  - question: Where are the logs that say what the init container waits for?
+    choices:
+      - text: kubectl logs <pod> -c migrate, the init container's own stream.
+        correct: true
+        explain: >-
+          Each container in a pod has its own log stream; -c picks it. Without
+          -c, kubectl logs reads the app container, which has not started.
+      - text: kubectl logs <pod>, the pod has a single log.
+        explain: >-
+          A pod has one stream per container. kubectl logs without -c picks
+          the app container and reports that it is waiting to start.
+      - text: In the Events of kubectl describe pod.
+        explain: >-
+          Events record what the kubelet did (Pulled, Started). The loop's
+          own output goes to the container log, not to Events.
+  - question: >-
+      The init logs repeat "nc: bad address 'db-primary'" and get svc
+      lists db. What is wrong?
+    choices:
+      - text: The loop polls a host name that no Service in this namespace carries, so DNS cannot resolve it.
+        correct: true
+        explain: >-
+          Cluster DNS answers for Service names of the namespace. db resolves,
+          db-primary does not, and nc reports bad address without trying to
+          connect.
+      - text: The database is down.
+        explain: >-
+          A database that is down leaves the name resolving and the connect
+          failing. bad address happens before any connection, in DNS.
+      - text: CoreDNS is broken on the new cluster.
+        explain: >-
+          CoreDNS resolves db fine, as the db pod and other teams show. A
+          name that does not exist is not a DNS outage.
+
+guide:
+  - title: List the pods
+    body: >-
+      The workstation shell already points at the episode namespace. List
+      the pods and read STATUS and RESTARTS. Both api pods show Init:0/1
+      with 0 restarts: they are inside their first init container, and that
+      container is waiting, not crashing. The db pod is Running and Ready.
+    command: kubectl get pods
+  - title: Read the init container's logs
+    body: >-
+      An init container has its own log stream, chosen with -c. Replace
+      <pod-name> with one of the api pod names (TAB completes it). The last
+      line names the condition the loop keeps retrying: here nc reports
+      "bad address" for the host it polls.
+    command: kubectl logs <pod-name> -c migrate
+  - title: Read where the values come from
+    body: >-
+      Scroll to the Init Containers section. Args prints the loop,
+      Environment lists DB_HOST, DB_PORT and MIGRATE_FLAG, Mounts shows
+      where migrate-config lands. State Running with Ready False confirms
+      the loop is alive and never ends.
+    command: kubectl describe pod <pod-name>
+  - title: Compare with the Services of the namespace
+    body: >-
+      The loop can only reach names that exist here. The Service list shows
+      db on port 5432; the loop polls a different name. The value in the
+      Deployment's template is the one place to change.
+    command: kubectl get svc
+  - title: Change the host the init container polls
+    body: >-
+      Change one thing: the DB_HOST variable of the init container migrate.
+      The Deployment creates new pods whose loop connects on the first try,
+      prints "migrations done" and exits 0, which lets the api container
+      start.
+    command: kubectl set env deployment/api -c migrate DB_HOST=db
+  - title: Watch the rollout finish
+    body: >-
+      rollout status waits until the new pods are Ready. This is the
+      verification, not decoration: a pipeline that ran it would have caught
+      the outage this morning.
+    command: kubectl rollout status deployment/api
+    check: api-ready
+  - title: Confirm the Service has endpoints again
+    body: >-
+      The Service routes only to Ready pods. Its EndpointSlice lists their
+      addresses; two addresses mean the other teams reach the api again.
+      Then press Validate to grade the assignment.
+    command: kubectl get endpointslices -l kubernetes.io/service-name=api
+    check: api-endpoints

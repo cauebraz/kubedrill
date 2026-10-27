@@ -1,0 +1,2 @@
+for d in storefront catalog cart; do kubectl -n {{ .Namespace }} set resources deployment/$d --requests=cpu=250m,memory=256Mi --limits=cpu=250m,memory=256Mi; done
+for d in storefront catalog cart; do kubectl -n {{ .Namespace }} rollout status deployment/$d --timeout=120s; done

@@ -7,8 +7,10 @@ with a method, not by guessing. Every message and option is listed in
 
 ## A session in short
 
-`./start.sh` opens the browser workspace (`kubedrill web`). Pick an
-assignment from a learning plan and walk its stages:
+`./start.sh` opens the browser workspace (`kubedrill web`). The first visit
+is a three-minute welcome: the five steps below, each on a worked ticket
+with one question and the reason the step exists. Then pick an assignment
+from a learning plan and walk its stages:
 
 1. Meet the customer: pick the questions that gather the requirements; the
    mentor explains why a question helps or not.

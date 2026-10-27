@@ -1,0 +1,7 @@
+kubectl -n {{ .Namespace }} apply -f - <<'YAML'
+apiVersion: v1
+kind: Service
+metadata: {name: admin}
+spec: {type: NodePort, selector: {app.kubernetes.io/name: admin, track: stable}, ports: [{port: 80, targetPort: {{ .Vars.port }}, nodePort: 30080}]}
+YAML
+kubectl -n {{ .Namespace }} describe service admin

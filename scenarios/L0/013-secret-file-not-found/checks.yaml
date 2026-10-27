@@ -1,0 +1,59 @@
+checks:
+  - id: deploy-exists
+    description: deployment api exists
+    why: >-
+      The Deployment is the object the billing team owns; if it is gone, the
+      ReplicaSet and the pods under it cannot recover and the fix is a
+      redeploy, not a patch.
+    critical: true
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: api
+    exists: true
+
+  - id: ready-replicas
+    description: deployment api has 2 ready replicas
+    why: >-
+      readyReplicas counts pods whose readiness probe passes; the api only
+      becomes Ready after it read its password file, so 0 here means no pod
+      got past startup, whether it crashed or never started a container.
+    depends_on: [deploy-exists]
+    weight: 2
+    critical: true
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: api
+    path: "{.status.readyReplicas}"
+    equals: "2"
+
+  - id: api-connected
+    description: 'the api pods log "api: connected"'
+    why: >-
+      Ready pods prove the probe passes, not that the app read the password it
+      was given; the startup line is what the app prints after it read
+      /etc/secrets/db-password, and a crashing pod prints a different line.
+    depends_on: [ready-replicas]
+    script: >-
+      for p in $(kubectl -n "$TASK_NS" get pods -l app=api
+      -o jsonpath='{range .items[?(@.status.containerStatuses[0].ready==true)]}{.metadata.name}{" "}{end}');
+      do kubectl -n "$TASK_NS" logs "$p" --tail=5; done
+    contains: "api: connected"
+
+  - id: available-replicas
+    description: deployment api has 2 available replicas
+    why: >-
+      availableReplicas counts pods that stayed Ready for minReadySeconds (5
+      here); a pod that turns Ready and crashes right after never counts, so
+      2 here means both pods held up after reading the password.
+    depends_on: [ready-replicas]
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: api
+    path: "{.status.availableReplicas}"
+    equals: "2"

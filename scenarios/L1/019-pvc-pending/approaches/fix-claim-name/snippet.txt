@@ -1,0 +1,3 @@
+kubectl -n {{ .Namespace }} get deployment uploads -o jsonpath='{.spec.template.spec.volumes[0].persistentVolumeClaim.claimName}{"\n"}'
+kubectl -n {{ .Namespace }} patch deployment uploads --type=json -p '[{"op":"replace","path":"/spec/template/spec/volumes/0/persistentVolumeClaim/claimName","value":"uploads-data"}]'
+kubectl -n {{ .Namespace }} rollout status deployment/uploads --timeout=120s

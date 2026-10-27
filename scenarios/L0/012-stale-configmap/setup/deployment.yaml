@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: banner
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: banner
+    app.kubernetes.io/part-of: marketing-site
+    team: marketing
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: banner
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: banner
+        app.kubernetes.io/part-of: marketing-site
+        team: marketing
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+{{- if eq .Vars.source "env" }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - printf '%s\n' "$BANNER_TEXT" > /usr/share/nginx/html/index.html && exec nginx -g 'daemon off;'
+          env:
+            - name: BANNER_TEXT
+              valueFrom:
+                configMapKeyRef:
+                  name: banner-config
+                  key: banner
+{{- end }}
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+{{- if ne .Vars.source "env" }}
+          volumeMounts:
+            - name: banner
+{{- if eq .Vars.source "subpath" }}
+              mountPath: /usr/share/nginx/html/index.html
+              subPath: index.html
+{{- else }}
+              mountPath: /usr/share/nginx/html
+{{- end }}
+              readOnly: true
+{{- end }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+{{- if ne .Vars.source "env" }}
+      volumes:
+        - name: banner
+          configMap:
+            name: banner-config
+            items:
+              - key: banner
+                path: index.html
+{{- end }}

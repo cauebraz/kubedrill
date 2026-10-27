@@ -1,0 +1,65 @@
+checks:
+  - id: configmap-exists
+    description: configmap inventory exists
+    why: >-
+      The ConfigMap is the artifact ops reads; without it the audit job has
+      nothing to compare against the allowed-image list and the review is
+      blocked.
+    critical: true
+    resource:
+      apiVersion: v1
+      kind: ConfigMap
+      namespace: "{{ .Namespace }}"
+      name: inventory
+    exists: true
+
+  - id: images-key
+    description: configmap inventory has a key named images with a value
+    why: >-
+      The audit job reads data.images by name; a key named after a file
+      (images.txt) or an empty value makes it report zero images and pass the
+      namespace as clean.
+    depends_on: [configmap-exists]
+    resource:
+      apiVersion: v1
+      kind: ConfigMap
+      namespace: "{{ .Namespace }}"
+      name: inventory
+    path: "{.data.images}"
+    not_empty: true
+
+  - id: images-complete
+    description: key images lists every image a running container in the namespace uses, one per line, as the pod spec writes it
+    why: >-
+      Every image left out of the inventory is a container nobody audits;
+      a two-container pod counts both images, and the string must match
+      spec.containers[].image exactly, digest included, or the audit matches
+      the wrong artifact.
+    depends_on: [images-key]
+    weight: 2
+    spoiler: true
+    script: |
+      set -o pipefail
+      want=$(printf '%s\n' $VAR_EXPECTED | sort)
+      got=$(kubectl -n "$TASK_NS" get configmap inventory -o jsonpath='{.data.images}' 2>/dev/null | tr -d '\r' | sed -e 's/[[:space:]]*$//' -e 's/^[[:space:]]*//' | grep -v '^$' | sort -u) || true
+      missing=$(comm -23 <(printf '%s\n' "$want") <(printf '%s\n' "$got") | tr '\n' ' ')
+      missing=${missing% }
+      printf 'missing: %s\n' "${missing:-none}"
+    equals: "missing: none"
+
+  - id: images-exact
+    description: key images lists no other image; an init container that already exited and a Deployment at 0 replicas are not running
+    why: >-
+      An image listed as running when nothing runs it sends ops to patch
+      or re-pin a workload that does not exist, and hides which images the
+      namespace really depends on.
+    depends_on: [images-key]
+    spoiler: true
+    script: |
+      set -o pipefail
+      want=$(printf '%s\n' $VAR_EXPECTED | sort)
+      got=$(kubectl -n "$TASK_NS" get configmap inventory -o jsonpath='{.data.images}' 2>/dev/null | tr -d '\r' | sed -e 's/[[:space:]]*$//' -e 's/^[[:space:]]*//' | grep -v '^$' | sort -u) || true
+      extra=$(comm -13 <(printf '%s\n' "$want") <(printf '%s\n' "$got") | tr '\n' ' ')
+      extra=${extra% }
+      printf 'extra: %s\n' "${extra:-none}"
+    equals: "extra: none"

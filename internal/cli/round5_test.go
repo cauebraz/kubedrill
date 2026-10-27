@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/cauebraz/kubedrill/internal/grader"
-	"github.com/cauebraz/kubedrill/internal/journal"
 	"github.com/cauebraz/kubedrill/internal/scenario"
 )
 
@@ -159,16 +158,6 @@ func TestAuditStateCachesOnlyAnswers(t *testing.T) {
 			t.Errorf("step %d: got on %v known %v asks %d, want %v %v %d", i, on, known, f.cluster.auditAsks, s.wantOn, s.wantKnown, s.wantAsks)
 		}
 	}
-}
-
-type countingJournal struct {
-	*memJournal
-	reads atomic.Int32
-}
-
-func (j *countingJournal) Episodes(id string) ([]journal.Episode, error) {
-	j.reads.Add(1)
-	return j.memJournal.Episodes(id)
 }
 
 type cleanupKube struct {

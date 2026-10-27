@@ -1,0 +1,4 @@
+kubectl -n {{ .Namespace }} edit deployment worker
+kubectl -n {{ .Namespace }} rollout status deployment/worker --timeout=120s
+kubectl -n {{ .Namespace }} edit configmap worker-env
+kubectl -n {{ .Namespace }} rollout restart deployment/worker

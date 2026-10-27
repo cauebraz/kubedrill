@@ -1,0 +1,3 @@
+kubectl -n {{ .Namespace }} patch deployment api --type=json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/volumeMounts/0/mountPath","value":"/etc/secrets"}]'
+kubectl -n {{ .Namespace }} patch deployment api --type=json -p '[{"op":"replace","path":"/spec/template/spec/volumes/0/secret/secretName","value":"db-credentials"}]'
+kubectl -n {{ .Namespace }} rollout status deployment/api --timeout=120s

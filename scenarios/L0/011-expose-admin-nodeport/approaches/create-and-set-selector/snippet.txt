@@ -1,0 +1,3 @@
+kubectl -n {{ .Namespace }} create service nodeport admin --tcp=80:{{ .Vars.port }} --node-port=30080
+kubectl -n {{ .Namespace }} set selector service admin 'app.kubernetes.io/name=admin,track=stable'
+kubectl -n {{ .Namespace }} describe service admin

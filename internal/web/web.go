@@ -122,6 +122,7 @@ type Module struct {
 	Assignments []AssignmentCard `json:"assignments"`
 	Planned     int              `json:"planned"`
 	Badge       bool             `json:"badge"`
+	Pack        string           `json:"pack,omitempty"`
 }
 
 // AssignmentCard is one scenario on the home page.
@@ -360,6 +361,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/hint", s.api(s.hint))
 	mux.HandleFunc("POST /api/diagnose", s.api(s.diagnose))
 	mux.HandleFunc("POST /api/progress", s.api(s.recordProgress))
+	mux.HandleFunc("POST /api/onboarded", s.api(s.onboarded))
 	mux.Handle("GET /ws/terminal", s.terminal())
 	mux.Handle("GET /", s.static)
 	return s.guard(mux)
@@ -606,16 +608,35 @@ func (s *Server) next(r *http.Request) (any, error) {
 	return n, nil
 }
 
+// meta tells the page how the server runs and whether the welcome flow
+// was done; a preview counts as done.
 func (s *Server) meta(*http.Request) (any, error) {
-	return map[string]any{"preview": s.d.Preview, "dev": s.d.StaticDir != ""}, nil
+	return map[string]any{"preview": s.d.Preview, "dev": s.d.StaticDir != "", "onboarded": s.d.Preview != "" || s.progress.onboarded()}, nil
 }
 
+// onboarded records the welcome flow as done, completed or skipped.
+func (s *Server) onboarded(*http.Request) (any, error) {
+	if err := s.progress.onboard(); err != nil {
+		return nil, err
+	}
+	return map[string]bool{"onboarded": true}, nil
+}
+
+// debrief returns the debrief of an ended episode and records a solved one
+// as its stage, so a run ended outside the page (kubedrill check, kubedrill
+// submit, an expiry) still counts.
 func (s *Server) debrief(r *http.Request) (any, error) {
 	d, err := s.d.Backend.Debrief(r.Context(), r.PathValue("id"))
 	if err != nil {
 		return nil, badRequest("%v", err)
 	}
-	return s.debriefView(d), nil
+	d = s.debriefView(d)
+	if d.Outcome == "solved" && d.Stage != "" {
+		if err := s.progress.complete(d.ScenarioID, d.Stage, 1, 1); err != nil {
+			return nil, err
+		}
+	}
+	return d, nil
 }
 
 // debriefView adds the stage the workspace started the episode in and
@@ -661,7 +682,7 @@ func (s *Server) validate(r *http.Request) (any, error) {
 }
 
 // submit ends an exam run with its one grade (or its expiry past the
-// deadline) and records a pass as the exam stage, the score in percent.
+// deadline) and records a pass as the exam stage.
 func (s *Server) submit(r *http.Request) (any, error) {
 	v, err := s.d.Backend.Submit(r.Context())
 	if err != nil {
@@ -669,7 +690,7 @@ func (s *Server) submit(r *http.Request) (any, error) {
 	}
 	v.Solution = toHTML(v.Solution)
 	if v.Passed {
-		if err := s.progress.complete(v.ScenarioID, StageExam, int(v.Score*100+0.5), 100); err != nil {
+		if err := s.progress.complete(v.ScenarioID, StageExam, 1, 1); err != nil {
 			return nil, err
 		}
 	}

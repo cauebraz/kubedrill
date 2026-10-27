@@ -139,7 +139,7 @@ type Grader = env.Grader
 type Factories struct {
 	Cluster          func(profilesDir string) Cluster
 	Journal          func(dir string) (Journal, error)
-	Catalog          func(root string) (Catalog, error)
+	Catalog          func(root string, packs []string) (Catalog, error)
 	Concepts         func(root string) (Concepts, error)
 	Workstation      func(root, dataDir string) Workstation
 	Connect          func(kubeconfig, contextName, scriptKubeconfig string) (Kube, Grader, error)
@@ -381,7 +381,11 @@ func (a *app) getCatalog() (Catalog, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, err := a.f.Catalog(root)
+	packs, err := a.packRoots()
+	if err != nil {
+		return nil, err
+	}
+	c, err := a.f.Catalog(root, packs)
 	if err != nil {
 		return nil, err
 	}

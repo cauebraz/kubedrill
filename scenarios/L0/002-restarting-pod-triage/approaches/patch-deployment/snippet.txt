@@ -1,0 +1,4 @@
+kubectl -n {{ .Namespace }} get deployment reviews -o jsonpath='{.spec.template.spec.containers[0]}' | tr ',' '\n'
+kubectl -n {{ .Namespace }} patch deployment reviews --type json -p '[{"op": "replace", "path": "/spec/template/spec/containers/0/<field path>", "value": <value>}]'
+kubectl -n {{ .Namespace }} rollout status deployment/reviews --timeout=120s
+kubectl -n {{ .Namespace }} label pod -l app=reviews triage=yes

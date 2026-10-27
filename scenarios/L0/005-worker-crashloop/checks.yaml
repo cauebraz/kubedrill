@@ -1,0 +1,57 @@
+checks:
+  - id: deploy-exists
+    description: deployment worker exists
+    why: >-
+      The Deployment is the object the billing team deploys from; if it is
+      gone, nothing below it (ReplicaSet, pods) can recover and the fix is a
+      redeploy, not a patch.
+    critical: true
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: worker
+    exists: true
+
+  - id: ready-replicas
+    description: deployment worker has 2 ready replicas
+    why: >-
+      readyReplicas counts pods whose Ready condition is true; the worker
+      reports Ready only after it has read its configuration and started
+      polling, so 0 here means no invoice is being processed.
+    depends_on: [deploy-exists]
+    weight: 2
+    critical: true
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: worker
+    path: "{.status.readyReplicas}"
+    equals: "2"
+
+  - id: available-replicas
+    description: deployment worker has 2 replicas available for at least 5 seconds
+    why: >-
+      availableReplicas counts pods that stayed Ready for minReadySeconds (5);
+      a container that starts, reports Ready and exits again shows up in
+      readyReplicas for a moment but never here, so this is the number that
+      says the crash loop is over.
+    depends_on: [ready-replicas]
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: worker
+    path: "{.status.availableReplicas}"
+    equals: "2"
+
+  - id: worker-log
+    description: the worker pods log "worker started"
+    why: >-
+      The worker prints "worker started" once it has its queue address, its
+      token and its config file; a pod that is Ready but never printed it is
+      running something other than the worker the team ships.
+    depends_on: [ready-replicas]
+    script: kubectl -n {{ .Namespace }} logs -l app.kubernetes.io/name=worker --tail=20 | grep -q 'worker started'
+    exit_code: 0

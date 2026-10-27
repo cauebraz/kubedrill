@@ -1,0 +1,3 @@
+kubectl -n {{ .Namespace }} get cm web-nginx -o jsonpath='{.data.default\.conf}'
+kubectl -n {{ .Namespace }} patch deployment web --type=json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/httpGet/port","value":"http"}]'
+kubectl -n {{ .Namespace }} rollout status deployment/web --timeout=120s

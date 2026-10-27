@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: catalog-html
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: catalog
+    app.kubernetes.io/part-of: shop
+data:
+  index.html: |
+    <!doctype html>
+    <html>
+      <head><title>ACME Catalog</title></head>
+      <body>
+        <h1>ACME Catalog 3.2.0</h1>
+        <p>1,204 products in 37 categories.</p>
+      </body>
+    </html>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: storefront-html
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: storefront
+    app.kubernetes.io/part-of: shop
+data:
+  index.html: |
+    <!doctype html>
+    <html>
+      <head><title>ACME Storefront</title></head>
+      <body>
+        <h1>ACME Storefront 2.14.0</h1>
+        <p>The catalog panel loads from http://catalog/.</p>
+      </body>
+    </html>

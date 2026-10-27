@@ -309,7 +309,14 @@ func (a *app) loadCurriculum() (*curriculum.Curriculum, error) {
 	if err != nil {
 		return nil, err
 	}
-	return a.f.Curriculum(curriculum.DefaultPath(root))
+	c, err := a.f.Curriculum(curriculum.DefaultPath(root))
+	if err != nil {
+		return nil, err
+	}
+	if err := a.mergePacks(c); err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 func (a *app) pathCommand() *cobra.Command {
@@ -391,7 +398,11 @@ func (a *app) printLevel(lv curriculum.Level, solved map[string]bool, mastery ma
 				done++
 			}
 		}
-		a.println(a.printer().WrapLine(fmt.Sprintf("    %-5s %s: %d planned, %d existing, %d solved", m.ID, m.Title, len(m.Scenarios), existing, done), pathConceptsIndent))
+		title := m.Title
+		if m.Pack != "" {
+			title += " (pack " + m.Pack + ")"
+		}
+		a.println(a.printer().WrapLine(fmt.Sprintf("    %-5s %s: %d planned, %d existing, %d solved", m.ID, title, len(m.Scenarios), existing, done), pathConceptsIndent))
 		if len(m.Concepts) == 0 {
 			continue
 		}

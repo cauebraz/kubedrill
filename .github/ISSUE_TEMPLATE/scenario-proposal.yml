@@ -1,0 +1,55 @@
+name: Scenario proposal
+description: An incident, ticket or review you lived through that should become a scenario
+title: "scenario: <ticket in the reporter's words>"
+labels: [scenario]
+body:
+  - type: markdown
+    attributes:
+      value: The best scenarios come from something that happened. The ticket never names the root cause; the checks grade the end state.
+  - type: textarea
+    id: ticket
+    attributes:
+      label: The ticket, in the reporter's words
+      description: What the customer or the on-call saw. No root cause here.
+      placeholder: "checkout 0/4 ready since the 09:10 deploy; the gateway returns 502"
+    validations:
+      required: true
+  - type: textarea
+    id: causes
+    attributes:
+      label: Root causes (one per variant)
+      description: Two or three causes that produce the same ticket. Each becomes a variant.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: The observable end state the checks will grade (ready replicas, endpoints, a response, a field).
+    validations:
+      required: true
+  - type: dropdown
+    id: level
+    attributes:
+      label: Level
+      options: [L0, L1, L2, L3, L4, L5, L6]
+    validations:
+      required: true
+  - type: input
+    id: module
+    attributes:
+      label: Module in curriculum.yaml
+      placeholder: L1.1 Deployments and rollouts
+  - type: input
+    id: source
+    attributes:
+      label: Source (postmortem, blog post, talk), if public
+  - type: checkboxes
+    id: feasibility
+    attributes:
+      label: Feasibility
+      options:
+        - label: Runs on kind with namespaced objects only
+        - label: Needs an addon (metrics-server, gateway, kwok)
+        - label: Needs a node fault (kubedrill fault)
+        - label: I would like to write it myself

@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cart
+  namespace: {{ .Namespace }}
+  labels:
+    app: cart
+    app.kubernetes.io/part-of: shop
+spec:
+  selector:
+    app: {{ .Vars.selector_app }}
+{{- if .Vars.selector_tier }}
+    tier: {{ .Vars.selector_tier }}
+{{- end }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: {{ .Vars.target_port }}

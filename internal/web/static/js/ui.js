@@ -2,6 +2,9 @@
 
 import { el, svg, icons } from "./dom.js";
 
+// REPO is the public repository; every screen that names the source links it.
+export const REPO = "https://github.com/cauebraz/kubedrill";
+
 export const STAGES = [
   { id: "meeting", label: "Meet the customer", sub: "Gather the requirements" },
   { id: "quiz", label: "Check understanding", sub: "Answer the mentor" },

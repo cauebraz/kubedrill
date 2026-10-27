@@ -1,0 +1,27 @@
+[scenario]
+id = "004-wrong-namespace"
+title = "Catalog copied into the shop namespace, storefront cannot reach it"
+level = "L0"
+module = "L0.1"
+type = "break-fix"
+minutes = 10
+namespace = "shop"
+exam = ["CKA:troubleshooting"]
+concepts = ["labels-and-selectors", "readiness-and-endpoints", "troubleshooting-loop"]
+fix_targets = ["apps/deployments/catalog", "core/services/catalog"]
+images = ["nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10"]
+
+[[variant]]
+name = "stray-deployment"
+vars = { deploy_name = "catalog-shop-tmp", app_label = "catalog-tmp", selector = "catalog", target_port = "80" }
+root_cause = "The catalog Deployment landed in the namespace as catalog-shop-tmp with pods labeled app.kubernetes.io/name=catalog-tmp, so Service catalog, which selects app.kubernetes.io/name=catalog, has no endpoints and refuses every connection."
+
+[[variant]]
+name = "selector-old-value"
+vars = { deploy_name = "catalog", app_label = "catalog", selector = "catalog-api", target_port = "80" }
+root_cause = "Service catalog selects app.kubernetes.io/name=catalog-api, the label of the old namespace, while the catalog pods carry app.kubernetes.io/name=catalog, so the EndpointSlice is empty and every connection is refused."
+
+[[variant]]
+name = "stale-target-port"
+vars = { deploy_name = "catalog", app_label = "catalog", selector = "catalog", target_port = "8080" }
+root_cause = "Service catalog forwards port 80 to targetPort 8080, the port the catalog used in the old namespace, while the nginx container listens on 80, so every connection through the Service is refused by the pod."

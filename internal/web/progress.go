@@ -29,11 +29,12 @@ type StageResult struct {
 	At    time.Time `json:"at,omitzero"`
 }
 
-// progressFile is the on-disk shape: progress per scenario and the stage of
-// each episode the workspace started.
+// progressFile is the on-disk shape: progress per scenario, the stage of
+// each episode the workspace started and when the welcome flow was done.
 type progressFile struct {
 	Assignments map[string]StageProgress `json:"assignments"`
 	Episodes    map[string]Stage         `json:"episodes"`
+	Onboarded   time.Time                `json:"onboarded,omitzero"`
 }
 
 // progressStore reads and writes the progress file on every call; the
@@ -85,6 +86,22 @@ func (p *progressStore) save(f progressFile) error {
 func (p *progressStore) all() map[string]StageProgress {
 	f, _ := p.load()
 	return f.Assignments
+}
+
+// onboarded reports whether the welcome flow was completed or skipped.
+func (p *progressStore) onboarded() bool {
+	f, _ := p.load()
+	return !f.Onboarded.IsZero()
+}
+
+// onboard records the welcome flow as done.
+func (p *progressStore) onboard() error {
+	f, err := p.load()
+	if err != nil {
+		return err
+	}
+	f.Onboarded = p.now().UTC()
+	return p.save(f)
 }
 
 func (p *progressStore) stageOf(episodeID string) Stage {

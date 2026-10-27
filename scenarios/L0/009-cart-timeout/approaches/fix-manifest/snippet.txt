@@ -1,0 +1,5 @@
+mkdir -p cart && kubectl -n {{ .Namespace }} get svc cart -o yaml > cart/service.yaml
+vi cart/service.yaml
+kubectl -n {{ .Namespace }} diff -f cart/service.yaml
+kubectl -n {{ .Namespace }} apply -f cart/service.yaml
+kubectl -n {{ .Namespace }} get endpointslices -l kubernetes.io/service-name=cart

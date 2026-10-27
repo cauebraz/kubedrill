@@ -1,0 +1,248 @@
+customer:
+  name: Priya
+  role: Marketing site team lead
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Ask me for a hint whenever you are
+    stuck: each hint goes one step further, from where to look to what to
+    change, and the last one waits until you name a cause.
+
+meeting:
+  opening: >-
+    Thanks for looking at this. I changed the promo banner this morning and
+    the site still shows the old one. The cluster says my change is there,
+    so I do not understand what is going on. Where do you want to start?
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What exactly did you change, where, and when?
+          reply: >-
+            About twenty minutes ago I set the key banner of ConfigMap
+            {{ .Vars.edited }} to Winter sale 2026, the way our runbook says.
+            Nothing else changed today.
+          feedback: >-
+            Good first question. The change is the lead: you now know the
+            object, the key, the new value and the time, and you can compare
+            each of them with what the pods hold.
+          best: true
+          fact: "Twenty minutes ago the key banner of ConfigMap {{ .Vars.edited }} was set to Winter sale 2026; nothing else changed."
+        - say: Can you edit the ConfigMap again, maybe the save did not go through?
+          reply: >-
+            I did, twice. kubectl get shows Winter sale 2026 every time.
+          feedback: >-
+            Repeating a write that the API already confirms adds nothing.
+            Ask what was changed and when, then check what the pods read.
+        - say: Did you restart the pods after the change?
+          reply: >-
+            No. The runbook says the ConfigMap is picked up automatically,
+            and the pods look healthy, so I did not touch them.
+          feedback: >-
+            A fair question, but it jumps to a fix before you know the route
+            the value takes. Start with what changed, where and when.
+    - prompt: You need the exact symptom. What do you ask?
+      choices:
+        - say: What does the page show, and from where did you check it?
+          reply: >-
+            Summer sale 2025, the old text. I reloaded from two browsers and
+            curled http://banner.{{ .Namespace }}.svc from another pod in the
+            cluster, same answer every time.
+          feedback: >-
+            Precise symptoms split the causes. A curl from inside the cluster
+            rules out the browser cache and the edge: the pods themselves
+            serve the old text.
+          best: true
+          fact: "The pods themselves serve Summer sale 2025: a curl of the Service from inside the cluster returns the old text."
+        - say: Is the CDN caching the old page?
+          reply: >-
+            We thought so too, so we curled the Service from inside the
+            cluster. Still the old text, so it is not the CDN.
+          feedback: >-
+            A reasonable suspicion, and the reporter already tested it. Ask
+            what the page shows and from where it was checked.
+        - say: Are the pods crashing?
+          reply: >-
+            No. Both are Running, 1/1 Ready, zero restarts, and the logs are
+            quiet.
+          feedback: >-
+            Useful to rule out, and it does: the pods are healthy and serve
+            the old text. The symptom is a stale value, not a failure.
+    - prompt: Find out how the banner reaches the page.
+      choices:
+        - say: How does the banner container get the text from the ConfigMap?
+          reply: >-
+            I am not sure. The Deployment was set up by someone who left;
+            nginx serves one file, index.html, and the text comes from the
+            ConfigMap somehow. The Deployment YAML would say.
+          feedback: >-
+            This is the question that decides the fix. An env var is read
+            once at start, a whole-ConfigMap volume is refreshed, a subPath
+            mount never is, and a volume can name a different ConfigMap.
+            The pod template answers it.
+          best: true
+          fact: "nginx serves /usr/share/nginx/html/index.html; how the text gets there from the ConfigMap is in the Deployment's pod template."
+        - say: Which nginx version runs in the pods?
+          reply: >-
+            nginx 1.27-alpine, the same as everywhere else. It has not
+            changed in months.
+          feedback: >-
+            The version did not change and the page is a static file; the
+            route from the ConfigMap to that file is what matters.
+    - prompt: Agree on what done means before you touch anything.
+      choices:
+        - say: What does fixed look like, and is there anything I must keep?
+          reply: >-
+            The page says Winter sale 2026 on every reload, both pods ready,
+            and the Deployment, Service and ConfigMap names stay as they are.
+            Do not delete the namespace.
+          feedback: >-
+            "On every reload" is the detail that matters: the Service
+            balances over both pods, so one stale pod still fails the
+            customer.
+          best: true
+          fact: "Done: the page says Winter sale 2026 on every reload, 2 ready pods; keep the names and the namespace."
+        - say: Can I delete the Deployment and recreate it from scratch?
+          reply: >-
+            Please do not. The Deployment carries labels and settings we
+            would have to reconstruct, and the site would be down meanwhile.
+          feedback: >-
+            Recreating destroys evidence and causes an outage for a problem
+            that a smaller change fixes. Ask what done looks like and what to
+            keep.
+  closing: >-
+    That is everything I know. Ping me when the winter banner shows on every
+    reload.
+
+diagram:
+  nodes:
+    - id: configmap
+      label: ConfigMap {{ .Vars.edited }}
+      note: key banner holds the text; this is the object the team edited
+    - id: deploy
+      label: Deployment banner
+      note: the pod template says how the container gets the value
+    - id: pods
+      label: Pods x2
+      note: container web, nginx serving index.html
+    - id: service
+      label: Service banner
+      note: each request goes to one of the two pods
+    - id: users
+      label: Visitors
+      note: read whatever the pod they hit holds
+  edges:
+    - from: configmap
+      to: pods
+      label: env var, volume or subPath
+    - from: deploy
+      to: pods
+      label: creates from the template
+    - from: service
+      to: pods
+      label: balances
+    - from: users
+      to: service
+      label: requests
+
+quiz:
+  - question: A container reads a ConfigMap key through an env var. The ConfigMap is edited. When does the container see the new value?
+    choices:
+      - text: Only after the container is replaced, because env vars are resolved once at start.
+        correct: true
+        explain: >-
+          The kubelet resolves configMapKeyRef when it creates the container.
+          A running process keeps the environment it was started with.
+      - text: Within about a minute, when the kubelet syncs the pod.
+        explain: >-
+          That is the behavior of a whole-ConfigMap volume. Env vars are not
+          refreshed.
+      - text: Immediately, because the API server pushes the change.
+        explain: >-
+          The API server stores the value; nothing pushes it into a running
+          process.
+  - question: Which mount of a ConfigMap is never refreshed after an edit?
+    choices:
+      - text: A subPath mount of one key as one file.
+        correct: true
+        explain: >-
+          A subPath is a bind mount of the file as it was at pod creation.
+          The kubelet refreshes the whole-ConfigMap directory, not the
+          subPath.
+      - text: A read-only mount of the whole ConfigMap.
+        explain: >-
+          Read-only does not stop refreshes; the kubelet swaps a symlink
+          inside the volume and the files change under the mount.
+      - text: Any mount, ConfigMap volumes are immutable.
+        explain: >-
+          Only a ConfigMap with immutable: true is frozen, and then the edit
+          itself is refused.
+  - question: kubectl get configmap shows the new value and the page shows the old one. What is the next read?
+    choices:
+      - text: kubectl exec into a pod and print the env and the served file.
+        correct: true
+        explain: >-
+          The API and the container are two different places. exec shows
+          what the container holds, which is what the page is made of.
+      - text: kubectl edit the ConfigMap again to make sure it saved.
+        explain: >-
+          get already proved the save. Writing again does not reach a
+          container that read the value once.
+      - text: kubectl logs of the pods for an error.
+        explain: >-
+          A stale value is not an error; nginx serves the file it has. The
+          logs are quiet, as the ticket says.
+
+guide:
+  - title: List the pods
+    body: >-
+      The workstation shell already points at the episode namespace. Both
+      pods are Running and 1/1 Ready, and their AGE is older than the edit,
+      so they could only have read the old text when they started.
+    command: kubectl get pods
+  - title: Read what the API holds
+    body: >-
+      Read the names of the ConfigMaps and find the key banner in each one.
+      The one the team edited says Winter sale 2026. This is the value the
+      ticket trusted.
+    command: kubectl get configmaps -o yaml
+  - title: Read what one container holds
+    body: >-
+      deploy/banner picks one pod of the Deployment, so no pod name is
+      needed. The line BANNER_TEXT=Summer sale 2025 means the text arrived
+      as an env var, and the container still holds the value it was given
+      at start.
+    command: kubectl exec deploy/banner -- env
+  - title: Read the file nginx serves
+    body: >-
+      The page is this file. Summer sale 2025 here means the page itself is
+      stale, whichever route brought the text in.
+    command: kubectl exec deploy/banner -- cat /usr/share/nginx/html/index.html
+  - title: Read the route in the pod template
+    body: >-
+      Under spec.template.spec, find how the container gets the value: env
+      with configMapKeyRef (read once at start), a volumeMounts entry with
+      subPath (never refreshed), or a volume naming a different ConfigMap
+      than the edited one.
+    command: kubectl get deployment banner -o yaml
+  - title: Replace the pods
+    body: >-
+      In this run the text comes through an env var, so the running
+      containers cannot pick it up. A rollout restart stamps the pod
+      template, and the Deployment replaces the pods with ones that read
+      the ConfigMap now, after the edit.
+    command: kubectl rollout restart deployment/banner
+  - title: Watch the rollout finish
+    body: >-
+      rollout status waits until the new pods are Ready and the old ones are
+      gone. Two fresh pods, both reading the new value, is what "on every
+      reload" needs.
+    command: kubectl rollout status deployment/banner
+    check: ready-replicas
+  - title: Verify what a new pod serves
+    body: >-
+      Print the served file from a new pod. Winter sale 2026 here is the
+      fact the ticket asked for. Then press Validate: the grader requests
+      the page through the Service and asks every running pod.
+    command: kubectl exec deploy/banner -- cat /usr/share/nginx/html/index.html
+    check: page-served

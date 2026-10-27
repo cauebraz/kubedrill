@@ -1,0 +1,219 @@
+customer:
+  name: Priya
+  role: Orders team lead
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Ask me for a hint whenever you are
+    stuck: each hint goes one step further, from where to look to what to
+    change, and the last one waits until you name a cause.
+
+meeting:
+  opening: >-
+    Thanks for taking this. We put an autoscaler on api last sprint, and in
+    yesterday's load test it did nothing: one pod for twenty minutes while
+    latency climbed. Where do you want to start?
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What exactly does the autoscaler show when you look at it?
+          reply: >-
+            kubectl get hpa says <unknown>/50% under TARGETS, and REPLICAS
+            never changed during the test.
+          feedback: >-
+            Good first question. <unknown> is precise: the HPA has no current
+            value to compare with 50%, so the problem sits in the chain that
+            produces that value, not in the load test or the threshold.
+          best: true
+          fact: "kubectl get hpa api shows <unknown>/50% under TARGETS and the replica count never moved."
+        - say: Should we lower the target to 20% so it scales sooner?
+          reply: >-
+            We thought about it, but the load test pushed CPU way past 50%
+            and nothing happened at all.
+          feedback: >-
+            A threshold matters only when the HPA has a value to compare with
+            it. Ask what the HPA shows before tuning its rule.
+        - say: Can you scale api to 4 replicas by hand for now?
+          reply: >-
+            We can for the next test, but then we are the autoscaler. We want
+            it to work on its own.
+          feedback: >-
+            A manual scale-up is a fair mitigation during an outage, but there
+            is no outage now, and it hides the symptom you need to read.
+    - prompt: Find out which pieces are in place.
+      choices:
+        - say: Does kubectl top pods print numbers for the api pods?
+          reply: >-
+            Yes, metrics-server is installed and kubectl top pods shows CPU
+            and memory for api.
+          feedback: >-
+            This rules out one link: metrics-server measures the pods. What is
+            left is how the HPA finds the pods and what it divides their
+            usage by.
+          best: true
+          fact: metrics-server works; kubectl top pods prints usage for api.
+        - say: Is the cluster out of nodes to place new pods on?
+          reply: >-
+            No idea, but the HPA never even asked for a second pod. REPLICAS
+            stayed the same.
+          feedback: >-
+            Capacity matters after the HPA decides to add pods. Here it never
+            decided, so look at what feeds its decision.
+    - prompt: Find out what the HPA should do.
+      choices:
+        - say: Which resource should api scale on, and what limits must stay?
+          reply: >-
+            CPU, at 50% of the request, between 1 and 4 pods. That is how we
+            sized it; we do not want memory-based scaling.
+          feedback: >-
+            Now you have the reference to compare the HPA spec against: the
+            metric, the target and the range the team asked for.
+          best: true
+          fact: "api must scale on CPU at 50% average utilization, between 1 and 4 pods."
+        - say: Which version of nginx does api run?
+          reply: >-
+            nginx 1.27-alpine, same as always. The pod runs fine and answers.
+          feedback: >-
+            The pod is healthy; the image does not feed the HPA decision. Ask
+            what the autoscaler is supposed to watch.
+    - prompt: Agree on what done means before you touch anything.
+      choices:
+        - say: What does "fixed" look like for you, and what must I keep?
+          reply: >-
+            The HPA shows a real CPU percentage instead of unknown and is
+            ready to scale. Keep the names, the 50% target and the 1 to 4
+            range, and do not delete the namespace.
+          feedback: >-
+            Agreeing on the end state lets you verify the way the team will:
+            a number under TARGETS, not a changed field.
+          best: true
+          fact: "Done: the HPA targets Deployment api on CPU, ScalingActive True, a current value under TARGETS; keep the names, the 50% target and the range."
+        - say: Can I delete the HPA and create a new one with kubectl autoscale?
+          reply: >-
+            I would rather you did not. We want to know what was wrong with
+            ours, otherwise the next one we write will have the same problem.
+          feedback: >-
+            Recreating discards the evidence of what was wrong. Ask what done
+            looks like and fix the object in place.
+  closing: >-
+    That is all I know. Ping me when the HPA shows a number and we will rerun
+    the load test.
+
+diagram:
+  nodes:
+    - id: hpa
+      label: HPA api
+      note: target 50% CPU utilization, 1 to 4 pods
+    - id: deploy
+      label: Deployment api
+      note: named by scaleTargetRef
+    - id: pods
+      label: Pods
+      note: every container needs a request for the metric's resource
+    - id: metrics
+      label: metrics-server
+      note: measures pod usage
+    - id: value
+      label: usage / request
+      note: the current utilization, or <unknown>
+  edges:
+    - from: hpa
+      to: deploy
+      label: scaleTargetRef
+    - from: deploy
+      to: pods
+      label: creates, with requests
+    - from: metrics
+      to: pods
+      label: measures usage
+    - from: pods
+      to: value
+      label: usage and request
+    - from: value
+      to: hpa
+      label: compared with 50%
+
+quiz:
+  - question: A container uses 30m CPU and requests 50m. What CPU utilization does the HPA see?
+    choices:
+      - text: 60%, usage divided by request.
+        correct: true
+        explain: >-
+          Resource utilization in an HPA is always relative to the container
+          request, so 30m of 50m is 60%, above a 50% target.
+      - text: 3%, usage divided by one CPU core.
+        explain: >-
+          That is the share of a core, which kubectl top reports as 30m. The
+          HPA divides by the request, not by the node's capacity.
+      - text: It cannot tell without a CPU limit.
+        explain: >-
+          Limits play no part in utilization. The HPA needs a request; a
+          container with only a limit gets a request equal to it by default.
+  - question: kubectl top pods prints numbers but the HPA shows <unknown>. What does that rule out?
+    choices:
+      - text: metrics-server, because it measures the pods; the break is in the target or the requests.
+        correct: true
+        explain: >-
+          top reads the same metrics API the HPA reads. When it works, look at
+          scaleTargetRef and at the requests the HPA divides by.
+      - text: Nothing, top and the HPA use different metrics.
+        explain: >-
+          Both read the resource metrics API that metrics-server serves, so a
+          working top proves the usage numbers exist.
+      - text: The HPA object, so the pods must be broken.
+        explain: >-
+          The pods can be healthy while the HPA is blind: a missing request or
+          a wrong target breaks the HPA without touching the pods.
+  - question: Where does a missing CPU request get fixed?
+    choices:
+      - text: In the Deployment's pod template, container api, so every new pod carries it.
+        correct: true
+        explain: >-
+          Requests live in the pod spec, which the pods copy from the
+          Deployment template; the change rolls out a new pod.
+      - text: In the HPA, by adding the request to its metric.
+        explain: >-
+          The HPA has no field for requests; it reads them from the pods it
+          finds through scaleTargetRef.
+      - text: On the running pod, with kubectl edit pod.
+        explain: >-
+          The next pod the Deployment creates comes from the template without
+          the request, and the HPA is blind again.
+
+guide:
+  - title: Read the HPA
+    body: >-
+      The workstation shell already points at the episode namespace. Read the
+      REFERENCE column (the object the HPA resizes) and TARGETS, where
+      <unknown> means the controller has no current value.
+    command: kubectl get hpa api
+  - title: Read the conditions and events
+    body: >-
+      describe prints the controller's verdict. ScalingActive False with
+      "missing request for cpu in container api" says the HPA cannot divide
+      the usage by anything.
+    command: kubectl describe hpa api
+  - title: Print the container requests
+    body: >-
+      Utilization is usage divided by request. The container requests memory
+      only, so CPU utilization has no denominator.
+    command: kubectl get deployment api -o jsonpath='{.spec.template.spec.containers[*].resources}'
+  - title: Add a CPU request
+    body: >-
+      Change one thing: give container api a CPU request in the Deployment's
+      pod template. The Deployment rolls out a new pod that carries it.
+    command: kubectl set resources deployment/api -c api --requests=cpu=50m
+  - title: Wait for the rollout
+    body: >-
+      rollout status returns once the new pod is Ready. The deployment check
+      turns green.
+    command: kubectl rollout status deployment/api
+    check: deploy-ready
+  - title: Watch TARGETS turn into a number
+    body: >-
+      metrics-server needs up to a minute to measure the new pod. When TARGETS
+      shows a percentage, stop the watch with Ctrl-C and press Validate to
+      grade the assignment.
+    command: kubectl get hpa api --watch
+    check: current-metric

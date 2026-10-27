@@ -1,0 +1,3 @@
+kubectl -n {{ .Namespace }} get svc cart -o wide
+kubectl -n {{ .Namespace }} set selector svc cart app=cart
+kubectl -n {{ .Namespace }} get endpointslices -l kubernetes.io/service-name=cart

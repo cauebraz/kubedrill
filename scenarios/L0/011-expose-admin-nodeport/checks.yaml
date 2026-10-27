@@ -1,0 +1,104 @@
+checks:
+  - id: deploy-ready
+    description: deployment admin has 1 ready replica
+    why: >-
+      A Service routes only to pods whose Ready condition is true; exposing a
+      Deployment never changes it, so a ready count below 1 here means the
+      change touched the workload instead of adding a Service in front of it.
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: admin
+    path: "{.status.readyReplicas}"
+    equals: "1"
+
+  - id: svc-exists
+    description: service admin exists
+    why: >-
+      Without a Service the pod has only its own IP, which changes on every
+      restart and is not published on any node, so nothing outside the pod
+      network can reach the admin page.
+    critical: true
+    resource:
+      apiVersion: v1
+      kind: Service
+      namespace: "{{ .Namespace }}"
+      name: admin
+    exists: true
+
+  - id: svc-type
+    description: service admin is of type NodePort
+    why: >-
+      A ClusterIP Service is reachable from inside the cluster only; NodePort
+      is the type that makes kube-proxy open the port on every node, which is
+      where a client on the node network connects.
+    critical: true
+    depends_on: [svc-exists]
+    resource:
+      apiVersion: v1
+      kind: Service
+      namespace: "{{ .Namespace }}"
+      name: admin
+    path: "{.spec.type}"
+    equals: NodePort
+
+  - id: svc-nodeport
+    description: service admin publishes nodePort 30080
+    why: >-
+      Without an explicit nodePort the API server picks a random port in
+      30000-32767, and the laptop that was told 30080 keeps getting
+      connection refused while the Service looks healthy.
+    depends_on: [svc-type]
+    weight: 2
+    resource:
+      apiVersion: v1
+      kind: Service
+      namespace: "{{ .Namespace }}"
+      name: admin
+    path: "{.spec.ports[0].nodePort}"
+    equals: "30080"
+
+  - id: svc-endpoint
+    description: service admin has exactly one ready endpoint, the pod of deployment admin
+    why: >-
+      The selector is the only link between the Service and its pods; a
+      selector that matches no pod gives connection refused, and one that also
+      matches another pod sends part of the requests to the wrong build.
+    depends_on: [svc-exists, deploy-ready]
+    weight: 2
+    resource:
+      apiVersion: discovery.k8s.io/v1
+      kind: EndpointSlice
+      namespace: "{{ .Namespace }}"
+      selector: kubernetes.io/service-name=admin
+    path: "{.items[*].endpoints[?(@.conditions.ready==true)].targetRef.name}"
+    matches: "^admin-[a-z0-9]+-[a-z0-9]+$"
+
+  - id: page-via-nodeport
+    description: a client on the cluster network gets the ACME Admin 3.2.0 page from http://<node-ip>:30080/
+    why: >-
+      A ready endpoint proves the selector matched a Ready pod, not that the
+      request arrives; the targetPort must be the port the container listens
+      on, and a NodePort request walks the whole path the laptop uses.
+    depends_on: [svc-nodeport, svc-endpoint]
+    weight: 2
+    script: |
+      set -u
+      ip=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+      [ -n "$ip" ] || { echo "no node with an InternalIP found"; exit 1; }
+      pod="kubedrill-qa-laptop-$SEED-$$"
+      kubectl -n "$TASK_NS" run "$pod" --restart=Never --image=curlimages/curl:8.14.1@sha256:9a1ed35addb45476afa911696297f8e115993df459278ed036182dd2cd22b67b -- curl -fsS -m 5 "http://$ip:30080/" >/dev/null
+      phase=""
+      i=0
+      while [ "$i" -lt 20 ]; do
+        phase=$(kubectl -n "$TASK_NS" get pod "$pod" -o jsonpath='{.status.phase}')
+        case "$phase" in Succeeded|Failed) break ;; esac
+        sleep 1
+        i=$((i + 1))
+      done
+      echo "GET http://$ip:30080/ from pod $pod on the cluster network: phase $phase after ${i}s"
+      kubectl -n "$TASK_NS" logs "$pod"
+      kubectl -n "$TASK_NS" delete pod "$pod" --wait=false >/dev/null
+      [ "$phase" = Succeeded ]
+    contains: "ACME Admin 3.2.0"

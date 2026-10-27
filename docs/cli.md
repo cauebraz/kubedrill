@@ -46,6 +46,7 @@ Conventions shared by every command:
 |---------|---------|---------------|
 | **Browser workspace** | | |
 | [`web`](#web) | Doctor, `up`, then the workspace on `127.0.0.1` | yes (creates it) |
+| [`pack`](#pack) | Add, list or remove scenario packs from other repositories | no |
 | **Learner loop** | | |
 | [`start`](#start) | Start a scenario in a fresh namespace and open the workstation | yes (checked first) |
 | [`ticket`](#ticket) | Print the ticket again | no |
@@ -132,7 +133,8 @@ Screens:
 
 | Screen | What it shows |
 |--------|---------------|
-| Home | A Continue card (the live run with its namespace and elapsed time, or the assignment `kubedrill list` recommends with its reason, or "all caught up"), the plans in progress, and links to the catalog and the exams. A profile line counts completed assignments, badges, reviews due and planned assignments |
+| Welcome | The first visit of a journal: the five steps of the troubleshooting loop, each on a worked ticket with one pick and the reason the step exists, then the way into the workspace. Every other route redirects here until it is finished or skipped (`POST /api/onboarded`, stored in `web-progress.json`); `--preview` skips it, and Home links it again as "How kubedrill works" |
+| Home | A Continue card (the live run with its namespace and elapsed time, or the assignment `kubedrill list` recommends with its reason, or "all caught up"), the plans in progress, and links to the catalog, the exams and the GitHub repository. A profile line counts completed assignments, badges, reviews due and planned assignments |
 | Catalog | Every level and plan, with search (title, id, plan, concept) and filters for level, status (not started, active, solved, mastered, DIY passed), exam domain and concept. The filters live in the URL. A level with nothing written yet collapses to one line with its planned count. An assignment whose `requires` are not solved shows a lock and stays open |
 | Exams | Each exam domain with its weight, the assignments that train it and how many are solved |
 | Assignment | The stages below, with the concept pages as chips (each opens in a drawer) and the mastery meter |
@@ -146,7 +148,7 @@ An assignment walks through six stages, plus the exam rehearsal:
 | Learn the pieces | The object diagram of `simulation.yaml`, `story.md`, the ticket and the concept pages as tabs | read |
 | Guided practice | `start` on the first variant; the steps beside a terminal into the workstation, the live checks and a timer | passed |
 | Do it yourself | `start` on another variant at random, the ticket and the story instead of the steps, the mentor | passed |
-| Exam rehearsal | `start` on a random variant in a time box, the ticket and a terminal, no hints, guide or live checks; one Submit grades it (see [Exam mode](#exam-mode)) | best passing score |
+| Exam rehearsal | `start` on a random variant in a time box, the ticket and a terminal, no hints, guide or live checks; one Submit grades it (see [Exam mode](#exam-mode)) | passed |
 | Result | The badge, the stage results with redo links, and the mastery rule with the learner's numbers | - |
 
 Launching a run:
@@ -182,8 +184,13 @@ In the lab:
 - A failing Validate lists every check with expected, actual and `why`; in
   a DIY run it adds that the cause differs from the practice run. A passing
   one opens the debrief.
+- A run that ends outside the page (`kubedrill check` passing in the
+  terminal, a reset) sends the page to its debrief; reading the debrief of
+  a solved run records its stage.
 
-The debrief of a passed run is `kubedrill debrief` on the page: the
+The debrief of an ended run is `kubedrill debrief` on the page (the API
+refuses one of a running episode, so it never shows the walkthrough
+early): the
 duration against the expected minutes, the hints, the learner's diagnosis
 next to the variant's `root_cause`, the trajectory from telemetry (verdict,
 observations before the first change, the first change and whether it hit
@@ -195,8 +202,9 @@ Keyboard (`?` lists the shortcuts of the current screen):
 
 | Keys | Where | Action |
 |------|-------|--------|
+| `1` to `3` | welcome | pick an answer |
 | `1` to `9` | meeting, quiz | pick an option |
-| `Enter` | home, meeting, quiz, learn, launch, result | the screen's main action |
+| `Enter` | welcome, home, meeting, quiz, learn, launch, result | the screen's main action |
 | `/` | catalog | focus the search |
 | `c` | home | open the catalog |
 | `Cmd`/`Ctrl` `Enter` | lab, debrief | validate (submit in an exam), save the debrief |
@@ -214,8 +222,9 @@ Storage:
   `kubedrill-web-<8 hex>`. Closing the tab kills the docker client and runs
   `docker rm -f` on the container.
 - Stage progress lives in `web-progress.json` in the journal directory
-  (`assignments` per scenario id and the stage of each episode the
-  workspace started); the episodes, grades, hints, diagnoses, debriefs and
+  (`assignments` per scenario id, the stage of each episode the
+  workspace started and `onboarded`, when the welcome flow was finished
+  or skipped); the episodes, grades, hints, diagnoses, debriefs and
   telemetry are the journal's, as for every other command.
 - The browser keeps per-assignment conveniences in `localStorage`: a
   meeting or quiz in progress, the guide steps marked done, the side tab,
@@ -912,6 +921,44 @@ Inside the container:
   same episode as the page.
 - `start` inside it prints the ticket without the `kubedrill web` line.
 
+## Packs
+
+### pack
+
+```
+kubedrill pack add <directory|git url> [--ref <tag|branch|commit>] [--allow-privileged] [--yes|-y]
+kubedrill pack list
+kubedrill pack remove <name> [--yes|-y]
+```
+
+A pack is a directory or git repository with a `pack.yaml` and a
+`scenarios/<level>/<id>/` tree in the format of this repository
+([scenario-format.md](scenario-format.md#packs)). `pack add`:
+
+1. Copies a directory, or clones a git url (`--ref` pins a tag, branch or
+   commit; the default is the default branch head) into a staging
+   directory under `<journal>/packs/` and removes `.git`; the commit is
+   recorded.
+2. Loads `pack.yaml` and every scenario, and lints them as `kubedrill
+   lint` would (format, sandbox rules, every scenario listed in a module
+   and every listed scenario present). A scenario id already in the
+   catalog is refused, and so is `allow_privileged = true` without
+   `--allow-privileged`.
+3. Prints the scenarios and every `*.sh` of the pack: those scripts run on
+   this machine when a scenario is set up, solved or checked. Read them.
+4. Asks `Enable pack <name>? [y/N]` (`--yes` skips), then moves the pack to
+   `<journal>/packs/<name>` with a `.kubedrill-pack.json` (source, ref,
+   commit, added_at). On no, or on any problem, the staging directory is
+   removed.
+
+An enabled pack's modules join the ladder under the level each one names,
+tagged with the pack name in `kubedrill path` and the workspace catalog; its
+scenarios appear in `kubedrill list`, `start`, `smoke` and the exam
+coverage like the repository's own. `pack list` prints name, title,
+scenario count and the pin; `pack remove` deletes the files and keeps the
+episodes in the journal. Packs live in the journal directory, so the
+workstation container sees them at `/data/packs`.
+
 ## Authoring
 
 ### lint
@@ -1009,7 +1056,8 @@ kubedrill version
 ```
 
 Prints the module version, the VCS revision (or `revision unknown (built
-from an unversioned tree)`) and the Go version.
+from an unversioned tree)`) and the Go version, then `source:
+https://github.com/cauebraz/kubedrill`.
 
 ## Next scenario
 
@@ -1097,15 +1145,20 @@ time box: the deadline is the start plus the scenario minutes.
 The page:
 
 - Shows the ticket only: no story, guide, mentor or hints.
-- Counts down `MM:SS left` and submits by itself at zero.
+- Counts down (`9:41 left`, `1h 5m left` from an hour up), announces 5
+  minutes and 1 minute left, and submits by itself at zero.
 - Runs no live checks; the checks panel says `Exam mode: the checks run
   once, when you submit`.
 - The Submit button (or Cmd/Ctrl+Enter) asks `Submit and end the exam`, then
   posts `/api/submit`, which grades once, ends the episode as solved or
   failed and opens the debrief with the outcome, the root cause and the
-  walkthrough.
-- A pass is recorded as the exam stage with the score in percent; the
-  result page shows the best one.
+  walkthrough. The focus starts on Keep working, so a stray Enter does not
+  end the exam.
+- When the exam ends elsewhere (`kubedrill submit` in the terminal, or the
+  deadline passing while the tab was in the background), the page opens
+  the debrief of that run, also on the next visit to the stage.
+- A pass is recorded as the exam stage (the Exam rehearsal passed row of
+  the result page), however the exam ended.
 
 The terminal of the page runs the workstation in exam mode
 (`KUBEDRILL_EXAM=1`, `KUBEDRILL_DEADLINE`):

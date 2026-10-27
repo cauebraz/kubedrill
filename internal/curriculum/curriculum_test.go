@@ -116,8 +116,8 @@ func TestLoadRealCurriculum(t *testing.T) {
 	if ts == nil {
 		t.Fatal("CKA coverage: troubleshooting domain missing")
 	}
-	if len(ts.Scenarios) != 1 || ts.Scenarios[0] != "001-storefront-down" || ts.Done != 1 {
-		t.Fatalf("troubleshooting coverage: got %+v, want [001-storefront-down] done 1", ts)
+	if len(ts.Scenarios) == 0 || ts.Scenarios[0] != "001-storefront-down" || ts.Done != 1 {
+		t.Fatalf("troubleshooting coverage: got %+v, want 001-storefront-down first and done 1", ts)
 	}
 }
 
@@ -442,5 +442,42 @@ levels:
 
 	if _, err := c.ExamCoverage("LPIC", solved); !errors.Is(err, ErrUnknownExam) {
 		t.Fatalf("ExamCoverage unknown: got %v, want ErrUnknownExam", err)
+	}
+}
+
+func TestMerge(t *testing.T) {
+	base := func() *Curriculum {
+		return &Curriculum{Levels: []Level{{ID: "L0", Modules: []Module{{ID: "L0.1", Scenarios: []PlannedScenario{{ID: "001-a"}}}}}}}
+	}
+	mod := func(id, sc string) Module { return Module{ID: id, Scenarios: []PlannedScenario{{ID: sc}}} }
+	cases := []struct {
+		name  string
+		level string
+		mods  []Module
+		want  string
+	}{
+		{"adds to the level", "L0", []Module{mod("L0.pack", "101-b")}, ""},
+		{"unknown level", "L9", []Module{mod("L9.pack", "101-b")}, `level "L9" is not in the curriculum`},
+		{"module outside the level", "L0", []Module{mod("L1.pack", "101-b")}, "must start with L0."},
+		{"module id taken", "L0", []Module{mod("L0.1", "101-b")}, "already in the ladder"},
+		{"scenario listed elsewhere", "L0", []Module{mod("L0.pack", "001-a")}, "already listed in module L0.1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := base()
+			err := c.Merge(tc.level, "p", tc.mods)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("Merge: %v", err)
+				}
+				if m := c.Levels[0].Modules; len(m) != 2 || m[1].Pack != "p" || m[1].ID != "L0.pack" {
+					t.Errorf("modules after merge: %+v", m)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("Merge: got %v, want %q", err, tc.want)
+			}
+		})
 	}
 }

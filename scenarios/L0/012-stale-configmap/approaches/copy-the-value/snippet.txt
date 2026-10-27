@@ -1,0 +1,2 @@
+kubectl -n {{ .Namespace }} patch configmap banner-config --type merge -p '{"data":{"banner":"Winter sale 2026"}}'
+kubectl -n {{ .Namespace }} exec deploy/banner -- cat /usr/share/nginx/html/index.html

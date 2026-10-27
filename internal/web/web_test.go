@@ -452,3 +452,76 @@ func TestHintErrorIsABadRequest(t *testing.T) {
 		t.Errorf("hint error: got %d, want 400", code)
 	}
 }
+
+func TestExamSubmitRecordsOnlyAPass(t *testing.T) {
+	examDone := func(c *client) bool {
+		var cat web.Catalog
+		c.json("GET", "/api/catalog", "", &cat)
+		return cat.Levels[0].Modules[0].Assignments[0].Progress.Exam.Done
+	}
+	f := newFake()
+	c := newClient(t, f)
+	if code := c.json("POST", "/api/submit", "", nil); code != 400 {
+		t.Errorf("submit without an exam: got %d, want 400", code)
+	}
+	c.start(`{"id":"001","stage":"exam"}`)
+	var v web.Validation
+	if code := c.json("POST", "/api/submit", "", &v); code != 200 || v.Passed || v.Outcome != "failed" {
+		t.Fatalf("failing submit: got %d %+v", code, v)
+	}
+	if examDone(c) {
+		t.Error("exam recorded after a failed submit")
+	}
+	c.start(`{"id":"001","stage":"exam"}`)
+	f.Fix()
+	if code := c.json("POST", "/api/submit", "", &v); code != 200 || !v.Passed || v.Outcome != "solved" {
+		t.Fatalf("passing submit: got %d %+v", code, v)
+	}
+	if !examDone(c) {
+		t.Error("exam not recorded after a passing submit")
+	}
+}
+
+func TestDebriefRecordsARunEndedOutsideThePage(t *testing.T) {
+	f := newFake()
+	c := newClient(t, f)
+	_, sess, _, _ := c.start(`{"id":"001","stage":"exam"}`)
+	id := sess.Active.EpisodeID
+	if code := c.json("GET", "/api/debrief/"+id, "", nil); code != 400 {
+		t.Errorf("debrief of a running exam: got %d, want 400", code)
+	}
+	f.Fix()
+	f.Finish()
+	var d web.Debrief
+	if code := c.json("GET", "/api/debrief/"+id, "", &d); code != 200 || d.Outcome != "solved" || d.Stage != web.StageExam {
+		t.Fatalf("debrief: got %d %+v", code, d)
+	}
+	var cat web.Catalog
+	c.json("GET", "/api/catalog", "", &cat)
+	if p := cat.Levels[0].Modules[0].Assignments[0].Progress; !p.Exam.Done {
+		t.Errorf("exam progress after a solve outside the page: got %+v", p.Exam)
+	}
+}
+
+func TestWelcomeGate(t *testing.T) {
+	c := newClient(t, newFake())
+	var m struct {
+		Onboarded bool `json:"onboarded"`
+	}
+	if code := c.json("GET", "/api/meta", "", &m); code != 200 || m.Onboarded {
+		t.Fatalf("meta before the welcome flow: got %d onboarded=%v, want false", code, m.Onboarded)
+	}
+	if code := c.json("POST", "/api/onboarded", "", nil); code != 200 {
+		t.Fatalf("onboarded: got %d", code)
+	}
+	if c.json("GET", "/api/meta", "", &m); !m.Onboarded {
+		t.Error("meta after the welcome flow: onboarded=false, want true")
+	}
+	s := web.New(web.Deps{Backend: newFake(), ProgressPath: filepath.Join(t.TempDir(), "progress.json"), Token: testToken, Preview: "001"})
+	srv := httptest.NewServer(s.Handler())
+	t.Cleanup(srv.Close)
+	p := &client{t: t, srv: srv, cookie: &http.Cookie{Name: "kubedrill_token", Value: testToken}}
+	if p.json("GET", "/api/meta", "", &m); !m.Onboarded {
+		t.Error("meta in preview: onboarded=false, want true (no welcome flow for authors)")
+	}
+}

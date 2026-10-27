@@ -1,0 +1,2 @@
+kubectl -n {{ .Namespace }} patch deployment api --type=json -p '[{"op":"remove","path":"/spec/template/spec/initContainers"}]'
+kubectl -n {{ .Namespace }} rollout status deployment/api --timeout=120s

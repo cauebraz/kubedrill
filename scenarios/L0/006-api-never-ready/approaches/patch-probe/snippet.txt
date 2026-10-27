@@ -1,0 +1,2 @@
+kubectl -n {{ .Namespace }} patch deployment api --type=json -p='[{"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe","value":{"httpGet":{"path":"/","port":"http"},"initialDelaySeconds":2,"periodSeconds":5}}]'
+kubectl -n {{ .Namespace }} rollout status deployment/api --timeout=120s

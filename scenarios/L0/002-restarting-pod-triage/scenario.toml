@@ -1,0 +1,26 @@
+[scenario]
+id = "002-restarting-pod-triage"
+title = "One of the shop pods keeps restarting"
+level = "L0"
+module = "L0.1"
+type = "break-fix"
+minutes = 10
+namespace = "shop"
+exam = ["CKA:troubleshooting"]
+concepts = ["pod-lifecycle", "readiness-and-endpoints", "resources-and-qos", "labels-and-selectors"]
+fix_targets = ["apps/deployments/reviews"]
+
+[[variant]]
+name = "config-mount-path"
+vars = { config_mount = "/etc/review", liveness_port = "8080", memory_limit = "32Mi" }
+root_cause = "The Deployment mounts the reviews-config ConfigMap at /etc/review, so the entrypoint never finds /etc/reviews/reviews.conf, gives up after 10 seconds and exits 1; the kubelet restarts the container every time."
+
+[[variant]]
+name = "liveness-wrong-port"
+vars = { config_mount = "/etc/reviews", liveness_port = "8081", memory_limit = "32Mi" }
+root_cause = "The liveness probe of container web targets port 8081 while httpd listens on 8080, so every probe is refused and the kubelet kills a healthy container about every 35 seconds."
+
+[[variant]]
+name = "memory-limit-too-low"
+vars = { config_mount = "/etc/reviews", liveness_port = "8080", memory_limit = "10Mi" }
+root_cause = "The memory limit of container web is 10Mi while the entrypoint builds an 8 MiB cache in the shell, which needs about 20 MiB at its peak, so the kernel OOM-kills the container on every start with exit code 137."

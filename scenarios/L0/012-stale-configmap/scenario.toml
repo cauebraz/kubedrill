@@ -1,0 +1,27 @@
+[scenario]
+id = "012-stale-configmap"
+title = "App reads old config after we updated the ConfigMap"
+level = "L0"
+module = "L0.4"
+type = "break-fix"
+minutes = 10
+namespace = "marketing"
+exam = ["CKA:workloads", "CKAD:environment"]
+concepts = ["what-changed", "pod-lifecycle"]
+fix_targets = ["apps/deployments/banner", "core/configmaps/banner-config"]
+images = ["nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10"]
+
+[[variant]]
+name = "env-var"
+vars = { source = "env", edited = "banner-config" }
+root_cause = "The web container reads the key banner through the env var BANNER_TEXT, which the kubelet resolves once when the container starts, so the pods created before the edit keep Summer sale 2025 until they are replaced."
+
+[[variant]]
+name = "subpath-mount"
+vars = { source = "subpath", edited = "banner-config" }
+root_cause = "The ConfigMap is mounted with subPath: index.html, and the kubelet never refreshes a subPath mount, so the running pods keep the Summer sale 2025 file until they are replaced."
+
+[[variant]]
+name = "wrong-name"
+vars = { source = "volume", edited = "banner-config-v2" }
+root_cause = "The team edited ConfigMap banner-config-v2, but the Deployment's volume names banner-config, which still holds Summer sale 2025, so no pod reads the edit."

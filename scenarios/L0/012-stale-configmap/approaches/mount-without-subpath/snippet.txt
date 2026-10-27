@@ -1,0 +1,2 @@
+kubectl -n {{ .Namespace }} patch deployment banner --type json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/volumeMounts/0","value":{"name":"banner","mountPath":"/usr/share/nginx/html","readOnly":true}}]'
+kubectl -n {{ .Namespace }} rollout status deployment/banner --timeout=120s

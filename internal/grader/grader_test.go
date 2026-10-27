@@ -22,6 +22,8 @@ import (
 type fakeKube struct {
 	objects       map[string]*unstructured.Unstructured
 	probes        map[string]kube.ProbeResult
+	probeCalls    int
+	probeFirst    *kube.ProbeResult
 	getErr        error
 	block         bool
 	probeDeadline time.Time
@@ -81,11 +83,45 @@ func (f *fakeKube) RunProbe(ctx context.Context, ns string, probe scenario.Probe
 		<-ctx.Done()
 		return kube.ProbeResult{}, ctx.Err()
 	}
+	f.probeCalls++
+	if f.probeFirst != nil && f.probeCalls == 1 {
+		return *f.probeFirst, nil
+	}
 	pr, ok := f.probes[probe.Image]
 	if !ok {
 		return kube.ProbeResult{}, errors.New("image not found: " + probe.Image)
 	}
 	return pr, nil
+}
+
+func TestProbeRunsAgainAfterTheSettle(t *testing.T) {
+	cases := []struct {
+		name      string
+		first     *kube.ProbeResult
+		final     kube.ProbeResult
+		settle    time.Duration
+		wantCalls int
+		wantPass  bool
+	}{
+		{name: "a pass runs once", final: kube.ProbeResult{ExitCode: 0, Output: "200"}, settle: time.Millisecond, wantCalls: 1, wantPass: true},
+		{name: "a failure then a pass", first: &kube.ProbeResult{ExitCode: 7, Output: "connection refused"}, final: kube.ProbeResult{ExitCode: 0, Output: "200"}, settle: time.Millisecond, wantCalls: 2, wantPass: true},
+		{name: "a failure that stays", first: &kube.ProbeResult{ExitCode: 7}, final: kube.ProbeResult{ExitCode: 7, Output: "connection refused"}, settle: time.Millisecond, wantCalls: 2, wantPass: false},
+		{name: "no retry without a settle", first: &kube.ProbeResult{ExitCode: 7}, final: kube.ProbeResult{ExitCode: 0}, settle: 0, wantCalls: 1, wantPass: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &fakeKube{objects: map[string]*unstructured.Unstructured{}, probes: map[string]kube.ProbeResult{"img": tc.final}, probeFirst: tc.first}
+			zero := 0
+			rd := &scenario.Rendered{Namespace: "ns", Checks: []scenario.Check{{ID: "p", Probe: &scenario.Probe{Image: "img", Command: []string{"curl"}}, ExitCode: &zero}}}
+			g, err := New(f, WithProbeSettle(tc.settle)).Grade(context.Background(), rd)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if f.probeCalls != tc.wantCalls || g.Passed != tc.wantPass {
+				t.Errorf("calls %d passed %v, want %d %v (%+v)", f.probeCalls, g.Passed, tc.wantCalls, tc.wantPass, g.Results)
+			}
+		})
+	}
 }
 
 func obj(apiVersion, kind, ns, name string, labels map[string]string, spec map[string]any) *unstructured.Unstructured {

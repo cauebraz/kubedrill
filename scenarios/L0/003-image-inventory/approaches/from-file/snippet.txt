@@ -1,0 +1,3 @@
+kubectl -n {{ .Namespace }} get pods --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{range .spec.containers[*]}{.image}{"\n"}{end}{end}' | sort -u > images.txt
+kubectl -n {{ .Namespace }} create configmap inventory --from-file=images=images.txt
+kubectl -n {{ .Namespace }} get configmap inventory -o jsonpath='{.data.images}{"\n"}'

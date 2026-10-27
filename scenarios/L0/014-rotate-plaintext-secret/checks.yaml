@@ -1,0 +1,166 @@
+checks:
+  - id: secret-exists
+    description: secret payments-token exists
+    why: >-
+      Both Deployments read API_TOKEN from this Secret by name; while it is
+      missing, every new payments pod stops at CreateContainerConfigError and
+      a rollout or a node drain turns the rotation into an outage.
+    critical: true
+    resource:
+      apiVersion: v1
+      kind: Secret
+      namespace: "{{ .Namespace }}"
+      name: payments-token
+    exists: true
+
+  - id: secret-token-new
+    description: secret payments-token key token holds the new value exactly
+    why: >-
+      The payment provider compares the token byte for byte; a Secret that
+      still holds the leaked value keeps the leak alive, and one that holds
+      the new value plus a trailing newline is rejected on every call.
+    depends_on: [secret-exists]
+    weight: 2
+    script: |
+      set -o pipefail
+      want="$VAR_NEW_TOKEN"
+      got_b64=$(kubectl -n "$TASK_NS" get secret payments-token -o jsonpath='{.data.token}')
+      if [ -z "$got_b64" ]; then
+        echo "secret payments-token has no key named token"
+        exit 1
+      fi
+      decoded=$(printf '%s' "$got_b64" | base64 -d; printf x)
+      decoded=${decoded%x}
+      if [ "$decoded" = "$want" ]; then
+        echo "key token decodes to the new value"
+        exit 0
+      fi
+      if [ "$decoded" = "$want"$'\n' ]; then
+        echo "key token decodes to the new value plus a trailing newline; the file it was created from ends with one"
+        exit 1
+      fi
+      if [ "$decoded" = "$VAR_OLD_TOKEN" ]; then
+        echo "key token still decodes to the leaked value"
+        exit 1
+      fi
+      printf 'key token decodes to %q, want the new value from the ticket\n' "$decoded"
+      exit 1
+    exit_code: 0
+
+  - id: secret-labeled
+    description: secret payments-token carries the label rotated={{ .Vars.rotated }}
+    why: >-
+      Security's audit job lists Secrets by the rotated label; a rotated
+      Secret without it stays on the leaked list and the incident cannot be
+      closed.
+    depends_on: [secret-exists]
+    resource:
+      apiVersion: v1
+      kind: Secret
+      namespace: "{{ .Namespace }}"
+      name: payments-token
+    path: "{.metadata.labels.rotated}"
+    equals: "{{ .Vars.rotated }}"
+
+  - id: payments-ready
+    description: deployment payments has 2 ready replicas
+    why: >-
+      readyReplicas counts the pods that are up; a rotation that leaves the
+      API at 0 or 1 ready replica traded a leak for an outage, and a
+      Deployment whose Secret is gone never gets back to 2.
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: payments
+    path: "{.status.readyReplicas}"
+    equals: "2"
+
+  - id: payments-env-new
+    description: every running payments pod sees the new token in API_TOKEN
+    why: >-
+      A container reads its environment once, at start; a pod created before
+      the Secret changed keeps calling the provider with the leaked token
+      until it is replaced, however many times the Secret is rewritten.
+    depends_on: [secret-token-new, payments-ready]
+    weight: 2
+    script: |
+      set -o pipefail
+      want="$VAR_NEW_TOKEN"
+      live=0
+      stale=0
+      names=""
+      while read -r name phase deleted; do
+        [ -n "$name" ] || continue
+        [ "$phase" = Running ] || continue
+        [ -z "$deleted" ] || continue
+        live=$((live + 1))
+        got=$(kubectl -n "$TASK_NS" exec "$name" -c api -- printenv API_TOKEN 2>/dev/null || true)
+        if [ "$got" != "$want" ]; then
+          stale=$((stale + 1))
+          names="$names $name"
+        fi
+      done <<EOF
+      $(kubectl -n "$TASK_NS" get pods -l app.kubernetes.io/component=api -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.phase}{" "}{.metadata.deletionTimestamp}{"\n"}{end}')
+      EOF
+      if [ "$live" -eq 0 ]; then
+        echo "no running pod with label app.kubernetes.io/component=api"
+        exit 1
+      fi
+      if [ "$stale" -gt 0 ]; then
+        echo "$stale of $live running pods still see another value in API_TOKEN:$names"
+        exit 1
+      fi
+      echo "$live of $live running pods see the new token"
+    exit_code: 0
+
+  - id: worker-env-new
+    description: every running payments-worker pod sees the new token in API_TOKEN
+    why: >-
+      The worker retries failed payouts with the token it started with; a
+      worker pod left on the leaked value, or on a Secret that no longer
+      exists, fails every retry after the provider revokes the old token.
+    depends_on: [secret-token-new]
+    weight: 2
+    script: |
+      set -o pipefail
+      want="$VAR_NEW_TOKEN"
+      live=0
+      stale=0
+      names=""
+      while read -r name phase deleted; do
+        [ -n "$name" ] || continue
+        [ "$phase" = Running ] || continue
+        [ -z "$deleted" ] || continue
+        live=$((live + 1))
+        got=$(kubectl -n "$TASK_NS" exec "$name" -c worker -- printenv API_TOKEN 2>/dev/null || true)
+        if [ "$got" != "$want" ]; then
+          stale=$((stale + 1))
+          names="$names $name"
+        fi
+      done <<EOF
+      $(kubectl -n "$TASK_NS" get pods -l app.kubernetes.io/component=worker -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.phase}{" "}{.metadata.deletionTimestamp}{"\n"}{end}')
+      EOF
+      if [ "$live" -eq 0 ]; then
+        echo "no running pod with label app.kubernetes.io/component=worker"
+        exit 1
+      fi
+      if [ "$stale" -gt 0 ]; then
+        echo "$stale of $live running pods still see another value in API_TOKEN:$names"
+        exit 1
+      fi
+      echo "$live of $live running pods see the new token"
+    exit_code: 0
+
+  - id: old-copy-gone
+    description: secret payments-token-old does not exist
+    why: >-
+      A copy of a leaked token is the leak with another name; anyone who can
+      read the namespace can still use it, and the audit counts the token as
+      live until every copy is gone.
+    resource:
+      apiVersion: v1
+      kind: Secret
+      namespace: "{{ .Namespace }}"
+      name: payments-token-old
+    exists: false

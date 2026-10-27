@@ -1,0 +1,3 @@
+kubectl -n {{ .Namespace }} patch limitrange namespace-defaults --type=json -p '[{"op":"replace","path":"/spec/limits/0/default/memory","value":"128Mi"},{"op":"replace","path":"/spec/limits/0/defaultRequest/memory","value":"64Mi"}]'
+kubectl -n {{ .Namespace }} rollout restart deployment/report
+kubectl -n {{ .Namespace }} rollout status deployment/report --timeout=120s

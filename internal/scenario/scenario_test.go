@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -635,8 +636,28 @@ func TestCatalogReportsBrokenScenario(t *testing.T) {
 }
 
 func TestLintRealTree(t *testing.T) {
-	concepts := []string{"pod-lifecycle", "image-pull", "readiness-and-endpoints"}
-	for _, modules := range [][]string{nil, {"L0.1", "L0.2"}} {
+	pages, err := filepath.Glob("../../docs/concepts/*.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var concepts []string
+	for _, p := range pages {
+		if id := strings.TrimSuffix(filepath.Base(p), ".md"); id != "README" {
+			concepts = append(concepts, id)
+		}
+	}
+	data, err := os.ReadFile("../../curriculum.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var modules []string
+	for _, m := range regexp.MustCompile(`(?m)^      - id: (L\d\.\S+)$`).FindAllStringSubmatch(string(data), -1) {
+		modules = append(modules, m[1])
+	}
+	if len(concepts) == 0 || len(modules) == 0 {
+		t.Fatalf("real tree: got %d concept pages and %d modules, want some of each", len(concepts), len(modules))
+	}
+	for _, modules := range [][]string{nil, modules} {
 		for _, ids := range [][]string{nil, concepts} {
 			for _, e := range Lint("../..", Refs{Modules: modules, Concepts: ids}) {
 				t.Errorf("lint(modules=%v, concepts=%v): %v", modules, ids, e)

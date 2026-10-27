@@ -1,0 +1,74 @@
+checks:
+  - id: deploy-ready
+    description: deployment api has at least 1 ready replica
+    why: >-
+      readyReplicas counts the api pods that pass readiness; an HPA can only
+      add pods to a Deployment that already runs, and 0 here is an outage
+      before any scaling question.
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: api
+    path: "{.status.readyReplicas}"
+    gte: "1"
+
+  - id: hpa-targets-api
+    description: hpa api targets deployment api
+    why: >-
+      scaleTargetRef is the only link between an HPA and the workload it
+      resizes; pointing it anywhere else leaves api at a fixed replica count
+      under any load.
+    resource:
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      namespace: "{{ .Namespace }}"
+      name: api
+    path: "{.spec.scaleTargetRef.name}"
+    equals: api
+    spoiler: true
+
+  - id: hpa-scales-on-cpu
+    description: hpa api scales on cpu utilization
+    why: >-
+      The team sized api on CPU; an HPA that follows another resource adds
+      pods at the wrong moment, or never, while CPU saturates.
+    resource:
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      namespace: "{{ .Namespace }}"
+      name: api
+    path: "{.spec.metrics[*].resource.name}"
+    contains: cpu
+    spoiler: true
+
+  - id: scaling-active
+    description: hpa api has condition ScalingActive True
+    why: >-
+      ScalingActive False means the HPA controller cannot compute a desired
+      replica count, so api stays at its current size however high the load
+      climbs.
+    critical: true
+    weight: 2
+    resource:
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      namespace: "{{ .Namespace }}"
+      name: api
+    path: '{.status.conditions[?(@.type=="ScalingActive")].status}'
+    equals: "True"
+
+  - id: current-metric
+    description: hpa api reports a current metric value
+    why: >-
+      status.currentMetrics is what the controller compares with the 50%
+      target; an empty value is the <unknown> in the TARGETS column and no
+      scaling decision is made.
+    depends_on: [scaling-active]
+    resource:
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      namespace: "{{ .Namespace }}"
+      name: api
+    path: "{.status.currentMetrics[*].resource.current.averageValue}"
+    not_empty: true

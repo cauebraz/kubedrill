@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: checkout
+    app.kubernetes.io/part-of: shop
+spec:
+  replicas: {{ .Vars.checkout_replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: checkout
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: checkout
+        app.kubernetes.io/part-of: shop
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: {{ .Vars.checkout }}
+          ports:
+            - name: http
+              containerPort: 80
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+{{- if .Vars.sidecar }}
+        - name: log-shipper
+          image: {{ .Vars.sidecar }}
+          command: ["sh", "-c", "while true; do sleep 3600; done"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+{{- end }}

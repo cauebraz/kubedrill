@@ -1,0 +1,27 @@
+[scenario]
+id = "007-init-container-hangs"
+title = "api never starts: the migrate init container hangs forever on the new cluster"
+level = "L0"
+module = "L0.2"
+type = "break-fix"
+minutes = 10
+namespace = "billing"
+exam = ["CKA:troubleshooting", "CKAD:design-build"]
+concepts = ["pod-lifecycle", "cluster-dns"]
+fix_targets = ["apps/deployments/api", "core/services/db"]
+images = ["nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10"]
+
+[[variant]]
+name = "missing-service-name"
+vars = { db_host = "db-primary", db_port = "5432", mount_path = "/etc/migrate" }
+root_cause = "The init container migrate polls DB_HOST=db-primary, a name no Service in the namespace carries (the database Service is db), so nc answers bad address on every try and the loop never ends."
+
+[[variant]]
+name = "wrong-port"
+vars = { db_host = "db", db_port = "5433", mount_path = "/etc/migrate" }
+root_cause = "The init container migrate polls DB_PORT=5433 while Service db exposes 5432 only, so every connect is refused and the loop never ends."
+
+[[variant]]
+name = "flag-mount-path"
+vars = { db_host = "db", db_port = "5432", mount_path = "/etc/migrations" }
+root_cause = "The init container migrate waits for the flag file /etc/migrate/schema-ready, but the ConfigMap migrate-config is mounted at /etc/migrations, so the file never appears at that path and the loop never ends."

@@ -1,0 +1,2 @@
+kubectl -n {{ .Namespace }} set env deployment/api -c migrate DB_HOST=db DB_PORT=5432
+kubectl -n {{ .Namespace }} rollout status deployment/api --timeout=120s

@@ -1,0 +1,237 @@
+customer:
+  name: Priya
+  role: Billing team engineer
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Ask me for a hint whenever you are
+    stuck: each hint goes one step further, from where to look to what to
+    change, and the last one waits until you name a cause.
+
+meeting:
+  opening: >-
+    Thanks for taking this. The billing api has been down since we moved its
+    database password into a Secret this afternoon. The Secret is there, we
+    checked. Where do you want to start?
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What exactly changed this afternoon, step by step?
+          reply: >-
+            We created the Secret db-credentials with the password, added a
+            volume for it to the api Deployment, mounted it, and applied.
+            Before that the password came from an environment variable and
+            everything worked.
+          feedback: >-
+            Good first question. The failure started with that change, and the
+            change has three parts (a Secret, a volume, a mount), so each part
+            is a candidate.
+          best: true
+          fact: It broke when the password moved from an environment variable into Secret db-credentials, mounted as a volume.
+        - say: Can you delete the pods so they pick up the Secret?
+          reply: >-
+            Someone did that already. The new pods behave exactly like the old
+            ones.
+          feedback: >-
+            New pods come from the same template, so they repeat the same
+            mismatch. Ask what changed before acting.
+        - say: Did the database go down at the same time?
+          reply: >-
+            No, the database is fine, other services connect to it. The api
+            never even gets as far as connecting.
+          feedback: >-
+            A useful fact, and it moves the search away from the database. Ask
+            about the change that came right before the outage.
+    - prompt: You need the exact symptom. What do you ask?
+      choices:
+        - say: What do the pods show, and what does the app log?
+          reply: >-
+            The Deployment sits at 0 of 2 ready. Depending on when we look,
+            kubectl logs prints "api: cannot read /etc/secrets/db-password", or
+            refuses because the container has not started.
+          feedback: >-
+            Precise symptoms split the causes. A log line means the container
+            started and found no file; a refusal means no container exists yet,
+            which points at the step before the start.
+          best: true
+          fact: "0 of 2 ready; logs print \"api: cannot read /etc/secrets/db-password\" or refuse because the container has not started."
+        - say: Should we raise the memory limit of the api?
+          reply: >-
+            Nothing says it runs out of memory. It stops on its own when it
+            starts.
+          feedback: >-
+            A memory problem would show OOMKilled. Find out what the pods and
+            the logs say before choosing a change.
+    - prompt: Find out what the app expects.
+      choices:
+        - say: Where exactly does the app look for the password?
+          reply: >-
+            The README says it reads the file /etc/secrets/db-password once at
+            start, prints "api: connected" when it worked, and exits when it
+            could not read it.
+          feedback: >-
+            Now you have the reference: a directory and a file name. Every name
+            in the Secret, the volume and the mount must produce exactly that
+            path.
+          best: true
+          fact: 'The app reads /etc/secrets/db-password at start and logs "api: connected" when it could.'
+        - say: What is the password, so I can test the database login?
+          reply: >-
+            I would rather not paste it in chat. It is the right one, the same
+            value as in the old environment variable.
+          feedback: >-
+            The value is not the problem: the app never gets far enough to use
+            it. Ask where the app expects the file.
+    - prompt: Agree on what done means before you touch anything.
+      choices:
+        - say: What does fixed look like, and what must I keep?
+          reply: >-
+            Two pods ready, both logging "api: connected", and staying up.
+            Keep the names api and db-credentials, do not change the app's
+            script, and do not delete the namespace.
+          feedback: >-
+            Agreeing on the end state and the constraints up front lets you
+            verify the fix the same way the team will.
+          best: true
+          fact: "Done: 2 ready and available pods logging \"api: connected\"; keep the names, the app script and the namespace."
+        - say: Can I go back to the environment variable?
+          reply: >-
+            Please do not. The security review asked us to move the password
+            out of the pod spec, that is the point of the change.
+          feedback: >-
+            Reverting is a valid mitigation in some incidents, but here the
+            customer rules it out. Ask what done means and what you must keep.
+  closing: >-
+    That is everything I know. I will watch the Deployment; ping me when the
+    api says connected.
+
+diagram:
+  nodes:
+    - id: deploy
+      label: Deployment api
+      note: pod template with the volume and the mount
+    - id: secret
+      label: Secret db-credentials
+      note: each key becomes a file
+    - id: volume
+      label: Secret volume
+      note: secretName picks the Secret, items can rename a key
+    - id: mount
+      label: Volume mount
+      note: mountPath picks the directory
+    - id: file
+      label: /etc/secrets/db-password
+      note: the file the app reads at start
+    - id: pods
+      label: Pods x2
+      note: 'Ready after "api: connected"'
+  edges:
+    - from: deploy
+      to: volume
+      label: declares
+    - from: secret
+      to: volume
+      label: keys as files
+    - from: volume
+      to: mount
+      label: mounted
+    - from: mount
+      to: file
+      label: directory
+    - from: file
+      to: pods
+      label: read at start
+
+quiz:
+  - question: One pod stays in ContainerCreating with a FailedMount event saying the Secret was not found. What does that rule out?
+    choices:
+      - text: Anything the app does, because the container never started.
+        correct: true
+        explain: >-
+          The kubelet builds volumes before it starts the container. A volume
+          it cannot build stops the pod before the app runs, so the app's code
+          and its log are not involved yet.
+      - text: Nothing, the app may have crashed while reading the file.
+        explain: >-
+          A pod in ContainerCreating has no container. kubectl logs refuses
+          for that reason; there is no crash to read.
+      - text: A wrong Secret name, because the Secret exists in the namespace.
+        explain: >-
+          The Secret that exists is not necessarily the one the volume asks
+          for. The event quotes the name the volume asked for; compare it.
+  - question: A Secret has the key password and is mounted at /etc/secrets. Which file appears in the container?
+    choices:
+      - text: /etc/secrets/password
+        correct: true
+        explain: >-
+          Each key becomes a file named after the key, under the mountPath,
+          unless an items list maps the key to another path.
+      - text: /etc/secrets/db-credentials
+        explain: >-
+          The Secret's name is not a file name. Its keys are.
+      - text: /etc/secrets/db-password, because the app asks for it
+        explain: >-
+          The kubelet does not know what the app reads. The file name comes
+          from the key or from items.
+  - question: Where does the fix for a wrong mountPath belong?
+    choices:
+      - text: In the pod template of the Deployment, container api.
+        correct: true
+        explain: >-
+          The pods copy their mounts from the template. Change it there and the
+          Deployment replaces the pods.
+      - text: In the Secret, by recreating it.
+        explain: >-
+          The Secret decides the file names, not the directory. Recreating it
+          leaves the mount where it was.
+      - text: In the pods; delete them so they mount again.
+        explain: >-
+          New pods are built from the same template and mount the same wrong
+          directory.
+
+guide:
+  - title: List the pods
+    body: >-
+      The workstation shell already points at the episode namespace. Read
+      STATUS, READY and RESTARTS: a pod that started and quits shows `Running`
+      with `0/1`, then `Error` and `CrashLoopBackOff`; a pod whose volume
+      could not be built stays `ContainerCreating`.
+    command: kubectl get pods
+  - title: Read the app's own words
+    body: >-
+      Pick a pod name from `get pods` (TAB completes it). The app prints the
+      path it tried and that it could not read it. That means the container
+      started, so the Secret exists and the volume was built.
+    command: kubectl logs <pod-name>
+  - title: Compare the mount with the path the app reads
+    body: >-
+      In `describe`, find `Mounts:` under the container. It names the
+      directory the Secret's files land in. Compare it, letter by letter,
+      with `/etc/secrets`. `Events:` at the bottom shows no `FailedMount`,
+      which agrees with the log.
+    command: kubectl describe pod <pod-name>
+  - title: Look inside the container
+    body: >-
+      The container stays up 45 seconds before it exits. `ls /etc/secrets`
+      fails because that directory does not exist; the files are in the
+      directory `Mounts:` named.
+    command: kubectl exec <pod-name> -- ls /etc/secrets
+  - title: Change the mount directory in the Deployment
+    body: >-
+      Change one thing: the `mountPath` of the mount in container `api`, in
+      the Deployment's pod template. The Deployment replaces the pods, and
+      the new ones find `/etc/secrets/db-password`.
+    command: kubectl patch deployment api --type=json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/volumeMounts/0/mountPath","value":"/etc/secrets"}]'
+  - title: Watch the rollout finish
+    body: >-
+      rollout status waits until the new pods are Ready, which here means the
+      app read its password and printed `api: connected`.
+    command: kubectl rollout status deployment/api
+    check: ready-replicas
+  - title: Confirm the app connected
+    body: >-
+      The logs of both pods print `api: connected`. Then press Validate to
+      grade the assignment.
+    command: kubectl logs -l app=api --tail=5
+    check: api-connected

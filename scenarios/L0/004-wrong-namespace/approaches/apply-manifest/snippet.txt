@@ -1,0 +1,5 @@
+kubectl -n {{ .Namespace }} get deployment catalog-shop-tmp -o yaml > catalog.yaml
+sed -i.bak -e 's/catalog-shop-tmp/catalog/g' -e 's/app.kubernetes.io\/name: catalog-tmp/app.kubernetes.io\/name: catalog/g' catalog.yaml
+kubectl -n {{ .Namespace }} apply -f catalog.yaml
+kubectl -n {{ .Namespace }} rollout status deployment/catalog --timeout=120s
+kubectl -n {{ .Namespace }} delete deployment catalog-shop-tmp

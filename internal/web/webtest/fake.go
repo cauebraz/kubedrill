@@ -39,6 +39,9 @@ type Fake struct {
 	StepDelay time.Duration
 	// Now is the clock; the default is time.Now.
 	Now func() time.Time
+	// ExamTime, when set, replaces the scenario minutes as the time box of
+	// an exam.
+	ExamTime time.Duration
 
 	// Starts records "<id> <stage>" per Start; Cleaned the container names
 	// whose cleanup ran.
@@ -293,7 +296,11 @@ func (f *Fake) Start(ctx context.Context, id string, stage web.Stage, replace bo
 		view.Guide = a.Simulation.Guide
 	}
 	if stage == web.StageExam {
-		deadline := view.StartedAt.Add(time.Duration(a.Minutes) * time.Minute)
+		box := time.Duration(a.Minutes) * time.Minute
+		if f.ExamTime > 0 {
+			box = f.ExamTime
+		}
+		deadline := view.StartedAt.Add(box)
 		view.Exam, view.Deadline, view.HintsTotal, view.Story, view.Mentor = true, &deadline, 0, "", ""
 	}
 	f.active = &activeEpisode{view: view, stage: stage}
@@ -313,7 +320,7 @@ func (f *Fake) Validate(context.Context) (web.Validation, error) {
 	if f.active.view.Exam {
 		return web.Validation{}, errors.New("check: exam mode: no feedback until the exam ends; run: kubedrill submit")
 	}
-	return f.end(), nil
+	return f.end(false), nil
 }
 
 // Submit ends an exam episode with one grade.
@@ -323,16 +330,28 @@ func (f *Fake) Submit(context.Context) (web.Validation, error) {
 	if f.active == nil || !f.active.view.Exam {
 		return web.Validation{}, errors.New("no active exam; launch the exam rehearsal first")
 	}
-	return f.end(), nil
+	return f.end(true), nil
+}
+
+// Finish ends the active episode outside the page, as kubedrill check or
+// kubedrill submit in the terminal, or an exam expiry, would: solved when it
+// was fixed, otherwise failed (timed out past an exam deadline).
+func (f *Fake) Finish() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.active == nil {
+		return
+	}
+	f.end(true)
 }
 
 // end grades the active episode: it passes when Passed is set or it was
-// fixed. A pass, or any exam submit, ends it. Callers hold mu.
-func (f *Fake) end() web.Validation {
+// fixed. A pass ends it, and so does final (an exam submit, a finish
+// outside the page). Callers hold mu.
+func (f *Fake) end(final bool) web.Validation {
 	pass := f.Passed || f.active.fixed
 	v := web.Validation{EpisodeID: f.active.view.EpisodeID, ScenarioID: f.active.view.ScenarioID, Passed: pass, Checks: f.checks(pass)}
-	exam := f.active.view.Exam
-	if !pass && !exam {
+	if !pass && !final {
 		v.Score = 1.0 / 3
 		return v
 	}
@@ -340,6 +359,9 @@ func (f *Fake) end() web.Validation {
 	outcome := "solved"
 	if !pass {
 		v.Score, outcome = 1.0/3, "failed"
+		if d := f.active.view.Deadline; d != nil && !f.now().Before(*d) {
+			outcome = "timed out"
+		}
 	}
 	v.Outcome = outcome
 	v.RootCause = "The Deployment image points at a registry the new nodes cannot resolve."

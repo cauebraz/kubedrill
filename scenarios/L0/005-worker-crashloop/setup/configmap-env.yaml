@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: worker-env
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: worker
+    app.kubernetes.io/part-of: billing
+data:
+  {{ .Vars.queue_key }}: amqp://queue.billing.svc:5672/invoices
+  WORKER_NAME: billing-worker
+  LOG_LEVEL: info

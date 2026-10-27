@@ -8,13 +8,14 @@ import { showCatalog } from "./js/catalog.js";
 import { showExams } from "./js/exams.js";
 import { showAssignment } from "./js/assignment.js";
 import { showKit } from "./js/kit.js";
+import { showWelcome } from "./js/welcome.js";
 
 const app = document.getElementById("app");
 const crumbsEl = document.getElementById("crumbs");
 const pill = document.getElementById("session-pill");
 const banner = document.getElementById("banner");
 const nav = document.getElementById("nav");
-let meta = { preview: "", dev: false };
+let meta = { preview: "", dev: false, onboarded: true };
 
 const ctx = {
   crumbs(parts) {
@@ -42,7 +43,7 @@ function refreshPill() {
     const a = s.active;
     pill.hidden = false;
     pill.href = "#/a/" + encodeURIComponent(a.scenarioId) + "/" + (a.stage || "practice");
-    clear(pill, el("span", { text: "Live" }), el("b", { text: a.scenarioId }), a.stage ? el("span", { text: a.stage === "diy" ? "DIY" : "practice" }) : null);
+    clear(pill, el("span", { text: "Live" }), el("b", { text: a.scenarioId }), a.stage ? el("span", { text: { diy: "DIY", exam: "exam" }[a.stage] || "practice" }) : null);
   }).catch(() => { pill.hidden = true; });
 }
 
@@ -76,9 +77,17 @@ function route() {
   leave();
   const hash = location.hash.replace(/^#/, "").split("?")[0] || "/";
   const parts = hash.split("/").filter(Boolean);
+  if (!meta.onboarded && parts[0] !== "welcome") {
+    location.hash = "#/welcome";
+    return;
+  }
+  document.body.classList.toggle("onboarding", parts[0] === "welcome");
   refreshPill();
   window.scrollTo(0, 0);
   switch (parts[0]) {
+    case "welcome":
+      navLinks("");
+      return showWelcome(app, ctx, () => { meta.onboarded = true; location.hash = "#/"; });
     case "a":
       navLinks("catalog");
       if (parts[1]) { return showAssignment(app, ctx, decodeURIComponent(parts[1]), parts[2], parts[3] && decodeURIComponent(parts[3])); }

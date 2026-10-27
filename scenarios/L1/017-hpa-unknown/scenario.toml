@@ -1,0 +1,27 @@
+[scenario]
+id = "017-hpa-unknown"
+title = "HPA on api shows unknown and never scales"
+level = "L1"
+module = "L1.3"
+type = "break-fix"
+minutes = 15
+namespace = "api"
+exam = ["CKA:workloads", "CKAD:environment"]
+concepts = ["resources-and-qos", "troubleshooting-loop"]
+fix_targets = ["apps/deployments/api", "autoscaling/horizontalpodautoscalers/api"]
+addons = ["metrics-server"]
+
+[[variant]]
+name = "no-cpu-request"
+vars = { requests = "{ memory: 32Mi }", target = "api", metric = "cpu" }
+root_cause = "Container api in Deployment api sets no CPU request, so the HPA cannot compute CPU utilization (usage divided by request) and ScalingActive stays False with missing request for cpu."
+
+[[variant]]
+name = "wrong-target"
+vars = { requests = "{ cpu: 50m, memory: 32Mi }", target = "api-v2", metric = "cpu" }
+root_cause = "The HPA scaleTargetRef names Deployment api-v2, which does not exist, so the controller cannot read its scale (AbleToScale False, deployments.apps api-v2 not found) and never computes a metric."
+
+[[variant]]
+name = "memory-metric"
+vars = { requests = "{ cpu: 50m }", target = "api", metric = "memory" }
+root_cause = "The HPA metric is memory utilization while container api sets only a CPU request, so the controller reports missing request for memory and ScalingActive stays False; the team wants to scale on CPU."

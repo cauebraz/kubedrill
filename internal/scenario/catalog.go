@@ -43,27 +43,38 @@ type Catalog struct {
 }
 
 // NewCatalog scans root/scenarios/<level>/<id>/ and loads every scenario
-// directory. Directories whose name starts with "_" are skipped. A scenario
-// that fails to load makes the catalog fail with every problem reported.
-func NewCatalog(root string) (*Catalog, error) {
-	dirs, err := scenarioDirs(root)
-	if err != nil {
-		return nil, fmt.Errorf("new catalog %s: %w", root, err)
-	}
+// directory, then does the same for each installed pack directory in packs,
+// tagging those scenarios with the pack name (the directory's base name).
+// Directories whose name starts with "_" are skipped. A scenario that fails
+// to load, or an id defined twice, makes the catalog fail with every problem
+// reported.
+func NewCatalog(root string, packs ...string) (*Catalog, error) {
 	c := &Catalog{byID: map[string]*Scenario{}}
 	var errs []error
-	for _, dir := range dirs {
-		s, err := Load(dir)
+	add := func(base, pack string) {
+		dirs, err := scenarioDirs(base)
 		if err != nil {
 			errs = append(errs, err)
-			continue
+			return
 		}
-		if other, dup := c.byID[s.Meta.ID]; dup {
-			errs = append(errs, fmt.Errorf("scenario id %q is defined in both %s and %s", s.Meta.ID, other.Dir, s.Dir))
-			continue
+		for _, dir := range dirs {
+			s, err := Load(dir)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			s.Pack = pack
+			if other, dup := c.byID[s.Meta.ID]; dup {
+				errs = append(errs, fmt.Errorf("scenario id %q is defined in both %s and %s", s.Meta.ID, other.Dir, s.Dir))
+				continue
+			}
+			c.byID[s.Meta.ID] = s
+			c.ids = append(c.ids, s.Meta.ID)
 		}
-		c.byID[s.Meta.ID] = s
-		c.ids = append(c.ids, s.Meta.ID)
+	}
+	add(root, "")
+	for _, p := range packs {
+		add(p, filepath.Base(p))
 	}
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("new catalog %s: %w", root, errors.Join(errs...))

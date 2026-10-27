@@ -1,0 +1,3 @@
+kubectl -n {{ .Namespace }} expose deployment admin --type=NodePort --port=80 --target-port={{ .Vars.port }}
+kubectl -n {{ .Namespace }} patch service admin --type=json -p '[{"op":"replace","path":"/spec/ports/0/nodePort","value":30080}]'
+kubectl -n {{ .Namespace }} describe service admin

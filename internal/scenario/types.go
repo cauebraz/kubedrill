@@ -131,7 +131,10 @@ type Check struct {
 
 // Scenario is a fully loaded and validated scenario directory.
 type Scenario struct {
-	Dir         string
+	Dir string
+	// Pack names the installed pack the scenario came from, empty for the
+	// repository's own scenarios.
+	Pack        string
 	Meta        Meta
 	Variants    []Variant
 	Instruction string

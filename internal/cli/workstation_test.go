@@ -198,15 +198,6 @@ func TestStartInsideWorkstationPrintsTicketOnly(t *testing.T) {
 	}
 }
 
-func internalKubeconfig(t *testing.T) string {
-	t.Helper()
-	path, err := cluster.InternalKubeconfigPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 func TestOfferRecreateAStaleCluster(t *testing.T) {
 	cases := []struct {
 		name        string

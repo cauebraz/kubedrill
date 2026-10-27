@@ -41,14 +41,15 @@ func (a *app) webCommand() *cobra.Command {
 	var o webOptions
 	cmd := &cobra.Command{
 		Use:   "web",
-		Short: "Open the browser workspace on localhost: meeting, quiz, learn, guided practice and DIY",
-		Long: "web runs the doctor and up like kubedrill without a command, builds the\n" +
-			"workstation, then serves the browser workspace on 127.0.0.1 and opens it.\n" +
-			"Each assignment walks through a meeting with the customer, a quiz, the\n" +
-			"learn page, a guided practice run and a DIY run on another variant, with a\n" +
-			"terminal into the workstation in the page. The link it prints carries a\n" +
-			"token; Ctrl-C stops the server. --preview <ref> skips the cluster and opens\n" +
-			"one assignment, reloading its files on every request, for authors.",
+		Short: "Open the browser workspace on localhost: meeting, quiz, learn, guided practice, DIY and exam rehearsal",
+		Long: "web runs the doctor and up, builds the workstation, then serves the\n" +
+			"browser workspace on 127.0.0.1 and opens it; kubedrill without a command\n" +
+			"runs it. Each assignment walks through a meeting with the customer, a quiz,\n" +
+			"the learn page, a guided practice run, a DIY run on another variant and an\n" +
+			"exam rehearsal, with a terminal into the workstation in the page. The\n" +
+			"link it prints carries a token; Ctrl-C stops the server. --preview <ref>\n" +
+			"skips the cluster and opens one assignment, reloading its files on every\n" +
+			"request, for authors.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return a.runWeb(cmd.Context(), o)
@@ -270,7 +271,7 @@ func (b *webBackend) Catalog(ctx context.Context) (web.Catalog, error) {
 	for _, lv := range c.Levels {
 		level := web.Level{ID: lv.ID, Title: lv.Title, Before: lv.Before, After: lv.After, Modules: []web.Module{}}
 		for _, m := range lv.Modules {
-			mod := web.Module{ID: m.ID, Title: m.Title, Summary: m.Summary, Assignments: []web.AssignmentCard{}}
+			mod := web.Module{ID: m.ID, Title: m.Title, Summary: m.Summary, Pack: m.Pack, Assignments: []web.AssignmentCard{}}
 			for _, ps := range m.Scenarios {
 				if ps.ID == "" {
 					mod.Planned++
@@ -378,7 +379,7 @@ func (b *webBackend) Assignment(ctx context.Context, id string) (web.Assignment,
 }
 
 func (b *webBackend) Session(ctx context.Context, live bool) (web.Session, error) {
-	b.a.expireIfDue(ctx)
+	b.a.expireIfDue(context.WithoutCancel(ctx))
 	s, err := b.a.learnerSession(ctx)
 	if err != nil {
 		return web.Session{}, err
@@ -406,6 +407,7 @@ func (b *webBackend) Session(ctx context.Context, live bool) (web.Session, error
 // Next is the active episode, or the recommendation of kubedrill list with
 // its reason in words, plus the count of concepts due for review.
 func (b *webBackend) Next(ctx context.Context) (web.Next, error) {
+	b.a.expireIfDue(context.WithoutCancel(ctx))
 	st, err := b.state()
 	if err != nil {
 		return web.Next{}, err
@@ -575,9 +577,6 @@ func (b *webBackend) Submit(ctx context.Context) (web.Validation, error) {
 		return web.Validation{}, err
 	}
 	ep, rd, err := s.Current()
-	if errors.Is(err, env.ErrTimedOut) {
-		return b.expireExam(ctx, s)
-	}
 	if errors.Is(err, env.ErrNoActiveEpisode) {
 		return web.Validation{}, errors.New("no active exam; launch the exam rehearsal first")
 	}
@@ -591,8 +590,9 @@ func (b *webBackend) Submit(ctx context.Context) (web.Validation, error) {
 	if err != nil {
 		return web.Validation{}, err
 	}
-	v := web.Validation{EpisodeID: ep.ID, ScenarioID: ep.ScenarioID, Passed: g.Passed, Score: g.Score, Checks: checkViews(g), RootCause: rd.Variant.RootCause, Solution: rd.Solution}
+	v := web.Validation{EpisodeID: ep.ID, ScenarioID: ep.ScenarioID, Score: g.Score, Checks: checkViews(g), RootCause: rd.Variant.RootCause, Solution: rd.Solution}
 	if done != nil {
+		v.Passed = g.Passed && done.Outcome == journal.OutcomeSolved
 		v.Outcome = outcomeWord(done.Outcome)
 	}
 	return v, nil
@@ -605,8 +605,11 @@ func (b *webBackend) expireExam(ctx context.Context, s *env.Session) (web.Valida
 		return web.Validation{}, err
 	}
 	cur, err := j.Current()
-	if err != nil || cur == nil {
-		return web.Validation{}, errors.New("no active exam")
+	if err != nil {
+		return web.Validation{}, fmt.Errorf("read the current episode: %w", err)
+	}
+	if cur == nil {
+		return web.Validation{}, errors.New("no active exam; launch the exam rehearsal first")
 	}
 	rd, err := b.render(cur)
 	if err != nil {
@@ -615,6 +618,9 @@ func (b *webBackend) expireExam(ctx context.Context, s *env.Session) (web.Valida
 	done, err := s.Expire(ctx)
 	if done == nil {
 		return web.Validation{}, err
+	}
+	if err != nil {
+		fmt.Fprintf(b.a.stderr, "warning: the exam time box of %s expired; the final grade failed: %v\n", cur.ScenarioID, err)
 	}
 	v := web.Validation{EpisodeID: done.ID, ScenarioID: done.ScenarioID, Outcome: outcomeWord(done.Outcome), RootCause: rd.Variant.RootCause, Solution: rd.Solution}
 	if n := len(done.Grades); n > 0 {
@@ -683,6 +689,9 @@ func (b *webBackend) Debrief(ctx context.Context, id string) (web.Debrief, error
 	ep, sc, err := b.episode(id)
 	if err != nil {
 		return web.Debrief{}, err
+	}
+	if ep.Outcome == "" || ep.Outcome == journal.OutcomeActive {
+		return web.Debrief{}, fmt.Errorf("episode %s is still running; its debrief opens when it ends", ep.ID)
 	}
 	d := web.Debrief{
 		EpisodeID:  ep.ID,

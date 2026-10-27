@@ -1,0 +1,274 @@
+customer:
+  name: Priya
+  role: Billing team lead
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Ask me for a hint whenever you are
+    stuck: each hint goes one step further, from where to look to what to
+    change, and the last one waits until you name a cause.
+
+meeting:
+  opening: >-
+    Thanks for picking this up. The billing worker has been restarting
+    non-stop since our deploy this afternoon, and invoices are piling up in
+    the queue. Nothing changed in the code, so we are puzzled. Where do you
+    want to start?
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What exactly did the deploy change?
+          reply: >-
+            Only the Kubernetes manifests and the config objects. We are
+            aligning our names with the other teams' convention. The worker
+            script and the image are the ones we have run for weeks.
+          feedback: >-
+            Good first question. "Nothing changed in the code" does not mean
+            nothing changed: manifests and config are the contract between
+            the code and its inputs, and a rename on one side is enough.
+          best: true
+          fact: The deploy changed only the manifests and the config objects (a naming alignment); the script and the image are unchanged.
+        - say: Can you roll the deploy back?
+          reply: >-
+            We tried a rollback of the Deployment; the pods came back the same
+            way. We do not know what else to roll back.
+          feedback: >-
+            Rolling back is a fair mitigation, and here it did not help: the
+            change may live outside the Deployment's pod template. Ask what
+            the deploy changed before choosing what to undo.
+        - say: Is the queue server down?
+          reply: >-
+            No, the queue is up and growing. The staging worker reads from a
+            queue just like it and is fine.
+          feedback: >-
+            A useful fact, and it points away from the queue. The question
+            that narrows the search fastest is what changed.
+    - prompt: You need the exact symptom. What do you ask?
+      choices:
+        - say: What do the pods show, and for how long does each one run?
+          reply: >-
+            Both pods say CrashLoopBackOff and the restart count keeps going
+            up. Each one runs for less than a second and dies.
+          feedback: >-
+            Precise symptoms split the causes. "Starts and dies within a
+            second" says the process itself quits, which rules out image
+            pulls, scheduling and memory kills that come later.
+          best: true
+          fact: Both pods are CrashLoopBackOff, restart count growing, each run lasts under a second.
+        - say: Should we give the worker more memory?
+          reply: >-
+            It never ran long enough to use any. The old limit was fine for
+            weeks.
+          feedback: >-
+            A memory kill shows as OOMKilled with exit code 137 and takes time
+            to happen. Ask how the pods fail before choosing a change.
+        - say: Did someone delete the pods to see if it comes back?
+          reply: >-
+            Yes, twice. They come back and crash the same way.
+          feedback: >-
+            Deleting a pod recreates it from the same template and discards
+            the output of the crash. Ask what the pods show instead.
+    - prompt: Find out what the worker needs to start.
+      choices:
+        - say: What does the worker read at startup, and where does it come from?
+          reply: >-
+            It takes a --workers flag, reads the queue address from QUEUE_URL
+            and the token from QUEUE_TOKEN in its environment, and reads
+            /etc/worker/worker.conf. The environment comes from ConfigMap
+            worker-env and Secret worker-token; the script and the config
+            file come from ConfigMap worker-files. When it has everything it
+            prints "worker started".
+          feedback: >-
+            Now you have the list of inputs and the object each one comes
+            from. Every input has a name on both sides; one of them is what
+            the deploy renamed.
+          best: true
+          fact: "Inputs: a --workers flag, QUEUE_URL and QUEUE_TOKEN from worker-env and worker-token, /etc/worker/worker.conf from worker-files; healthy start prints 'worker started'."
+        - say: Which version of the queue client library does it use?
+          reply: >-
+            The same as always; the script has not changed.
+          feedback: >-
+            The code is unchanged, so its dependencies are too. Ask what the
+            program reads from the pod, because that is what the deploy
+            touched.
+    - prompt: Agree on what done means before you touch anything.
+      choices:
+        - say: What does "fixed" look like for you, and what must I not change?
+          reply: >-
+            Both pods Ready and polling the queue, logging "worker started".
+            Keep the names of the Deployment, the ConfigMaps and the Secret,
+            do not change run.sh, and do not delete the namespace.
+          feedback: >-
+            Agreeing on the end state and the constraints up front is what
+            lets you verify your fix the same way the customer will.
+          best: true
+          fact: "Done: 2 pods Ready for 5 seconds and logging 'worker started'; keep the object names, leave run.sh alone, keep the namespace."
+        - say: Can I change the script so it accepts whatever the new names are?
+          reply: >-
+            Please do not. The same script runs in staging and in the other
+            regions; the deploy is what differs here.
+          feedback: >-
+            Changing the code to fit a broken deploy spreads the mismatch to
+            every environment. Ask what done looks like and what to keep.
+  closing: >-
+    That is everything I know. I will watch the queue depth; ping me when the
+    worker is draining it again.
+
+diagram:
+  nodes:
+    - id: deploy
+      label: Deployment worker
+      note: keeps 2 pods from its template (args, envFrom, mounts)
+    - id: rs
+      label: ReplicaSet
+      note: creates the pods
+    - id: cmenv
+      label: ConfigMap worker-env
+      note: each key becomes an environment variable
+      column: 1
+    - id: secret
+      label: Secret worker-token
+      note: QUEUE_TOKEN
+      column: 2
+    - id: cmfiles
+      label: ConfigMap worker-files
+      note: run.sh and worker.conf, mounted by subPath
+      column: 3
+    - id: pods
+      label: Pods x2
+      note: sh /opt/worker/run.sh with the args
+    - id: queue
+      label: Invoice queue
+      note: grows while no worker polls it
+  edges:
+    - from: deploy
+      to: rs
+      label: creates
+    - from: rs
+      to: pods
+      label: creates
+    - from: cmenv
+      to: pods
+      label: envFrom
+    - from: secret
+      to: pods
+      label: envFrom
+    - from: cmfiles
+      to: pods
+      label: mounted
+    - from: pods
+      to: queue
+      label: polls when started
+
+quiz:
+  - question: A pod shows CrashLoopBackOff with Last State Exit Code 1. Which causes does that rule out?
+    choices:
+      - text: An image pull failure and a scheduling problem, because the container ran and exited.
+        correct: true
+        explain: >-
+          A container only gets an exit code after it started. Pull and
+          scheduling failures happen before that and show as ImagePullBackOff
+          or Pending.
+      - text: Nothing, the exit code is random.
+        explain: >-
+          The program chooses its exit code. 1 and 2 come from the program
+          itself; 137 means it was killed. The code sorts the candidates.
+      - text: A configuration problem, because the container started.
+        explain: >-
+          Starting is not the same as running: a program that starts, reads a
+          wrong configuration and exits is exactly what exit code 1 says.
+  - question: Where is the output of the container that just crashed?
+    choices:
+      - text: In kubectl logs <pod> --previous, until the next restart replaces it.
+        correct: true
+        explain: >-
+          The kubelet keeps the log of the last terminated container.
+          --previous reads it; without the flag you get the current attempt,
+          often empty while the kubelet waits.
+      - text: Nowhere, it is lost when the container exits.
+        explain: >-
+          The log of the previous container is kept while the pod exists.
+          Deleting the pod is what loses it.
+      - text: In the Events of kubectl describe pod.
+        explain: >-
+          Events say what the kubelet did (Started, BackOff), not what the
+          program printed. The program's own words are in its log.
+  - question: The ConfigMap under envFrom has the key BROKER_URL and the program reads QUEUE_URL. What happens?
+    choices:
+      - text: The container starts with QUEUE_URL unset; the program decides what to do about it.
+        correct: true
+        explain: >-
+          envFrom copies every key as a variable with the same name. A key
+          with another name is just another variable; nothing checks that
+          the program reads it.
+      - text: The pod stays in CreateContainerConfigError until the key exists.
+        explain: >-
+          That error happens when a named key is missing in a configMapKeyRef
+          or when the whole ConfigMap is missing. envFrom with an existing
+          ConfigMap never fails, whatever its keys are.
+      - text: Kubernetes renames the variable to match the program.
+        explain: >-
+          Kubernetes does not know what the program reads. The names must
+          match on both sides, and the deploy is where they are kept aligned.
+
+guide:
+  - title: List the pods
+    body: >-
+      The workstation shell already points at the episode namespace. List the
+      pods and read STATUS and RESTARTS: CrashLoopBackOff with a growing
+      count means the process starts and exits, and the kubelet waits longer
+      before each retry. Both pods do the same, so the cause is in the shared
+      template.
+    command: kubectl get pods
+  - title: Read the last state of the container
+    body: >-
+      Describe one pod (TAB completes the name after "pod wor"). In the
+      Containers section read State, Last State and Exit Code: 1 is the usual
+      configuration error, 2 a usage error, 137 a memory kill. Note the Args,
+      the "Environment Variables from" list and the Mounts with their
+      path="..." values; these are the pod's side of every input name.
+    command: kubectl describe pod -l app.kubernetes.io/name=worker
+  - title: Read what the program said before it quit
+    body: >-
+      The log of the container that exited is kept until the next restart.
+      Print it for the worker pods (a label selects them, so no name to
+      type) and read the last line of each: it starts with "worker:" and
+      names the input the script could not use. In this run it says
+      QUEUE_URL is empty.
+    command: kubectl logs -l app.kubernetes.io/name=worker --previous
+  - title: Compare with the ConfigMap keys
+    body: >-
+      envFrom turns every key of worker-env into an environment variable of
+      the same name. Print the keys: the queue address is there, under a name
+      the script does not read. That is the rename the deploy made on one
+      side only.
+    command: kubectl get configmap worker-env -o yaml
+  - title: Rename the key back
+    body: >-
+      Change one thing: the key in the ConfigMap, since the script is the
+      same one that runs everywhere. A merge patch sets QUEUE_URL and removes
+      the old key with null. kubectl edit configmap worker-env does the same
+      in an editor.
+    command: kubectl patch configmap worker-env --type merge -p '{"data":{"QUEUE_URL":"amqp://queue.billing.svc:5672/invoices","BROKER_URL":null}}'
+  - title: Restart the rollout
+    body: >-
+      The kubelet builds the environment each time it starts the container,
+      so the crashing pods would pick the key up at their next retry; a
+      rollout restart replaces them now instead of after the backoff, which
+      can be 5 minutes by then.
+    command: kubectl rollout restart deployment/worker
+  - title: Watch the rollout finish
+    body: >-
+      rollout status waits until both new pods stayed Ready for 5 seconds
+      (minReadySeconds), which a crash-looping pod never does. This is the
+      verification, not decoration.
+    command: kubectl rollout status deployment/worker
+    check: ready-replicas
+  - title: Read the healthy log
+    body: >-
+      The worker prints "worker started" with the queue address once it has
+      all its inputs, then a polling line per minute. Then press Validate to
+      grade the assignment.
+    command: kubectl logs -l app.kubernetes.io/name=worker --tail=5
+    check: worker-log

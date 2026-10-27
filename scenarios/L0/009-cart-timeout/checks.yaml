@@ -1,0 +1,63 @@
+checks:
+  - id: cart-ready
+    description: deployment cart has 2 ready replicas
+    why: >-
+      readyReplicas counts pods whose Ready condition is true. The ticket
+      starts with 2, so a lower number here means the change replaced the
+      cart pods with ones that do not answer their probe, or removed them.
+    weight: 1
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: cart
+    path: "{.status.readyReplicas}"
+    equals: "2"
+
+  - id: cart-endpoints
+    description: service cart lists at least one endpoint
+    why: >-
+      The EndpointSlice of a Service holds the addresses of the pods its
+      selector matches. An empty slice means no pod in the namespace carries
+      every label the selector names, so kube-proxy has nowhere to send the
+      traffic and rejects every connection to the Service.
+    depends_on: [cart-ready]
+    resource:
+      apiVersion: discovery.k8s.io/v1
+      kind: EndpointSlice
+      namespace: "{{ .Namespace }}"
+      selector: kubernetes.io/service-name=cart
+    path: "{.items[*].endpoints[*].addresses[*]}"
+    not_empty: true
+
+  - id: cart-ready-endpoints
+    description: service cart has at least one ready endpoint
+    why: >-
+      kube-proxy programs only the addresses whose conditions.ready is true.
+      An endpoint that is listed but not ready still receives no traffic, so
+      this is the number of pods the Service name reaches.
+    depends_on: [cart-endpoints]
+    critical: true
+    weight: 2
+    resource:
+      apiVersion: discovery.k8s.io/v1
+      kind: EndpointSlice
+      namespace: "{{ .Namespace }}"
+      selector: kubernetes.io/service-name=cart
+    path: "{.items[*].endpoints[?(@.conditions.ready==true)].addresses[*]}"
+    not_empty: true
+
+  - id: cart-page-served
+    description: the cart page is served through service cart from inside the cluster
+    why: >-
+      Ready endpoints prove the selector matches Ready pods, not that a
+      request arrives. A request to the Service name is what the frontend
+      does, and it also walks the mapping from the Service port to the port
+      the container listens on.
+    depends_on: [cart-ready-endpoints]
+    weight: 2
+    probe:
+      image: curlimages/curl:8.14.1@sha256:9a1ed35addb45476afa911696297f8e115993df459278ed036182dd2cd22b67b
+      command: ["curl", "-fsS", "-m", "5", "http://cart.{{ .Namespace }}.svc/"]
+      timeout: 30s
+    contains: "Welcome to nginx!"

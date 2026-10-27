@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-html
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: web
+    app.kubernetes.io/part-of: portal
+data:
+  index.html: |
+    <!doctype html>
+    <html>
+      <head><title>ACME Docs Portal</title></head>
+      <body>
+        <h1>ACME Docs Portal 3.2.0</h1>
+        <p>Guides, API reference and release notes.</p>
+      </body>
+    </html>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-nginx
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: web
+    app.kubernetes.io/part-of: portal
+data:
+  default.conf: |
+    server {
+        listen {{ .Vars.listen_port }};
+        server_name _;
+        location / {
+            root /usr/share/nginx/html;
+            index index.html;
+        }
+    }

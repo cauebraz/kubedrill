@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: checkout
+    app.kubernetes.io/part-of: shop
+  annotations:
+    kubernetes.io/change-cause: release 2.4.0
+spec:
+  replicas: 4
+  progressDeadlineSeconds: 30
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: {{ .Vars.max_surge }}
+      maxUnavailable: {{ .Vars.max_unavailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: checkout
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: checkout
+        app.kubernetes.io/part-of: shop
+        app.kubernetes.io/version: "2.4.0"
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi

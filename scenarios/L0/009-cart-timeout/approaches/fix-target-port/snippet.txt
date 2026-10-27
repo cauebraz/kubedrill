@@ -1,0 +1,3 @@
+kubectl -n {{ .Namespace }} describe svc cart
+kubectl -n {{ .Namespace }} patch svc cart --type=json -p '[{"op":"replace","path":"/spec/ports/0/targetPort","value":80}]'
+kubectl -n {{ .Namespace }} get endpointslices -l kubernetes.io/service-name=cart

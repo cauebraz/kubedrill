@@ -1,0 +1,278 @@
+customer:
+  name: Priya
+  role: API team lead
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Ask me for a hint whenever you are
+    stuck: each hint goes one step further, from where to look to what to
+    change, and the last one waits until you name a cause.
+
+meeting:
+  opening: >-
+    Thanks for picking this up. Checkout has been down since this morning:
+    the frontend cannot reach the api. The pods are running, nothing has
+    crashed, and we do not understand what is wrong. Where do you want to
+    start?
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What changed right before it stopped working?
+          reply: >-
+            We deployed the api to the new namespace this morning, with the
+            health checks the platform checklist asks for. Same image, same
+            files as everywhere else.
+          feedback: >-
+            Good first question. A failure that starts right after a change
+            usually comes from that change, and "we added the health checks"
+            is the kind of detail that narrows the search to one field.
+          best: true
+          fact: It broke on the first deploy to the new namespace, the one that added the health checks from the platform checklist.
+        - say: Can you restart the pods and see if it comes back?
+          reply: >-
+            Someone already deleted both pods. The new ones came back the
+            same, Running and never Ready.
+          feedback: >-
+            Acting before observing hides evidence and rarely fixes a problem
+            in the blueprint: new pods are built from the same template. Ask
+            what changed first.
+        - say: Is the frontend pointing at the right address?
+          reply: >-
+            Yes, http://api in the same namespace; the name resolves, the
+            connection is refused.
+          feedback: >-
+            Ruling out the client is useful, and a refused connection on a
+            name that resolves points at the server side. "What changed?"
+            gets you there faster.
+    - prompt: You need the exact symptom. What do you ask?
+      choices:
+        - say: What exactly do the pods and the Deployment show?
+          reply: >-
+            Both pods say Running, READY 0/1, restarts 0. The Deployment says
+            0/2 ready and has said so for an hour. The frontend logs
+            connection refused on every call.
+          feedback: >-
+            Precise symptoms split the causes. Running with 0/1 and no
+            restarts says the process is up and the readiness check never
+            passes; a refused connection says the Service has nowhere to send
+            traffic.
+          best: true
+          fact: Pods are Running with READY 0/1 and 0 restarts for an hour; the Service refuses connections.
+        - say: Should we give the pods more CPU and memory?
+          reply: >-
+            They are idle. nginx uses a few megabytes and no CPU; nothing was
+            killed.
+          feedback: >-
+            Resources matter when something is OOMKilled or throttled. Nothing
+            here points at that. Ask what the pods show before choosing a
+            change.
+        - say: Is the new namespace missing a network policy or DNS?
+          reply: >-
+            The name resolves fine and there are no network policies in that
+            namespace. The connection is refused right away, not dropped.
+          feedback: >-
+            A reasonable suspicion, and the answer rules it out: a refusal,
+            not a timeout, comes from a Service with no ready endpoint.
+    - prompt: Find out how the process behaves and what the team knows about it.
+      choices:
+        - say: How does the api start, and what does it serve on which port?
+          reply: >-
+            It is nginx 1.27-alpine listening on port 80, serving the release
+            files from our ConfigMap at the root path. The dev timed it: it
+            answers within 2 seconds of the container starting.
+          feedback: >-
+            Now you have the reference: port 80, path /, up in 2 seconds.
+            Whatever the readiness check asks that differs from this is
+            suspicious, and "2 seconds" means a longer delay would not help.
+          best: true
+          fact: The process listens on port 80, serves / from the ConfigMap, and answers within 2 seconds of starting.
+        - say: Can we raise the probe's initial delay to a minute, to be safe?
+          reply: >-
+            We tried 60 seconds already. The pods still never turn Ready, the
+            dev says the process is up in 2 seconds anyway.
+          feedback: >-
+            A probe that fails after a minute as well as after 2 seconds is
+            not early, it is wrong. Ask what the process serves, then compare
+            it with what the probe asks.
+    - prompt: Agree on what done means before you touch anything.
+      choices:
+        - say: What does "fixed" look like for you, and is there anything I must not change?
+          reply: >-
+            Both pods Ready, the Service routing to them, and a request
+            through the Service returning our release body. Keep the names of
+            the Deployment, the Service and the ConfigMap, keep a readiness
+            probe on the container, and do not delete the namespace.
+          feedback: >-
+            Agreeing on the end state and the constraints up front is what
+            lets you verify your fix the same way the customer will, and
+            "keep a probe" rules out the lazy fix.
+          best: true
+          fact: "Done: 2 ready pods, the Service answers with the ACME API 3.2.0 body; keep the names, keep a readiness probe, keep the namespace."
+        - say: Can I remove the health checks so the pods come up?
+          reply: >-
+            Please do not. The checklist exists because last year a hung api
+            kept receiving traffic for an hour. We need a probe that works.
+          feedback: >-
+            Removing the probe trades this outage for a silent one later. Ask
+            what done looks like and what you must keep.
+  closing: >-
+    Perfect, that is everything I know. I will watch the checkout error
+    rate; ping me when the api is back.
+
+diagram:
+  nodes:
+    - id: deploy
+      label: Deployment api
+      note: keeps 2 pods from its template, readiness probe included
+    - id: rs
+      label: ReplicaSet
+      note: creates the pods
+    - id: pods
+      label: Pods x2
+      note: Running since the container started, Ready only after the probe passes
+    - id: kubelet
+      label: kubelet readiness probe
+      note: an HTTP request or a command, repeated every few seconds
+    - id: configmap
+      label: ConfigMap api-html
+      note: the release files nginx serves
+    - id: service
+      label: Service api
+      note: routes only to Ready pods
+    - id: frontend
+      label: Frontend
+      note: connection refused when no pod is Ready
+  edges:
+    - from: deploy
+      to: rs
+      label: creates
+    - from: rs
+      to: pods
+      label: creates
+    - from: kubelet
+      to: pods
+      label: probes
+    - from: configmap
+      to: pods
+      label: mounted
+    - from: service
+      to: pods
+      label: Ready only
+    - from: frontend
+      to: service
+      label: requests
+
+quiz:
+  - question: Both api pods show STATUS Running, READY 0/1 and RESTARTS 0. What does that combination tell you?
+    choices:
+      - text: The container process started and the readiness probe has never passed.
+        correct: true
+        explain: >-
+          Running is the container state; READY counts containers whose
+          readiness probe passes. No restarts means nothing crashed and no
+          liveness probe fired. The gap between the two columns is the probe.
+      - text: The image is still being pulled.
+        explain: >-
+          A pod waiting for its image shows ContainerCreating or
+          ImagePullBackOff, not Running. Running means the image is on the
+          node and the process started.
+      - text: The container keeps crashing right after it starts.
+        explain: >-
+          A crash raises RESTARTS and shows CrashLoopBackOff. RESTARTS 0 rules
+          it out.
+  - question: The dev says the process answers within 2 seconds. The probe has failed for an hour. What follows?
+    choices:
+      - text: The probe asks something the process cannot answer; a longer initialDelaySeconds would change nothing.
+        correct: true
+        explain: >-
+          A probe that is early stops failing once the app is up. One that
+          fails the same way at minute 60 asks the wrong path, the wrong port
+          or runs the wrong command. Read the Event message to see which.
+      - text: The process is slower than the dev thinks; raise initialDelaySeconds to 60.
+        explain: >-
+          After an hour the delay has long passed. The Event message names the
+          answer the probe got; a 404 or a refused connection is not slowness.
+      - text: The node is overloaded and cannot run the probe in time.
+        explain: >-
+          A probe that runs out of time reports a timeout in the Event. The
+          messages here are 404, connection refused or a missing file, which
+          are answers, not timeouts.
+  - question: Where does the fix belong?
+    choices:
+      - text: In the Deployment's pod template, the readinessProbe of container api.
+        correct: true
+        explain: >-
+          The pods copy the probe from the Deployment's template. Change it
+          there and the Deployment rolls out new pods that pass it.
+      - text: In the Service, so it stops waiting for Ready pods.
+        explain: >-
+          A Service that routes to not-ready pods hides the next real outage.
+          The Service is doing its job; the probe is wrong.
+      - text: In the pods; delete them so they come back Ready.
+        explain: >-
+          New pods are built from the same template and get the same probe.
+          The team already tried it.
+  - question: Why does the frontend get connection refused instead of a timeout?
+    choices:
+      - text: The Service has no ready endpoint, so kube-proxy rejects the connection at once.
+        correct: true
+        explain: >-
+          The EndpointSlice lists both pod IPs with ready=false. kube-proxy
+          programs no destination for the Service, and a connection to it is
+          refused immediately. A timeout would point at the network or DNS.
+      - text: nginx refuses connections until the probe passes.
+        explain: >-
+          nginx listens on port 80 from the first second; the probe result
+          never reaches it. The refusal comes from the Service with no
+          endpoints, not from the pod.
+
+guide:
+  - title: List the pods and read both columns
+    body: >-
+      The workstation shell already points at the episode namespace. Read
+      STATUS and READY together: Running with 0/1 and RESTARTS 0 means the
+      process started and the readiness probe has never passed. Both pods
+      look the same, so the problem is in the shared template.
+    command: kubectl get pods
+  - title: Read the probe events
+    body: >-
+      Every failed probe attempt is an Event. Find the Warning Unhealthy
+      lines: each starts with "Readiness probe failed:" and quotes the answer
+      the kubelet got. "HTTP probe failed with statuscode: 404" means the
+      server answered on that port, but has nothing at the path the probe
+      asked for.
+    command: kubectl get events --sort-by=.lastTimestamp
+  - title: Print the probe next to the container port
+    body: >-
+      Pods copy their probe from the Deployment's template. Print the probe
+      and the declared port of one pod on one screen and compare them with
+      what the team told you: port 80, path /. Replace the pod name with one
+      from the NAME column; TAB completes it.
+    command: kubectl get pod <pod-name> -o jsonpath='{.spec.containers[0].readinessProbe}{"\n"}{.spec.containers[0].ports}{"\n"}'
+  - title: See what the Service sees
+    body: >-
+      The EndpointSlice of the Service lists both pod addresses with
+      ready=false. The Service knows the pods and sends them nothing, which
+      is the connection refused the frontend logs.
+    command: kubectl get endpointslices -l kubernetes.io/service-name=api -o jsonpath='{range .items[*].endpoints[*]}{.addresses[0]} ready={.conditions.ready}{"\n"}{end}'
+  - title: Change the probe in the Deployment
+    body: >-
+      Change one thing: the readiness probe of container api, so it asks for
+      the path nginx serves on the port it listens on. The Deployment creates
+      a new ReplicaSet and replaces the pods with ones that pass the probe.
+    command: kubectl patch deployment api --type=json -p='[{"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe","value":{"httpGet":{"path":"/","port":"http"},"initialDelaySeconds":2,"periodSeconds":5}}]'
+  - title: Watch the rollout finish
+    body: >-
+      rollout status waits until the new pods are Ready. This is the
+      verification, not decoration: a pipeline that ran it would have failed
+      this morning instead of reporting success.
+    command: kubectl rollout status deployment/api
+    check: ready-replicas
+  - title: Confirm the Service has endpoints again
+    body: >-
+      The Service routes only to Ready pods. Its EndpointSlice now lists two
+      addresses with ready=true, so traffic reaches the api again. Then press
+      Validate to grade the assignment.
+    command: kubectl get endpointslices -l kubernetes.io/service-name=api
+    check: service-endpoints

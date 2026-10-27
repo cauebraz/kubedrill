@@ -1,0 +1,27 @@
+[scenario]
+id = "008-report-oomkilled"
+title = "report pod is OOMKilled every run; dev insists it uses 50 MB"
+level = "L0"
+module = "L0.2"
+type = "break-fix"
+minutes = 12
+namespace = "reports"
+exam = ["CKA:troubleshooting", "CKAD:observability"]
+concepts = ["resources-and-qos", "pod-lifecycle"]
+fix_targets = ["apps/deployments/report", "core/limitranges/namespace-defaults"]
+images = ["registry.k8s.io/e2e-test-images/agnhost:2.53@sha256:99c6b4bb4a1e1df3f0b3752168c89358794d02258ebebc26bf21c29399011a85"]
+
+[[variant]]
+name = "low-limit"
+vars = { report_request = "32Mi", report_limit = "32Mi", limitrange = "false", sidecar = "false" }
+root_cause = "The Deployment sets limits.memory 32Mi on container report, but the report holds its 48Mi dataset plus the runtime in memory (about 62Mi), so the kernel kills the container with OOMKilled on every start."
+
+[[variant]]
+name = "limitrange-default"
+vars = { report_request = "", report_limit = "", limitrange = "true", sidecar = "false" }
+root_cause = "The Deployment sets no resources, so the LimitRange namespace-defaults fills limits.memory 32Mi into every new pod at admission; the report needs about 62Mi, so the kernel kills it with OOMKilled on every start."
+
+[[variant]]
+name = "sidecar-limit"
+vars = { report_request = "64Mi", report_limit = "128Mi", limitrange = "false", sidecar = "true" }
+root_cause = "The sidecar container log-shipper in the report pod has limits.memory 16Mi while it holds about 26Mi, so the kernel kills the sidecar with OOMKilled on every start; the report container itself fits its 128Mi limit."

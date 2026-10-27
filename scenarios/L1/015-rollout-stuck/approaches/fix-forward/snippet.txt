@@ -1,0 +1,5 @@
+kubectl -n {{ .Namespace }} rollout history deployment/checkout --revision=2
+kubectl -n {{ .Namespace }} patch deployment checkout --type=json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/httpGet/path","value":"/"}]'
+kubectl -n {{ .Namespace }} set resources deployment/checkout -c web --requests=cpu=10m
+kubectl -n {{ .Namespace }} set image deployment/checkout web=nginx:1.27-alpine
+kubectl -n {{ .Namespace }} rollout status deployment/checkout --timeout=120s

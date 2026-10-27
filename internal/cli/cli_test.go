@@ -487,7 +487,7 @@ func (f *fixture) factories() Factories {
 			}
 			return f.journal, nil
 		},
-		Catalog: func(string) (Catalog, error) { return f.catalog, nil },
+		Catalog: func(string, []string) (Catalog, error) { return f.catalog, nil },
 		Connect: func(string, string, string) (Kube, Grader, error) { return f.kube, f.grader, nil },
 		ScriptKubeconfig: func(journalDir, kubeconfig, contextName string) (string, error) {
 			f.pinned = append(f.pinned, journalDir+" "+kubeconfig+" "+contextName)
@@ -1407,12 +1407,9 @@ func TestVersionThroughMain(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit: got %d, want 0 (%s)", code, errOut)
 	}
-	line := strings.TrimSpace(out)
-	if !strings.HasPrefix(line, "kubedrill ") {
-		t.Errorf("stdout: got %q, want a line starting with \"kubedrill \"", line)
-	}
-	if strings.Count(out, "\n") != 1 {
-		t.Errorf("stdout: got %q, want exactly one line", out)
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 2 || !strings.HasPrefix(lines[0], "kubedrill ") || lines[1] != "source: "+repoURL {
+		t.Errorf("stdout: got %q, want the build line and the source line", out)
 	}
 	if errOut != "" {
 		t.Errorf("stderr: got %q, want empty", errOut)

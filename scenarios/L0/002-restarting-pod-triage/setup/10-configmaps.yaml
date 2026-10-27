@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shop-pages
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/part-of: shop
+data:
+  index.html: |
+    <!doctype html>
+    <html>
+      <head><title>ACME shop service</title></head>
+      <body><h1>ACME shop service</h1><p>ok</p></body>
+    </html>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: reviews-config
+  namespace: {{ .Namespace }}
+  labels:
+    app: reviews
+    app.kubernetes.io/part-of: shop
+data:
+  reviews.conf: |
+    CACHE_MB=8

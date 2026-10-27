@@ -1,0 +1,31 @@
+[scenario]
+id = "003-image-inventory"
+title = "Ops wants a one-liner: list every image running in shop into a ConfigMap inventory"
+level = "L0"
+module = "L0.1"
+type = "build"
+minutes = 10
+namespace = "shop"
+exam = ["CKA:troubleshooting"]
+concepts = ["image-pull", "pod-lifecycle"]
+fix_targets = ["core/configmaps/inventory"]
+images = [
+  "nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10",
+  "nginx:1.26-alpine@sha256:1eadbb07820339e8bbfed18c771691970baee292ec4ab2558f1453d26153e22d",
+  "redis:7.4-alpine@sha256:6ba19c50b56777f5c11c58eff8ddb69d0d5f27ba131cffb63f180ccfd43c66af",
+  "busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
+  "busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e",
+  "registry.k8s.io/e2e-test-images/agnhost:2.53@sha256:99c6b4bb4a1e1df3f0b3752168c89358794d02258ebebc26bf21c29399011a85",
+]
+
+[[variant]]
+name = "scaled-to-zero"
+vars = { storefront = "nginx:1.27-alpine", catalog = "registry.k8s.io/e2e-test-images/agnhost:2.53", cache = "redis:7.4-alpine", worker = "registry.k8s.io/e2e-test-images/agnhost:2.53", init = "busybox:1.36", checkout = "nginx:1.26-alpine", checkout_replicas = "0", sidecar = "", expected = "registry.k8s.io/e2e-test-images/agnhost:2.53 nginx:1.27-alpine redis:7.4-alpine" }
+
+[[variant]]
+name = "sidecar"
+vars = { storefront = "nginx:1.27-alpine", catalog = "registry.k8s.io/e2e-test-images/agnhost:2.53", cache = "redis:7.4-alpine", worker = "registry.k8s.io/e2e-test-images/agnhost:2.53", init = "busybox:1.36", checkout = "nginx:1.26-alpine", checkout_replicas = "1", sidecar = "busybox:1.37", expected = "registry.k8s.io/e2e-test-images/agnhost:2.53 busybox:1.37 nginx:1.26-alpine nginx:1.27-alpine redis:7.4-alpine" }
+
+[[variant]]
+name = "digest-pin"
+vars = { storefront = "nginx:1.27-alpine", catalog = "registry.k8s.io/e2e-test-images/agnhost:2.53", cache = "redis:7.4-alpine@sha256:6ba19c50b56777f5c11c58eff8ddb69d0d5f27ba131cffb63f180ccfd43c66af", worker = "registry.k8s.io/e2e-test-images/agnhost:2.53", init = "busybox:1.36", checkout = "nginx:1.26-alpine", checkout_replicas = "1", sidecar = "", expected = "registry.k8s.io/e2e-test-images/agnhost:2.53 nginx:1.26-alpine nginx:1.27-alpine redis:7.4-alpine@sha256:6ba19c50b56777f5c11c58eff8ddb69d0d5f27ba131cffb63f180ccfd43c66af" }

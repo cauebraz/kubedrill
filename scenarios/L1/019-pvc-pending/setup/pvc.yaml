@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: uploads-data
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: uploads
+    app.kubernetes.io/part-of: shop
+spec:
+  storageClassName: {{ .Vars.storage_class }}
+  accessModes:
+    - {{ .Vars.access_mode }}
+  resources:
+    requests:
+      storage: 1Gi

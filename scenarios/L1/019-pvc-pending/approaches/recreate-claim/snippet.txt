@@ -1,0 +1,5 @@
+kubectl -n {{ .Namespace }} get pvc uploads-data -o yaml > uploads-data.yaml
+kubectl -n {{ .Namespace }} delete pvc uploads-data
+printf '%s\n' 'apiVersion: v1' 'kind: PersistentVolumeClaim' 'metadata: {name: uploads-data}' 'spec: {storageClassName: standard, accessModes: [ReadWriteOnce], resources: {requests: {storage: 1Gi}}}' > uploads-data-fixed.yaml
+kubectl -n {{ .Namespace }} apply -f uploads-data-fixed.yaml
+kubectl -n {{ .Namespace }} rollout status deployment/uploads --timeout=120s

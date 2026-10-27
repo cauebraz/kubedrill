@@ -44,6 +44,9 @@ type Module struct {
 	Exam      []string          `json:"exam"`
 	Concepts  []string          `json:"concepts,omitempty"`
 	Scenarios []PlannedScenario `json:"scenarios"`
+	// Pack names the installed pack that added the module, empty for the
+	// modules of curriculum.yaml.
+	Pack string `json:"pack,omitempty"`
 }
 
 // PlannedScenario is a scenario idea or an existing scenario directory. ID
@@ -187,6 +190,54 @@ func (c *Curriculum) validate() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// Merge appends the modules of pack to the level with id level. Each module
+// id must start with the level and be new to the ladder, and each scenario
+// id must be listed nowhere else; every problem is reported at once.
+func (c *Curriculum) Merge(level, pack string, mods []Module) error {
+	modules := map[string]bool{}
+	scenarios := map[string]string{}
+	for _, lv := range c.Levels {
+		for _, m := range lv.Modules {
+			modules[m.ID] = true
+			for _, sc := range m.Scenarios {
+				if sc.ID != "" {
+					scenarios[sc.ID] = m.ID
+				}
+			}
+		}
+	}
+	var errs []error
+	for _, m := range mods {
+		if !strings.HasPrefix(m.ID, level+".") {
+			errs = append(errs, fmt.Errorf("module %q: id must start with %s.", m.ID, level))
+		}
+		if modules[m.ID] {
+			errs = append(errs, fmt.Errorf("module %s: id already in the ladder", m.ID))
+		}
+		modules[m.ID] = true
+		for _, sc := range m.Scenarios {
+			if first, dup := scenarios[sc.ID]; dup {
+				errs = append(errs, fmt.Errorf("module %s: scenario %s already listed in module %s", m.ID, sc.ID, first))
+			}
+			scenarios[sc.ID] = m.ID
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("merge pack %s: %w", pack, errors.Join(errs...))
+	}
+	for i := range c.Levels {
+		if c.Levels[i].ID != level {
+			continue
+		}
+		for _, m := range mods {
+			m.Pack = pack
+			c.Levels[i].Modules = append(c.Levels[i].Modules, m)
+		}
+		return nil
+	}
+	return fmt.Errorf("merge pack %s: level %q is not in the curriculum", pack, level)
 }
 
 // ConceptIDs returns the sorted set of concept ids named by any module.

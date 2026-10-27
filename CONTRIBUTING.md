@@ -76,8 +76,8 @@ the path from idea to pull request. Every file and field is described in
      cluster and shows each edit on reload.
 10. **Finish.** Delete the template's comments and marker lines, add the id
    to its module in `curriculum.yaml` (lint refuses a scenario the
-   curriculum does not list), add the row to the scenario table in
-   `README.md`, then run the checks below.
+   curriculum does not list), then run the checks below. The catalog and
+   the workspace read the ticket from the scenario; no README row exists.
 
 ## Run the checks
 
@@ -105,7 +105,8 @@ just check-ci       # check, govulncheck and smoke for every scenario, as CI doe
 
 What runs in CI:
 
-- `.github/workflows/ci.yml` runs the `check` steps plus govulncheck, then
+- `.github/workflows/ci.yml` checks the DCO sign-off of every commit of a
+  pull request, runs the `check` steps plus govulncheck, then
   `kubedrill smoke` on a kind cluster. Its shellcheck step runs the
   runner's `shellcheck -x` over the files `just shellcheck` scans:
   `start.sh`, `workstation/entrypoint.sh`, `workstation/bashrc` and the
@@ -166,10 +167,20 @@ id, title, intro and the four sections. The reviewer also checks:
   Actions by commit SHA with the version in a comment.
 - **Text:** plain ASCII, hyphens for dashes, no emojis. Learner-facing text
   is en-US and names the observable fact. The vendored manifests under
-  `cluster/addons/` keep upstream characters and their Apache-2.0 license;
+  `cluster/addons/` keep upstream characters and their Apache-2.0 license
+  (the repository license as well);
   [cluster/addons/README.md](cluster/addons/README.md) says how to change
   one.
 - **Comments:** none, except doc comments on exported Go identifiers.
+
+## License and sign-off
+
+Everything you contribute, scenarios included, is licensed under
+[Apache-2.0](LICENSE). Every commit carries a Developer Certificate of
+Origin sign-off: the `-s` flag when committing adds `Signed-off-by: Name
+<email>`, which states that you wrote the change or have the right to
+submit it under that license (https://developercertificate.org). CI checks
+the sign-off on every commit of a pull request. There is no CLA.
 
 ## Pull requests
 

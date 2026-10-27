@@ -4,7 +4,7 @@
 import { api } from "./api.js";
 import { el, clear, icon, plural, duration } from "./dom.js";
 import { bind } from "./keys.js";
-import { assignmentRow, flatten, isDone, ring, skeleton, errorState } from "./ui.js";
+import { assignmentRow, flatten, isDone, ring, skeleton, errorState, REPO } from "./ui.js";
 
 export function showHome(app, ctx) {
   ctx.crumbs([{ text: "Home" }]);
@@ -31,7 +31,8 @@ function render(c, next) {
       el("span", null, el("b", { text: String(badges) }), " " + (badges === 1 ? "badge" : "badges")),
       next.reviewsPending ? [el("span", { class: "sep", text: "/" }), el("span", null, el("b", { text: String(next.reviewsPending) }), " " + (next.reviewsPending === 1 ? "review" : "reviews") + " due")] : null,
       el("span", { class: "sep", text: "/" }),
-      el("span", null, planned + " more planned")));
+      el("span", null, planned + " more planned")),
+    el("a", { class: "link small method-link", href: "#/welcome", text: "How kubedrill works: the five-step method" }));
 
   const cont = continueCard(next, byID);
   const plans = plansInProgress(c, byID);
@@ -49,12 +50,19 @@ function render(c, next) {
       el("p", { text: "How much of each CKA, CKAD and CKS domain your solved assignments cover." })),
     el("span", { class: "arrow", html: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg>' }));
 
+  const contribute = el("a", { class: "card browse", href: REPO, target: "_blank", rel: "noopener" },
+    el("div", null,
+      el("div", { class: "eyebrow", text: "Open source" }),
+      el("h3", { text: "Contribute a scenario" }),
+      el("p", { text: "The scenarios, the grader and this page are on GitHub. The best tickets come from incidents you lived through." })),
+    el("span", { class: "arrow", html: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg>' }));
+
   bind("c", "Open the catalog", () => { location.hash = "#/catalog"; });
   bind("Enter", "Continue with the highlighted assignment", () => { const a = cont.querySelector("a.btn.primary"); if (a) { a.click(); } });
 
   return el("div", { class: "page-inner" }, head, cont,
     el("section", { class: "section" }, el("div", { class: "section-head" }, el("h2", { text: "Your plans" }), el("a", { class: "link", href: "#/catalog", text: "All plans" })), plans),
-    el("div", { class: "browse-row" }, browse, exams));
+    el("div", { class: "browse-row" }, browse, exams, contribute));
 }
 
 function continueCard(next, byID) {
@@ -66,7 +74,9 @@ function continueCard(next, byID) {
       el("div", { class: "continue-body" },
         el("span", { class: "pill warn live", text: "Live environment" }),
         el("h2", { text: a.title }),
-        el("p", { text: (a.stage === "diy" ? "Do it yourself run" : a.stage === "practice" ? "Guided practice" : "Episode started from the terminal") + " in namespace " + a.namespace + ", running for " + duration(elapsed) + " of the expected " + a.minutes + " min." })),
+        el("p", { text: a.exam && a.deadline
+          ? "Exam rehearsal in namespace " + a.namespace + ", " + duration(Math.max(0, (new Date(a.deadline).getTime() - Date.now()) / 1000)) + " left."
+          : (a.stage === "diy" ? "Do it yourself run" : a.stage === "practice" ? "Guided practice" : "Episode started from the terminal") + " in namespace " + a.namespace + ", running for " + duration(elapsed) + " of the expected " + a.minutes + " min." })),
       el("a", { class: "btn primary", href: "#/a/" + encodeURIComponent(a.scenarioId) + "/" + stage }, icon("play"), "Resume"));
   }
   if (next.scenarioId) {

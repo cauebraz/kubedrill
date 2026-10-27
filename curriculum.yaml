@@ -16,13 +16,16 @@ levels:
             ticket: "Storefront 0/3 ready and the edge returns 503 after the cluster migration"
             type: break-fix
             feasibility: kind
-          - ticket: "Find which of 40 pods in shop is restarting and why; label it triage=yes"
+          - id: 002-restarting-pod-triage
+            ticket: "Find which of 40 pods in shop is restarting and why; label it triage=yes"
             type: break-fix
             feasibility: kind
-          - ticket: "Ops wants a one-liner: list every image running in shop into a ConfigMap inventory"
+          - id: 003-image-inventory
+            ticket: "Ops wants a one-liner: list every image running in shop into a ConfigMap inventory"
             type: build
             feasibility: kind
-          - ticket: "Someone created objects in the wrong namespace; move catalog Deployment and Service to catalog"
+          - id: 004-wrong-namespace
+            ticket: "Someone created objects in the wrong namespace; move catalog Deployment and Service to catalog"
             type: break-fix
             feasibility: kind
       - id: L0.2
@@ -31,16 +34,20 @@ levels:
         exam: ["CKA:troubleshooting", "CKAD:design-build", "CKAD:observability"]
         concepts: [pod-lifecycle, resources-and-qos]
         scenarios:
-          - ticket: "worker is CrashLoopBackOff since the last deploy; nothing changed in the code"
+          - id: 005-worker-crashloop
+            ticket: "worker is CrashLoopBackOff since the last deploy; nothing changed in the code"
             type: break-fix
             feasibility: kind
-          - ticket: "api never becomes Ready; the dev says it starts in 2s"
+          - id: 006-api-never-ready
+            ticket: "api never becomes Ready; the dev says it starts in 2s"
             type: break-fix
             feasibility: kind
-          - ticket: "migrate init container hangs forever on the new cluster"
+          - id: 007-init-container-hangs
+            ticket: "migrate init container hangs forever on the new cluster"
             type: break-fix
             feasibility: kind
-          - ticket: "report pod is OOMKilled every run; dev insists it uses 50 MB"
+          - id: 008-report-oomkilled
+            ticket: "report pod is OOMKilled every run; dev insists it uses 50 MB"
             type: break-fix
             feasibility: kind
       - id: L0.3
@@ -48,13 +55,16 @@ levels:
         summary: "Selectors, endpoints, ports, ClusterIP, NodePort, Ingress basics"
         exam: ["CKA:networking", "CKAD:networking"]
         scenarios:
-          - ticket: "cart.shop.svc times out but pods are Running"
+          - id: 009-cart-timeout
+            ticket: "cart.shop.svc times out but pods are Running"
             type: break-fix
             feasibility: kind
-          - ticket: "Ingress 502 after the port rename in the image"
+          - id: 010-port-rename-502
+            ticket: "Ingress 502 after the port rename in the image"
             type: break-fix
             feasibility: kind
-          - ticket: "Expose admin on NodePort 30080 for the QA laptop"
+          - id: 011-expose-admin-nodeport
+            ticket: "Expose admin on NodePort 30080 for the QA laptop"
             type: build
             feasibility: kind
       - id: L0.4
@@ -62,13 +72,16 @@ levels:
         summary: "ConfigMaps, Secrets, env vars, mounted files, update propagation"
         exam: ["CKA:workloads", "CKAD:environment"]
         scenarios:
-          - ticket: "App reads old config after we updated the ConfigMap"
+          - id: 012-stale-configmap
+            ticket: "App reads old config after we updated the ConfigMap"
             type: break-fix
             feasibility: kind
-          - ticket: "db-password mounted but app says file not found"
+          - id: 013-secret-file-not-found
+            ticket: "db-password mounted but app says file not found"
             type: break-fix
             feasibility: kind
-          - ticket: "Secret committed in plain text; recreate it from a file and rotate"
+          - id: 014-rotate-plaintext-secret
+            ticket: "Secret committed in plain text; recreate it from a file and rotate"
             type: build
             feasibility: kind
 
@@ -84,7 +97,8 @@ levels:
         summary: "Rollout strategy, history, rollback, maxSurge and maxUnavailable, canary with two Deployments"
         exam: ["CKA:workloads", "CKAD:deployment"]
         scenarios:
-          - ticket: "Rollout of checkout stuck at 3/4 for an hour"
+          - id: 015-rollout-stuck
+            ticket: "Rollout of checkout stuck at 3/4 for an hour"
             type: break-fix
             feasibility: kind
           - ticket: "Roll back pricing to yesterday's version without a Git revert"
@@ -102,7 +116,8 @@ levels:
         summary: "Concurrency policy, backoff, stable identity, volumeClaimTemplates, tolerations for DaemonSets"
         exam: ["CKAD:design-build"]
         scenarios:
-          - ticket: "Nightly invoice CronJob ran twice at once and corrupted a file"
+          - id: 016-cronjob-overlap
+            ticket: "Nightly invoice CronJob ran twice at once and corrupted a file"
             type: break-fix
             feasibility: kind
           - ticket: "kafka StatefulSet pod-1 lost its data after a node restart"
@@ -111,7 +126,8 @@ levels:
           - ticket: "Log agent DaemonSet does not run on the control plane node"
             type: break-fix
             feasibility: kind
-          - ticket: "Build a 3-replica redis StatefulSet with stable DNS and a headless Service"
+          - id: 020-redis-statefulset
+            ticket: "Build a 3-replica redis StatefulSet with stable DNS and a headless Service"
             type: build
             feasibility: kind
       - id: L1.3
@@ -123,11 +139,13 @@ levels:
             type: break-fix
             feasibility: addon
             addons: "metrics-server"
-          - ticket: "HPA on api shows unknown and never scales"
+          - id: 017-hpa-unknown
+            ticket: "HPA on api shows unknown and never scales"
             type: break-fix
             feasibility: addon
             addons: "metrics-server"
-          - ticket: "Set requests and limits for shop so every pod is Guaranteed within a 2-CPU quota"
+          - id: 018-guaranteed-within-quota
+            ticket: "Set requests and limits for shop so every pod is Guaranteed within its quota"
             type: build
             feasibility: kind
       - id: L1.4
@@ -135,7 +153,8 @@ levels:
         summary: "PVCs and StorageClasses, access modes, fsGroup, projected volumes"
         exam: ["CKA:storage", "CKAD:design-build", "CKAD:environment"]
         scenarios:
-          - ticket: "uploads PVC Pending on the new cluster"
+          - id: 019-pvc-pending
+            ticket: "uploads PVC Pending on the new cluster"
             type: break-fix
             feasibility: kind
           - ticket: "App cannot write to its volume: permission denied"

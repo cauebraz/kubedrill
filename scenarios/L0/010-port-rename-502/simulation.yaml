@@ -1,0 +1,264 @@
+customer:
+  name: Priya
+  role: Docs team lead
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Ask me for a hint whenever you are
+    stuck: each hint goes one step further, from where to look to what to
+    change, and the last one waits until you name a cause.
+
+meeting:
+  opening: >-
+    Thanks for picking this up. The docs portal has answered 502 since last
+    night and customers are writing in. The rollout finished and the pods are
+    Running, so we do not know where to look. Where do you want to start?
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What changed right before the 502 started?
+          reply: >-
+            We shipped release 3.2.0 of web yesterday evening. The release
+            notes mention an nginx cleanup that changed the HTTP port of the
+            container. Nothing else in the namespace was touched.
+          feedback: >-
+            Good first question. A failure that starts right after a change
+            usually comes from it, and "changed the HTTP port" names the kind
+            of field to compare: every object that mentions that port.
+          best: true
+          fact: The 502 started right after release 3.2.0 of web, which changed the HTTP port of the container.
+        - say: Can you roll the release back while we look?
+          reply: >-
+            We would rather not; 3.2.0 carries a fix customers are waiting
+            for, and the page itself works. We want it fixed forward.
+          feedback: >-
+            Rolling back is a fair mitigation, but the customer just told you
+            the release is wanted and the page works. Ask what changed; the
+            answer narrows the search to one kind of field.
+        - say: Is the edge down for the other teams too?
+          reply: >-
+            No, the other sites behind the same edge are fine. Only the docs
+            portal answers 502.
+          feedback: >-
+            Useful: it rules out the edge as a whole. It does not tell you
+            what differs for the docs portal; "what changed" does.
+    - prompt: You need the exact symptom. What do you ask?
+      choices:
+        - say: What exactly does a request to the portal return, and how often?
+          reply: >-
+            502 Bad Gateway from the edge, on every request, not now and
+            then. The web pods show Running, and the rollout reported
+            success.
+          feedback: >-
+            Precise symptoms split the causes. A 502 on every request means
+            the proxy gets nothing from the next hop every time: not a slow
+            pod, not one bad replica out of two.
+          best: true
+          fact: Every request through the edge returns 502; the web pods are Running and the rollout reported success.
+        - say: Should we scale web to 6 replicas in case it is load?
+          reply: >-
+            It is not load. There is no traffic reaching the pods at all,
+            the edge answers 502 before anything gets through.
+          feedback: >-
+            Scaling multiplies whatever the pods do. With zero requests
+            reaching them, six copies answer as little as two. Ask for the
+            exact symptom first.
+        - say: Does the portal page load when you open the pod directly?
+          reply: >-
+            On a laptop with docker run of the same release, yes. We have not
+            tried inside the cluster.
+          feedback: >-
+            A real fact: the page and the image are fine. The symptom you
+            still need is what the edge returns and how often, which tells
+            you whether the problem is constant or intermittent.
+    - prompt: Find out what the chain in front of the page looks like.
+      choices:
+        - say: How does a request reach web, and what does the edge forward to?
+          reply: >-
+            The edge is an nginx reverse proxy; its config forwards to
+            http://web:80/, the Service web in the same namespace, and the
+            Service sends it on to the web pods.
+          feedback: >-
+            Now you have the chain to walk: edge, Service web, EndpointSlice,
+            pods, the port nginx listens on. A 502 means one hop in that
+            chain refused or did not answer.
+          best: true
+          fact: "Chain: edge proxies to http://web:80/ (Service web), which forwards to the web pods."
+        - say: Which DNS server does the edge use?
+          reply: >-
+            The cluster's, like every pod. The edge log shows it resolves
+            web to the Service's ClusterIP fine.
+          feedback: >-
+            DNS is a reasonable suspect for a proxy error, and the answer
+            rules it out. Asking for the whole chain gets you that and the
+            hops after it in one question.
+    - prompt: Agree on what done means before you touch anything.
+      choices:
+        - say: What does fixed look like for you, and what must I not change?
+          reply: >-
+            Both web pods ready, the Service reaching them, and the page
+            back through the edge. Do not change the edge, it is shared,
+            and do not touch the web-nginx ConfigMap: the port change in
+            3.2.0 is intentional and the next deploy ships it again.
+          feedback: >-
+            Agreeing on the end state and the constraints up front is what
+            lets you verify the fix the way the customer will, and it rules
+            out the tempting fix of putting the port back.
+          best: true
+          fact: "Done: 2 ready web pods, Service web reaching them, the page back through the edge; the edge and web-nginx stay as they are."
+        - say: Can I change the port back in the nginx config to get it working?
+          reply: >-
+            Please do not. The port change is part of the release, and the
+            next deploy would write the ConfigMap again and bring the 502
+            back.
+          feedback: >-
+            Reverting the release's config treats the symptom and sets up
+            the next outage. Ask what done looks like and what you must keep.
+  closing: >-
+    That is everything I know. I will watch the status page; ping me when the
+    portal is back.
+
+diagram:
+  nodes:
+    - id: customers
+      label: Customers
+      note: get 502 from the edge
+    - id: edge
+      label: Service edge + edge pod
+      note: nginx proxy, proxy_pass http://web:80/
+    - id: svcweb
+      label: Service web
+      note: port 80 -> targetPort, a number or a port name
+    - id: slice
+      label: EndpointSlice web
+      note: pod addresses, Ready, resolved PORTS
+    - id: pods
+      label: Pods web x2
+      note: containerPort (named), readiness probe port
+    - id: conf
+      label: ConfigMap web-nginx
+      note: listen <port>, shipped by release 3.2.0
+  edges:
+    - from: customers
+      to: edge
+      label: requests
+    - from: edge
+      to: svcweb
+      label: proxy_pass
+    - from: svcweb
+      to: slice
+      label: resolves targetPort
+    - from: slice
+      to: pods
+      label: Ready only
+    - from: conf
+      to: pods
+      label: mounted
+
+quiz:
+  - question: The edge log shows connect() failed (111 Connection refused) while connecting to upstream http://10.96.4.7:80/, the ClusterIP of Service web. What does that rule out?
+    choices:
+      - text: DNS and the edge config, because the edge resolved web and reached the Service address.
+        correct: true
+        explain: >-
+          The edge got as far as the Service's ClusterIP. A refused
+          connection there comes from kube-proxy having nothing to forward
+          to, which points at the EndpointSlice and the pods.
+      - text: Nothing, a 502 can come from anywhere.
+        explain: >-
+          The upstream address in the log is the Service's ClusterIP, so the
+          name resolved and the request left the edge. The fault is at or
+          below the Service.
+      - text: The pods, because the Service address answered.
+        explain: >-
+          The Service address refused the connection; it did not answer.
+          kube-proxy refuses when no ready endpoint with a port exists,
+          which is a statement about the pods and the Service, not a pass.
+  - question: The EndpointSlice of web lists two addresses with PORTS unset. What does that mean?
+    choices:
+      - text: The Service's targetPort is a name that no containerPort of the pod carries.
+        correct: true
+        explain: >-
+          The controller writes a port into the slice only when targetPort
+          resolves. Addresses without a port mean the selector matched the
+          pods, but the named port was not found in them.
+      - text: The pods are not Ready.
+        explain: >-
+          Readiness is in the conditions of each endpoint, not in PORTS. Two
+          addresses with no port can be fully Ready pods behind a Service
+          whose port name no longer matches.
+      - text: The Service selector matches no pod.
+        explain: >-
+          A selector that matches nothing leaves ENDPOINTS empty, not PORTS.
+          Addresses are present, so the selector matched.
+  - question: Why does rollout status report success while customers get 502?
+    choices:
+      - text: It waits for the pods to pass their readiness probe; it never sends a request through the Service.
+        correct: true
+        explain: >-
+          A rollout is complete when the new pods are Ready. Whether the
+          Service's targetPort resolves to the port nginx opened is a
+          different fact, which only a request through the Service shows.
+      - text: The pipeline ran rollout status against the wrong namespace.
+        explain: >-
+          Nothing in the ticket points at that. The pods are Running in the
+          right namespace; the rollout checked them, not the path in front
+          of them.
+      - text: rollout status checks the edge, which was up.
+        explain: >-
+          rollout status reads the Deployment's status fields only. It knows
+          nothing about the edge or the Service.
+
+guide:
+  - title: Read the edge log
+    body: >-
+      The workstation shell already points at the episode namespace. The
+      502 is the edge's own answer, and its log pairs each one with the
+      upstream error. Find the [error] line: it names the upstream address
+      (the ClusterIP of Service web) and what happened there.
+    command: kubectl logs deploy/edge
+  - title: List the pods
+    body: >-
+      READY says whether each pod passed its readiness probe. Both web pods
+      show 1/1, so the pods are Ready and the fault sits between the
+      Service and them.
+    command: kubectl get pods
+  - title: Read the EndpointSlice of web
+    body: >-
+      PORTS is the port number the Service resolved and ENDPOINTS the pod
+      addresses. Addresses with PORTS unset mean the Service names a port
+      the pods do not carry.
+    command: kubectl get endpointslices -l kubernetes.io/service-name=web
+  - title: Read the Service's targetPort
+    body: >-
+      targetPort is a number or the name of a containerPort. Keep this value
+      in mind for the next step.
+    command: kubectl get svc web -o jsonpath='{.spec.ports[0].targetPort}{"\n"}'
+  - title: Read the ports the pod template declares
+    body: >-
+      The first line is the container's ports, with their names; the second
+      is the readiness probe port. Compare the containerPort name with the
+      Service's targetPort: release 3.2.0 renamed it, and the Service still
+      uses the old name.
+    command: kubectl get deploy web -o jsonpath='{.spec.template.spec.containers[0].ports}{"\n"}{.spec.template.spec.containers[0].readinessProbe.httpGet.port}{"\n"}'
+  - title: Point the Service at the port the pod carries
+    body: >-
+      Change one thing: targetPort of Service web, to the containerPort name
+      the release uses. No rollout is needed; the EndpointSlice is rewritten
+      within a second.
+    command: kubectl patch service web --type=json -p '[{"op":"replace","path":"/spec/ports/0/targetPort","value":"web"}]'
+    check: web-endpoint-port
+  - title: Confirm the EndpointSlice has a port
+    body: >-
+      PORTS now shows a number and both addresses stay listed. kube-proxy
+      programs the rule from this slice, which is what the edge reaches.
+    command: kubectl get endpointslices -l kubernetes.io/service-name=web
+    check: web-serves-page
+  - title: Request the page through the edge
+    body: >-
+      The same request the customers make. The page with ACME Docs Portal
+      3.2.0 means the 502 is gone. Then press Validate to grade the
+      assignment.
+    command: kubectl run curl --rm -it --restart=Never --image=curlimages/curl:8.14.1 -- curl -sS -m 5 http://edge.{{ .Namespace }}.svc/
+    check: edge-serves-page

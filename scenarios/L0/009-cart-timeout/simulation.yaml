@@ -1,0 +1,263 @@
+customer:
+  name: Priya
+  role: Cart team lead
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Ask me for a hint whenever you are
+    stuck: each hint goes one step further, from where to look to what to
+    change, and the last one waits until you name a cause.
+
+meeting:
+  opening: >-
+    Thanks for picking this up. Checkout has been failing since this
+    morning: the page spins and then says the cart is unavailable. The cart
+    pods look fine to us, so we are stuck. Where do you want to start?
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What changed right before checkout started failing?
+          reply: >-
+            We shipped cart release 2.3 this morning. No code change, the
+            image is the same; we re-applied the whole cart folder from the
+            release branch, Deployment and Service, after some manifest
+            housekeeping.
+          feedback: >-
+            Good first question. A failure that starts right after a change
+            usually comes from that change, and "we re-applied the Service
+            too" widens the suspect list beyond the pods.
+          best: true
+          fact: It broke right after release 2.3, which re-applied the cart Deployment and Service with the same image.
+        - say: Can you roll the cart pods again and see if it comes back?
+          reply: >-
+            We restarted the frontend already, no change. Rolling the cart
+            pods again would give us the same pods from the same template.
+          feedback: >-
+            Acting before observing hides evidence, and new pods are built
+            from the same template. Ask what changed first.
+        - say: Is the cart code broken in this release?
+          reply: >-
+            No, release 2.3 is the same image as 2.2. Nothing in the program
+            changed.
+          feedback: >-
+            Ruling out the code is useful, but it does not point anywhere
+            yet. "What changed?" narrows the search much faster.
+    - prompt: You need the exact symptom. What do you ask?
+      choices:
+        - say: What exactly do the frontend logs and the cart pods show?
+          reply: >-
+            Both cart pods are Running and 1/1 with zero restarts. The
+            frontend log prints a failed call to http://cart/ every few
+            seconds, connection refused, not a slow timeout; the 30-second
+            spinner is the page retrying.
+          feedback: >-
+            Precise symptoms split the causes. Running and 1/1 says the pods
+            and their probes are fine; "connection refused" from the Service
+            name says DNS resolved it and something answered "nobody here".
+          best: true
+          fact: Cart pods are Running 1/1 with 0 restarts; the frontend gets connection refused on http://cart/.
+        - say: Should we scale the cart to 6 replicas to handle the load?
+          reply: >-
+            There is no load reaching the cart at all, the frontend cannot
+            connect. More copies would sit idle the same way.
+          feedback: >-
+            Scaling multiplies what the pods do, including being unreachable.
+            Find out what the symptom is before choosing a change.
+        - say: Is DNS broken on the cluster?
+          reply: >-
+            The name resolves, the frontend error line shows the cart's
+            cluster IP. The connection is refused right after.
+          feedback: >-
+            A reasonable suspicion, and the answer rules it out: a name that
+            resolves to an address and is refused is not a DNS failure.
+    - prompt: Find out what the reference is.
+      choices:
+        - say: How did release 2.2 reach the cart, and what does the frontend call?
+          reply: >-
+            The frontend calls http://cart/ on port 80, and the cart
+            container is nginx listening on port 80. That worked in 2.2 and
+            in every other environment.
+          feedback: >-
+            Now you have the chain to compare against: name cart, Service
+            port 80, container port 80. Whatever the Service does today that
+            differs from that chain is the suspect.
+          best: true
+          fact: The frontend calls http://cart/ on port 80; the cart container is nginx on port 80, unchanged since 2.2.
+        - say: Which node are the cart pods on?
+          reply: >-
+            One on each worker, as usual. They were on the same nodes in
+            2.2.
+          feedback: >-
+            Node placement matters when one node is broken; both pods are
+            Running on different nodes and both are unreachable. Ask how the
+            request is supposed to reach them instead.
+    - prompt: Agree on what done means before you touch anything.
+      choices:
+        - say: What does fixed look like for you, and what must I not change?
+          reply: >-
+            Both cart pods ready, the Service resolving to them, and the
+            frontend log showing its calls succeed. Keep the names cart and
+            frontend, other teams call http://cart/, and do not delete the
+            namespace.
+          feedback: >-
+            Agreeing on the end state and the constraints up front lets you
+            verify the fix the same way the customer will.
+          best: true
+          fact: "Done: 2 ready cart pods, Service cart with ready endpoints, the page served through the Service; keep the names and the namespace."
+        - say: Can I delete the namespace and redeploy the cart from scratch?
+          reply: >-
+            Please do not. The frontend and other services live there, and we
+            would lose the trail of what happened.
+          feedback: >-
+            Starting over destroys the evidence and may break what still
+            works. Ask what done looks like and what you must keep.
+  closing: >-
+    That is everything I know. I will watch the frontend log; ping me when
+    the calls succeed.
+
+diagram:
+  nodes:
+    - id: frontend
+      label: Pod frontend
+      note: calls http://cart/ every 5 seconds
+    - id: service
+      label: Service cart
+      note: selector plus port 80 -> targetPort
+    - id: slice
+      label: EndpointSlice cart-...
+      note: addresses of the pods the selector matched, with the port
+    - id: deploy
+      label: Deployment cart
+      note: keeps 2 pods; the template carries the labels and the port
+      column: 1
+    - id: pods
+      label: Pods cart x2
+      note: nginx listening on 80; Running and Ready
+    - id: customers
+      label: Checkout page
+      note: cart unavailable after 30 seconds
+  edges:
+    - from: customers
+      to: frontend
+      label: loads
+    - from: frontend
+      to: service
+      label: wget http://cart/
+    - from: service
+      to: slice
+      label: resolves through
+    - from: slice
+      to: pods
+      label: address:port
+    - from: deploy
+      to: pods
+      label: creates with labels
+
+quiz:
+  - question: Both cart pods are Running and 1/1, and the frontend gets connection refused on http://cart/. Which layer is left?
+    choices:
+      - text: The Service, because Running and Ready describe the pod, and the refused connection comes from the name in front of it.
+        correct: true
+        explain: >-
+          The readiness probe talks to the pod directly. A pod can be Ready
+          while the Service in front of it selects nothing or forwards to the
+          wrong port.
+      - text: The pods, because a refused connection always comes from the program.
+        explain: >-
+          kube-proxy refuses a connection itself when the Service has no
+          endpoint, and the pod kernel refuses it when the forwarded port has
+          no listener. Neither is a bug in nginx.
+      - text: DNS, because the frontend cannot reach the name cart.
+        explain: >-
+          The frontend's error line names the cluster IP it connected to,
+          so the name resolved. DNS is done by then.
+  - question: The EndpointSlice of the Service prints <unset> for ENDPOINTS while two Ready pods exist. What does it mean?
+    choices:
+      - text: No pod carries every label the Service selector names.
+        correct: true
+        explain: >-
+          The EndpointSlice controller lists the pods that match the whole
+          selector map. One differing value or one extra key is enough to
+          match nothing, and the controller writes an empty slice without
+          complaint.
+      - text: The pods are not Ready yet.
+        explain: >-
+          Not-ready pods are still listed, with ready=false in their
+          conditions. <unset> means no pod matched at all.
+      - text: kube-proxy is down on the nodes.
+        explain: >-
+          The slice is written by a controller in the control plane, not by
+          kube-proxy. kube-proxy only reads it.
+  - question: The EndpointSlice lists both pod addresses on port 8080, and nginx listens on 80. Where does the fix belong?
+    choices:
+      - text: In the Service's targetPort, which names the port on the pod the traffic is forwarded to.
+        correct: true
+        explain: >-
+          The selector matched, so the Service found the pods; it forwards to
+          a port nothing listens on. targetPort is the one field to change,
+          to 80 or to the container port's name.
+      - text: In the pods, by making nginx listen on 8080 as well.
+        explain: >-
+          That changes a working program to fit a wrong manifest. The
+          container listened on 80 in every release; the Service drifted.
+      - text: In the Service's port, from 80 to 8080.
+        explain: >-
+          port is what callers connect to; the frontend calls port 80 and
+          would break. targetPort is the pod side of the mapping.
+
+guide:
+  - title: Read the frontend log
+    body: >-
+      The workstation shell already points at the episode namespace. The
+      frontend calls http://cart/ every 5 seconds and logs the answer.
+      Read the error: the name resolved to a cluster IP, and the connection
+      was refused at once, not after a timeout. So DNS works and something
+      answered "nobody here".
+    command: kubectl logs deploy/frontend --tail=5
+  - title: List the pods with their labels
+    body: >-
+      Both cart pods are Running and 1/1, so the pods and their probes are
+      fine. Keep the LABELS column in view: the cart pods carry app=cart,
+      tier=web and a pod-template-hash. A Service finds pods only through
+      these labels.
+    command: kubectl get pods --show-labels
+  - title: Read the Service selector
+    body: >-
+      -o wide adds the SELECTOR column: the labels the Service asks for.
+      Compare each key=value with the LABELS of the cart pods. In this run
+      one value differs by a single character.
+    command: kubectl get svc cart -o wide
+  - title: Read what the Service resolved to
+    body: >-
+      The EndpointSlice is the list the cluster writes for a Service: the
+      addresses of the pods the selector matched, and the port. <unset> in
+      ENDPOINTS means no pod matched; addresses with a wrong port would mean
+      the mapping is wrong instead. Here it is <unset>.
+    command: kubectl get endpointslices -l kubernetes.io/service-name=cart
+  - title: Run the selector yourself
+    body: >-
+      Ask kubectl for the pods with the exact labels the Service asks for.
+      "No resources found" is the diagnosis: the selector names app=carts
+      and no pod carries that value.
+    command: kubectl get pods -l app=carts
+  - title: Fix the selector
+    body: >-
+      Change one thing: the selector of Service cart, to a label both pods
+      carry. set selector replaces the whole map, so nothing stale is left
+      behind. The pods do not restart; they were never wrong.
+    command: kubectl set selector svc cart app=cart
+    check: cart-endpoints
+  - title: Confirm the EndpointSlice
+    body: >-
+      Within a second the slice lists both pod addresses on port 80. That is
+      what kube-proxy forwards the Service address to.
+    command: kubectl get endpointslices -l kubernetes.io/service-name=cart
+    check: cart-ready-endpoints
+  - title: Confirm the frontend gets through
+    body: >-
+      The next call of the frontend reads "GET http://cart/ -> ok". Verify
+      against the original symptom, not against the change you made. Then
+      press Validate to grade the assignment.
+    command: kubectl logs deploy/frontend --tail=3
+    check: cart-page-served

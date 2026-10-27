@@ -1,0 +1,26 @@
+[scenario]
+id = "019-pvc-pending"
+title = "uploads PVC Pending on the new cluster"
+level = "L1"
+module = "L1.4"
+type = "break-fix"
+minutes = 15
+namespace = "media"
+exam = ["CKA:storage", "CKAD:environment"]
+concepts = ["pod-lifecycle", "what-changed", "troubleshooting-loop"]
+fix_targets = ["core/persistentvolumeclaims/uploads-data", "apps/deployments/uploads"]
+
+[[variant]]
+name = "missing-class"
+vars = { storage_class = "fast-ssd", access_mode = "ReadWriteOnce", claim_name = "uploads-data" }
+root_cause = "PVC uploads-data asks for storageClassName fast-ssd, a StorageClass the new cluster does not have (it has standard), so no provisioner ever creates its volume and the pod waits unscheduled."
+
+[[variant]]
+name = "rwx-access"
+vars = { storage_class = "standard", access_mode = "ReadWriteMany", claim_name = "uploads-data" }
+root_cause = "PVC uploads-data asks for accessModes ReadWriteMany, which the local-path provisioner behind StorageClass standard cannot provide (ReadWriteOnce only), so every provisioning attempt fails and the claim stays Pending."
+
+[[variant]]
+name = "claim-name-typo"
+vars = { storage_class = "standard", access_mode = "ReadWriteOnce", claim_name = "upload-data" }
+root_cause = "Deployment uploads mounts claimName upload-data, but the PVC is named uploads-data, so the pod cannot schedule and uploads-data stays Pending because WaitForFirstConsumer binds only once a pod uses it."

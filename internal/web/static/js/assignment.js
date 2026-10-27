@@ -65,7 +65,7 @@ export function openConcept(c) {
   const closeBtn = el("button", { class: "btn ghost small x", text: "Close", onclick: close });
   back.appendChild(el("aside", { class: "drawer", role: "dialog", "aria-modal": "true", "aria-label": c.title },
     el("div", { class: "drawer-head" }, el("span", { class: "ic", html: icons.book }), el("div", null, el("b", { text: c.title }), el("div", { class: "small muted", text: "Concept / " + c.id })), closeBtn),
-    el("div", { class: "drawer-body" }, el("div", { class: "prose compact", html: c.body || "<p>" + (c.summary || "No page for this concept yet.") + "</p>" }))));
+    el("div", { class: "drawer-body" }, (c.body ? el("div", { class: "prose compact", html: c.body }) : el("div", { class: "prose compact" }, el("p", { text: c.summary || "No page for this concept yet." }))))));
   document.body.appendChild(back);
   closeBtn.focus();
 }

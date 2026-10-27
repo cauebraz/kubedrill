@@ -1,0 +1,26 @@
+[scenario]
+id = "010-port-rename-502"
+title = "Docs portal answers 502 since the web release that changed its port"
+level = "L0"
+module = "L0.3"
+type = "break-fix"
+minutes = 12
+namespace = "portal"
+exam = ["CKA:networking", "CKAD:networking"]
+concepts = ["readiness-and-endpoints", "what-changed"]
+fix_targets = ["core/services/web", "apps/deployments/web"]
+
+[[variant]]
+name = "renamed-port"
+vars = { listen_port = "80", port_name = "web", container_port = "80", probe_port = "80", target_port = "http" }
+root_cause = "Release 3.2.0 renamed the container port of Deployment web from http to web, but Service web still sets targetPort: http; no container port carries that name, so the EndpointSlice has no port and kube-proxy refuses every connection."
+
+[[variant]]
+name = "moved-to-8080"
+vars = { listen_port = "8080", port_name = "http", container_port = "8080", probe_port = "8080", target_port = "80" }
+root_cause = "Release 3.2.0 moved nginx in Deployment web to port 8080 (containerPort 8080), but Service web still sets targetPort: 80, so kube-proxy forwards to a port nothing listens on and the edge gets connection refused."
+
+[[variant]]
+name = "probe-left-on-80"
+vars = { listen_port = "8080", port_name = "http", container_port = "8080", probe_port = "80", target_port = "http" }
+root_cause = "Release 3.2.0 moved nginx in Deployment web to port 8080, but the readinessProbe still probes port 80, so every probe is refused, no pod turns Ready and Service web has no ready endpoint."

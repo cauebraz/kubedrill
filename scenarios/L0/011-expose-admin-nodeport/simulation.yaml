@@ -1,0 +1,276 @@
+customer:
+  name: Priya
+  role: QA lead
+  company: ACME Retail
+
+mentor:
+  intro: >-
+    I am your mentor for this assignment. Ask me for a hint whenever you are
+    stuck: each hint goes one step further, from where to look to what to
+    change, and the last one waits until you name what the Service needs.
+
+meeting:
+  opening: >-
+    Thanks for picking this up. I have to sign off the new admin build today
+    and I cannot open it. The admin team says it runs fine, but from my
+    laptop port 30080 on the nodes just refuses the connection. Where do you
+    want to start?
+  turns:
+    - prompt: Open the conversation. What do you ask first?
+      choices:
+        - say: What exactly do you need to reach, and from where?
+          reply: >-
+            The admin page, from my laptop. The laptop is on the node network,
+            so I open things at http://<node-ip>:<port> on any node. Platform
+            reserved port 30080 for the admin sign-off.
+          feedback: >-
+            Good first question. A build ticket starts with the precise target:
+            a client on the node network, a node port, a page. That already
+            says which Service type you need.
+          best: true
+          fact: The QA laptop, on the node network, needs http://<node-ip>:30080/ to show the admin page.
+        - say: Can you try again? The pods may have restarted.
+          reply: >-
+            I have tried every node for an hour. Nothing changed, it never
+            worked on 30080.
+          feedback: >-
+            Nothing restarted and nothing ever worked; a retry only repeats
+            the symptom. Ask what the target is before touching anything.
+        - say: Is the admin build broken?
+          reply: >-
+            No. The admin team showed me the page through a port-forward from
+            their laptop, it is fine. I just have no kubectl access here.
+          feedback: >-
+            Useful to rule out, and the answer says the pod serves the page.
+            The gap is between the nodes and the pod, not inside it.
+    - prompt: You need a reference that works. What do you ask?
+      choices:
+        - say: What does the page show when it works, and how did the admin team see it?
+          reply: >-
+            A headline that says ACME Admin 3.2.0. They see it with a
+            port-forward straight to the pod.
+          feedback: >-
+            Now you can verify the end state the way the customer will: the
+            page body, not just an open port. A port-forward to the pod also
+            tells you the pod itself answers.
+          best: true
+          fact: When it works the page shows ACME Admin 3.2.0; the admin team sees it through a port-forward to the pod.
+        - say: Should I give you kubectl access so you can port-forward yourself?
+          reply: >-
+            Please do not. QA is not allowed kubectl on this cluster, that is
+            the whole reason I need the node port.
+          feedback: >-
+            Widening access to work around a missing object trades a
+            five-minute Service for a permanent exception. Ask what the
+            working page looks like instead.
+        - say: Can we put it on the public Ingress instead?
+          reply: >-
+            No, the admin page is internal only. Platform said 30080 on the
+            nodes, nothing public.
+          feedback: >-
+            A different route needs a different approval. The customer has a
+            reserved port and a working reference; use them.
+    - prompt: Find out which pods must receive the traffic.
+      choices:
+        - say: Which pods must the traffic reach, and are there other admin pods in that namespace?
+          reply: >-
+            Deployment admin, one pod.
+            {{- if eq .Vars.canary "true" }}
+            The admin team also runs admin-canary in the same namespace; do
+            not send me there, I am signing off 3.2.0, not the canary.
+            {{- else }}
+            As far as I know nothing else of theirs runs there.
+            {{- end }}
+          feedback: >-
+            A Service picks pods by label, not by name, so "which pods" and
+            "which other pods look alike" is the question that decides the
+            selector. Read the labels from the cluster next.
+          best: true
+          fact: >-
+            Traffic goes to the pod of Deployment admin only
+            {{- if eq .Vars.canary "true" }}; admin-canary runs in the same namespace and must not receive it{{ end }}.
+        - say: Can I scale admin to 3 replicas so it is faster for you?
+          reply: >-
+            Please do not change the Deployment, the admin team owns it. One
+            pod is plenty for a sign-off.
+          feedback: >-
+            Scaling changes the workload you were asked not to touch and does
+            not open any port. Ask which pods the traffic must reach.
+        - say: Which port does the container listen on?
+          reply: >-
+            No idea. The admin team configures nginx through a ConfigMap; it
+            is whatever that config says.
+          feedback: >-
+            The right fact, the wrong source: the cluster answers this
+            precisely (the container port in the Deployment), the customer
+            can only guess. Ask her what only she knows.
+    - prompt: Agree on what done means before you touch anything.
+      choices:
+        - say: What does done look like for you, and what must I not change?
+          reply: >-
+            http://<node-ip>:30080/ shows ACME Admin 3.2.0 from my laptop. Name
+            the Service admin so the runbook matches, do not change the
+            Deployments or the ConfigMaps, and keep the namespace.
+          feedback: >-
+            Agreeing on the end state and the constraints up front is what
+            lets you verify your work the same way the customer will.
+          best: true
+          fact: "Done: http://<node-ip>:30080/ shows ACME Admin 3.2.0; the Service is named admin; Deployments, ConfigMaps and the namespace stay as they are."
+        - say: Can I delete the namespace and redeploy everything with a Service included?
+          reply: >-
+            Please do not. The admin team's build lives there and I need
+            exactly that one signed off.
+          feedback: >-
+            Starting over destroys what works and changes what you were
+            asked to keep. Ask what done looks like and what to keep.
+  closing: >-
+    Perfect, that is everything I know. I will keep the browser tab open on
+    30080; ping me when the page shows up.
+
+diagram:
+  nodes:
+    - id: laptop
+      label: QA laptop
+      note: on the node network, opens http://<node-ip>:30080/
+    - id: node
+      label: Node (kube-proxy)
+      note: a NodePort Service opens its nodePort on every node
+    - id: service
+      label: Service admin
+      note: type NodePort, selector, port 80 -> targetPort
+    - id: slice
+      label: EndpointSlice
+      note: the Ready pods the selector matched
+    - id: deploy
+      label: Deployment admin
+      note: keeps 1 pod from its template, labels included
+      column: 1
+    - id: pod
+      label: Pod admin
+      note: labels name=admin, track=stable; nginx on the container port
+    - id: configmaps
+      label: ConfigMaps admin-html, admin-nginx
+      note: the page and the listen port
+      column: 2
+    - id: others
+      label: Other pods in the namespace
+      note: a selector that also matches them sends QA to the wrong page
+      column: 2
+  edges:
+    - from: laptop
+      to: node
+      label: requests :30080
+    - from: node
+      to: service
+      label: nodePort
+    - from: service
+      to: slice
+      label: selector
+    - from: slice
+      to: pod
+      label: targetPort
+    - from: deploy
+      to: pod
+      label: creates
+    - from: configmaps
+      to: pod
+      label: mounted
+    - from: service
+      to: others
+      label: only if the selector matches
+
+quiz:
+  - question: kubectl describe service admin shows Endpoints <none> while the admin pod is 1/1 Running. What is wrong?
+    choices:
+      - text: The selector names a label pair the pod does not carry.
+        correct: true
+        explain: >-
+          A Ready pod becomes an endpoint only when it carries every pair of
+          the selector. Print the selector and the pod labels side by side.
+      - text: The pod is not Ready.
+        explain: >-
+          1/1 in the READY column means the readiness probe passes. A Ready
+          pod with no endpoint points at the selector, not at the pod.
+      - text: The nodePort is wrong.
+        explain: >-
+          The nodePort decides which port the nodes open; it has no effect on
+          which pods the Service selects.
+  - question: The Service has one ready endpoint, but curl to <node-ip>:30080 says connection refused. Which field is most likely wrong?
+    choices:
+      - text: targetPort, because it differs from the port the container listens on.
+        correct: true
+        explain: >-
+          kube-proxy forwarded the request to the pod on targetPort; nothing
+          listened there, so the pod refused it. Compare targetPort with the
+          containerPort of the Deployment.
+      - text: port, because 80 is reserved on the nodes.
+        explain: >-
+          port is the Service's own port on its cluster IP; the nodes open
+          nodePort, not port. 80 is a fine value for port.
+      - text: type, because only LoadBalancer Services accept outside traffic.
+        explain: >-
+          NodePort is exactly the type that opens a port on every node. A
+          LoadBalancer is a NodePort plus a cloud load balancer in front.
+  - question: Two pods carry app.kubernetes.io/name=admin and only the stable one may receive traffic. What do you put in the selector?
+    choices:
+      - text: Both the name label and a second label that only the stable pod carries, such as track=stable.
+        correct: true
+        explain: >-
+          Selector pairs are ANDed. Adding a pair the canary pod lacks removes
+          it from the endpoints without touching any pod.
+      - text: The stable pod's name.
+        explain: >-
+          A Service selects by labels, never by name, and the pod name changes
+          on every rollout anyway.
+      - text: Nothing extra; delete the canary pod instead.
+        explain: >-
+          Its Deployment recreates it at once, and you were asked not to touch
+          the admin team's workloads. Fix the selector.
+
+guide:
+  - title: List what exists
+    body: >-
+      The workstation shell already points at the episode namespace. One
+      Deployment, one Running pod, and no Service: nothing is broken, one
+      object is missing.
+    command: kubectl get deployments,pods,services
+  - title: Read the pod labels
+    body: >-
+      A Service picks pods by label. Note every label of the admin pod and
+      check whether another pod in the namespace shares any of them. Leave
+      pod-template-hash out: it changes on every rollout.
+    command: kubectl get pods --show-labels
+  - title: Read the container port
+    body: >-
+      The Service's targetPort must be the port the container listens on. Do
+      not assume 80: the admin team sets the nginx listen port through a
+      ConfigMap, and the Deployment's containerPort mirrors it.
+    command: kubectl get deployment admin -o jsonpath='{.spec.template.spec.containers[0].ports}{"\n"}'
+  - title: Create the Service
+    body: >-
+      kubectl expose copies the Deployment's selector into a new Service, so
+      it matches the stable admin pod only. Type NodePort opens a port on
+      every node; the target port is the one you just read.
+    command: kubectl expose deployment admin --type=NodePort --port=80 --target-port=80
+    check: svc-type
+  - title: Pin the node port
+    body: >-
+      expose cannot choose the nodePort, so the API server picked a random one
+      in 30000-32767. Replace it with the 30080 the laptop was told.
+    command: kubectl patch service admin --type=json -p '[{"op":"replace","path":"/spec/ports/0/nodePort","value":30080}]'
+    check: svc-nodeport
+  - title: Confirm the endpoint
+    body: >-
+      The EndpointSlice lists the pod IPs the selector matched and that are
+      Ready. One address means the Service forwards to the stable admin pod
+      and nothing else.
+    command: kubectl get endpointslices -l kubernetes.io/service-name=admin
+    check: svc-endpoint
+  - title: Request the page like the laptop
+    body: >-
+      A short-lived curl pod on the cluster network asks the first node's
+      InternalIP for port 30080, the same path the QA laptop takes. The
+      answer contains the ACME Admin 3.2.0 headline. Then press Validate to
+      grade the assignment.
+    command: kubectl run qa-laptop --rm -i --restart=Never --image=curlimages/curl:8.14.1 -- curl -sS -m 5 http://$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}'):30080/
+    check: page-via-nodeport

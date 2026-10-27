@@ -1,0 +1,86 @@
+checks:
+  - id: web-ready-replicas
+    description: deployment web has 2 ready replicas
+    why: >-
+      readyReplicas counts pods whose readiness probe passes; a Running pod
+      that fails its probe is left out of the Service, so this number is what
+      the edge can actually reach.
+    weight: 2
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: web
+    path: "{.status.readyReplicas}"
+    equals: "2"
+
+  - id: web-endpoint-ready
+    description: service web has at least one ready endpoint
+    why: >-
+      A Service is only a selector; its EndpointSlices hold the pod IPs that
+      are Ready. With no ready endpoint kube-proxy refuses every connection
+      to the Service, and a proxy in front of it answers 502.
+    depends_on: [web-ready-replicas]
+    resource:
+      apiVersion: discovery.k8s.io/v1
+      kind: EndpointSlice
+      namespace: "{{ .Namespace }}"
+      selector: kubernetes.io/service-name=web
+    path: "{.items[*].endpoints[?(@.conditions.ready==true)].addresses[*]}"
+    not_empty: true
+
+  - id: web-endpoint-port
+    description: service web endpoints list a port
+    why: >-
+      kube-proxy forwards only to endpoints whose port resolved; a slice
+      whose PORTS column is unset refuses every connection even with Ready
+      pods behind it.
+    resource:
+      apiVersion: discovery.k8s.io/v1
+      kind: EndpointSlice
+      namespace: "{{ .Namespace }}"
+      selector: kubernetes.io/service-name=web
+    path: "{.items[*].ports[*].port}"
+    not_empty: true
+
+  - id: web-serves-page
+    description: service web serves the ACME Docs Portal 3.2.0 page
+    why: >-
+      A ready endpoint with a port proves the slice is complete, not that the
+      port answers; one request through the Service is what the edge does on
+      every page load.
+    depends_on: [web-endpoint-ready, web-endpoint-port]
+    probe:
+      image: curlimages/curl:8.14.1@sha256:9a1ed35addb45476afa911696297f8e115993df459278ed036182dd2cd22b67b
+      command: ["curl", "-fsS", "-m", "5", "http://web.{{ .Namespace }}.svc/"]
+      timeout: 30s
+    contains: "ACME Docs Portal 3.2.0"
+
+  - id: edge-serves-page
+    description: service edge serves the ACME Docs Portal 3.2.0 page
+    why: >-
+      The edge is what customers reach; a 502 here is the outage in the
+      ticket, whatever the objects behind it look like, so nothing counts
+      until this request returns the page.
+    critical: true
+    weight: 2
+    probe:
+      image: curlimages/curl:8.14.1@sha256:9a1ed35addb45476afa911696297f8e115993df459278ed036182dd2cd22b67b
+      command: ["curl", "-fsS", "-m", "5", "http://edge.{{ .Namespace }}.svc/"]
+      timeout: 30s
+    contains: "ACME Docs Portal 3.2.0"
+
+  - id: web-config-kept
+    description: configmap web-nginx still holds the release 3.2.0 server block
+    why: >-
+      The server block is what the docs team ships with the release; editing
+      it hides the mismatch until the next deploy writes the ConfigMap again
+      and brings the 502 back.
+    resource:
+      apiVersion: v1
+      kind: ConfigMap
+      namespace: "{{ .Namespace }}"
+      name: web-nginx
+    path: '{.data.default\.conf}'
+    contains: "listen {{ .Vars.listen_port }};"
+    spoiler: true

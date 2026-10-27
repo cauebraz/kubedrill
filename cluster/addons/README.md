@@ -1,8 +1,8 @@
 # Addons
 
 The manifests in this directory are copied from upstream releases and keep
-their upstream license, Apache-2.0 ([LICENSES/Apache-2.0.txt](../../LICENSES/Apache-2.0.txt)).
-The rest of the repository is MIT ([LICENSE](../../LICENSE)).
+their upstream license, Apache-2.0, the same license as the rest of the
+repository ([LICENSE](../../LICENSE)); [NOTICE](../../NOTICE) names them.
 
 Each file is byte-identical to its upstream release except the changes
 listed below. A modified file starts with a one-line notice naming its source
@@ -15,8 +15,8 @@ and its changes.
 | `kwok/stage-fast.yaml` | https://github.com/kubernetes-sigs/kwok/releases/download/v0.8.0/stage-fast.yaml | v0.8.0 | none |
 | `gateway/install.yaml` | https://github.com/envoyproxy/gateway/releases/download/v1.9.2/install.yaml (includes the Gateway API v1.6.1 CRDs) | v1.9.2 | `docker.io/` registry prefix and image digests, notice line |
 
-`*/addon.yaml` and `gateway/gatewayclass.yaml` are written for kubedrill and
-are MIT. The gateway addon also runs the cloud-provider-kind image
+`*/addon.yaml` and `gateway/gatewayclass.yaml` are written for kubedrill.
+The gateway addon also runs the cloud-provider-kind image
 (Apache-2.0) as a container; no file of it is vendored.
 
 None of these upstream projects ships a `NOTICE` file for these releases.

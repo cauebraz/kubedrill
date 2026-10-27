@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: banner-config
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: banner
+    app.kubernetes.io/part-of: marketing-site
+data:
+  banner: Summer sale 2025
+{{- if eq .Vars.edited "banner-config-v2" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: banner-config-v2
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: banner
+    app.kubernetes.io/part-of: marketing-site
+data:
+  banner: Summer sale 2025
+{{- end }}
