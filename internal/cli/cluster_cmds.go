@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -11,6 +12,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cauebraz/kubedrill/internal/cluster"
+	"github.com/cauebraz/kubedrill/internal/env"
+	"github.com/cauebraz/kubedrill/internal/journal"
 	"github.com/cauebraz/kubedrill/internal/render"
 )
 
@@ -56,6 +59,10 @@ func (a *app) continuePractice(ctx context.Context) error {
 		return fmt.Errorf("read current episode: %w", err)
 	}
 	if cur != nil {
+		resume, err := a.resetIfNamespaceGone(ctx, cur)
+		if err != nil || !resume {
+			return err
+		}
 		a.printf("\nresuming %s; opening the workstation\n", cur.ScenarioID)
 		return a.runShell(ctx, layoutTmux, false)
 	}
@@ -74,6 +81,47 @@ func (a *app) continuePractice(ctx context.Context) error {
 	}
 	a.println(a.printer().WrapLine(fmt.Sprintf("not started; run ./start.sh again or kubedrill start %s when you are ready", pick.Ref), "  "))
 	return nil
+}
+
+// resetIfNamespaceGone checks that the namespace of the active episode cur
+// still exists before the workstation reopens it. When the cluster was
+// recreated or the namespace deleted, it says so and offers a reset with a
+// new seed; resume is false when the learner declines. An exam episode is
+// never reset here.
+func (a *app) resetIfNamespaceGone(ctx context.Context, cur *journal.Episode) (resume bool, err error) {
+	if a.examRunning(cur) {
+		return true, nil
+	}
+	s, err := a.learnerSession(ctx)
+	if err != nil {
+		return false, err
+	}
+	err = s.CheckNamespace(ctx)
+	if err == nil {
+		return true, nil
+	}
+	if !errors.Is(err, env.ErrNamespaceMissing) && !errors.Is(err, env.ErrNamespaceForeign) {
+		return false, err
+	}
+	a.println()
+	a.println(a.printer().WrapLine(fmt.Sprintf("the namespace of %s is gone or belongs to another episode; the cluster was recreated or the namespace deleted", cur.ScenarioID), "  "))
+	ans, err := a.ask("Reset it with a new seed and open the workstation? [Y/n]")
+	if err != nil {
+		return false, err
+	}
+	switch strings.ToLower(ans) {
+	case "", "y", "yes":
+	default:
+		a.println("kept the episode; kubedrill reset redeploys it")
+		return false, nil
+	}
+	ep, rd, err := s.Reset(ctx, cur.ScenarioID, 0)
+	if err != nil {
+		return false, err
+	}
+	a.progress.Finish()
+	a.printf("reset %s: seed %d, namespace %s (hints reset to 0)\n", ep.ScenarioID, ep.Seed, rd.Namespace)
+	return true, nil
 }
 
 func (a *app) doctorCommand() *cobra.Command {

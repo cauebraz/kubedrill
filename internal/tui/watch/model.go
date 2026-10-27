@@ -183,11 +183,6 @@ func (m Model) onPoll(msg pollMsg) (tea.Model, tea.Cmd) {
 	m.lastPoll = m.now
 	m.nextPoll = m.now.Add(m.interval)
 	if msg.err != nil {
-		if isNamespaceError(msg.err) {
-			m.fatal = msg.err
-			m.quitting = true
-			return m, tea.Quit
-		}
 		m.pollErr = msg.err
 		return m, nil
 	}
@@ -208,9 +203,11 @@ func (m Model) onRecorded(msg recordedMsg) (tea.Model, tea.Cmd) {
 	m.recording = false
 	if msg.err != nil {
 		if isNamespaceError(msg.err) {
-			m.fatal = msg.err
-			m.quitting = true
-			return m, tea.Quit
+			m.solved = false
+			m.frozen = time.Time{}
+			m.pollErr = msg.err
+			m.nextPoll = m.now
+			return m, nil
 		}
 		m.solved = false
 		m.frozen = time.Time{}
@@ -469,6 +466,11 @@ func (m Model) render() string {
 	m.writeWrapped(&b, status, "  ")
 	b.WriteByte('\n')
 	switch {
+	case m.pollErr != nil && isNamespaceError(m.pollErr):
+		m.writeWrapped(&b, "[err ] "+namespaceErrorText(m.pollErr), "       ")
+		b.WriteByte('\n')
+		m.writeWrapped(&b, "       x twice resets the episode here; this pane follows a kubedrill reset run in the shell", "       ")
+		b.WriteByte('\n')
 	case m.pollErr != nil:
 		fmt.Fprintf(&b, "[err ] grading failed: %s\n", m.pollErr)
 	case m.grade == nil:

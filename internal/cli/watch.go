@@ -69,8 +69,6 @@ func (a *app) runWatch(parent context.Context, w watch.Session, ep *journal.Epis
 			return err
 		}
 		switch {
-		case fm.Fatal != nil:
-			return fm.Fatal
 		case fm.Solution != "":
 			a.printf("episode of %s recorded as abandoned\n\n", fm.ID)
 			a.printf("%s", a.printer().Markdown(fm.Solution))

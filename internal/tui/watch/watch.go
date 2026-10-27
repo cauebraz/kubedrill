@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -85,14 +86,13 @@ type Program struct {
 }
 
 // Result is how a watch program ended: the scenario and start time of the
-// episode shown last, the pane width, and either a fatal namespace error, a
-// solution (the learner surrendered), or the solve state with the recorded
+// episode shown last, the pane width, and either a solution (the learner
+// surrendered), or the solve state with the recorded
 // episode and the scenario n asked to start next.
 type Result struct {
 	ID            string
 	Started       time.Time
 	Width         int
-	Fatal         error
 	Solution      string
 	Solved        bool
 	SolvedEpisode *journal.Episode
@@ -155,7 +155,6 @@ type Model struct {
 	allWhy       bool
 	showHelp     bool
 	quitting     bool
-	fatal        error
 	width        int
 }
 
@@ -291,7 +290,6 @@ func Run(parent context.Context, s Session, ep *journal.Episode, title string, t
 		ID:            fm.id,
 		Started:       fm.started,
 		Width:         fm.width,
-		Fatal:         fm.fatal,
 		Solution:      fm.solution,
 		Solved:        fm.solved,
 		SolvedEpisode: fm.solvedEp,
@@ -300,8 +298,19 @@ func Run(parent context.Context, s Session, ep *journal.Episode, title string, t
 }
 
 // isNamespaceError reports whether err says the scenario namespace is gone
-// or belongs to something else, which ends watch with the learner-facing
-// text instead of a retry loop.
+// or belongs to something else. Watch keeps polling and names the reset, so
+// the pane recovers after x twice or a kubedrill reset in the shell instead
+// of exiting into a bare shell that would take the next key.
 func isNamespaceError(err error) bool {
 	return errors.Is(err, env.ErrNamespaceMissing) || errors.Is(err, env.ErrNamespaceForeign)
+}
+
+// namespaceErrorText is the learner-facing text of a namespace error,
+// without the sentinel the error wraps.
+func namespaceErrorText(err error) string {
+	msg := err.Error()
+	for _, sentinel := range []error{env.ErrNamespaceMissing, env.ErrNamespaceForeign} {
+		msg = strings.TrimSuffix(msg, ": "+sentinel.Error())
+	}
+	return msg
 }

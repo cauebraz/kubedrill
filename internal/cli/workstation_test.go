@@ -429,6 +429,46 @@ func TestDefaultContinuesIntoPractice(t *testing.T) {
 	}
 }
 
+func TestDefaultResumeWithNamespaceGone(t *testing.T) {
+	cases := []struct {
+		name      string
+		stdin     string
+		wantShell int
+		wantSeed  bool
+		want      []string
+	}{
+		{name: "enter resets and opens", stdin: "\n", wantShell: 1, wantSeed: true, want: []string{"the namespace of 001-hello-down is gone", "Reset it with a new seed and open the workstation? [Y/n]", "reset 001-hello-down: seed", "resuming 001-hello-down; opening the workstation"}},
+		{name: "n keeps the episode", stdin: "n\n", want: []string{"Reset it with a new seed and open the workstation? [Y/n]", "kept the episode; kubedrill reset redeploys it"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			withWorkstation(f)
+			if code, _, errOut := f.run(t, "", "start", "001", "--seed", "1", "--no-shell"); code != 0 {
+				t.Fatalf("start: exit %d: %s", code, errOut)
+			}
+			before, _ := f.journal.Current()
+			f.kube.gone = map[string]bool{before.Namespace: true}
+			f.stdoutTTY, f.stdinTTY = true, true
+			code, out, errOut := f.run(t, tc.stdin)
+			if code != 0 {
+				t.Fatalf("default: exit %d: %s", code, errOut)
+			}
+			mustContain(t, out, tc.want...)
+			if got := len(f.ws.shells); got != tc.wantShell {
+				t.Errorf("workstation shells: got %d, want %d", got, tc.wantShell)
+			}
+			after, _ := f.journal.Current()
+			if after == nil {
+				t.Fatal("no active episode after the run")
+			}
+			if reset := after.ID != before.ID; reset != tc.wantSeed {
+				t.Errorf("episode reset: got %v, want %v", reset, tc.wantSeed)
+			}
+		})
+	}
+}
+
 func TestDefaultWithoutTerminalOnlyLists(t *testing.T) {
 	f := newFixture(t)
 	withWorkstation(f)

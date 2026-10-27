@@ -278,6 +278,7 @@ func (c *memCatalog) Find(ref string) (*scenario.Scenario, error) {
 type fakeKube struct {
 	calls   []string
 	labels  map[string]string
+	gone    map[string]bool
 	applied [][]string
 	down    [][]string
 }
@@ -303,6 +304,9 @@ func (k *fakeKube) ApplyCluster(_ context.Context, manifests []string) error {
 
 func (k *fakeKube) NamespaceLabels(_ context.Context, ns string) (map[string]string, error) {
 	k.calls = append(k.calls, "labels "+ns)
+	if k.gone[ns] {
+		return nil, nil
+	}
 	if k.labels == nil {
 		return map[string]string{"app.kubernetes.io/managed-by": "kubedrill"}, nil
 	}

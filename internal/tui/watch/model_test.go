@@ -464,27 +464,36 @@ func widestWhyLine(view string) int {
 	return widest
 }
 
-func TestWatchNamespaceErrorQuits(t *testing.T) {
+func TestWatchNamespaceErrorKeepsWatching(t *testing.T) {
 	for _, sentinel := range []error{env.ErrNamespaceMissing, env.ErrNamespaceForeign} {
 		m := newTestModel(&fakeWatcher{})
-		err := fmt.Errorf("namespace task-hello: %w; run kubedrill reset", sentinel)
+		err := fmt.Errorf("namespace task-hello is missing; run: kubedrill reset: %w", sentinel)
 		next, cmd := m.Update(pollMsg{err: err})
 		m = next.(Model)
-		if m.fatal == nil || !isQuit(cmd) {
-			t.Errorf("%v: fatal %v quit %v, want the error and a quit", sentinel, m.fatal, isQuit(cmd))
+		if isQuit(cmd) {
+			t.Errorf("%v: namespace error quit watch", sentinel)
+		}
+		view := m.View().Content
+		mustContain(t, view, "[err ] namespace task-hello is missing; run: kubedrill reset", "x twice resets the episode here")
+		if strings.Contains(view, ": "+sentinel.Error()) {
+			t.Errorf("%v: view shows the sentinel:\n%s", sentinel, view)
 		}
 		next, cmd = m.Update(tickMsg(m.now.Add(time.Second)))
-		if cmd != nil {
-			t.Errorf("%v: tick after the fatal error re-armed the ticker", sentinel)
+		if cmd == nil {
+			t.Errorf("%v: tick after the namespace error did not re-arm the ticker", sentinel)
 		}
-		_ = next
+		next, _ = next.Update(pollMsg{grade: failGrade()})
+		if view := next.(Model).View().Content; strings.Contains(view, "[err ]") {
+			t.Errorf("%v: a passing poll kept the namespace error:\n%s", sentinel, view)
+		}
 	}
 	m := newTestModel(&fakeWatcher{})
 	next, cmd := m.Update(pollMsg{err: errors.New("connection refused")})
 	m = next.(Model)
-	if m.fatal != nil || cmd != nil {
-		t.Errorf("transient error ended watch: fatal %v", m.fatal)
+	if cmd != nil {
+		t.Errorf("transient error issued a command")
 	}
+	mustContain(t, m.View().Content, "[err ] grading failed: connection refused")
 }
 
 func TestWatchRecheckKey(t *testing.T) {
@@ -641,16 +650,17 @@ func TestWatchSurrenderNeedsDiagnosis(t *testing.T) {
 	mustContain(t, m.View().Content, `the solution needs your diagnosis first: kubedrill diagnose "<what you think is wrong>"`)
 }
 
-func TestWatchRecordedNamespaceErrorIsFatal(t *testing.T) {
+func TestWatchRecordedNamespaceErrorKeepsWatching(t *testing.T) {
 	m := newTestModel(&fakeWatcher{observe: passGrade()})
 	next, _ := m.Update(pollMsg{grade: passGrade()})
 	m = next.(Model)
 	err := fmt.Errorf("namespace task-hello-abcde is missing; run: kubedrill reset: %w", env.ErrNamespaceMissing)
 	next, cmd := m.Update(recordedMsg{err: err})
 	m = next.(Model)
-	if !errors.Is(m.fatal, env.ErrNamespaceMissing) || !isQuit(cmd) {
-		t.Errorf("recorded namespace error: fatal %v, quit %v; want fatal and quit", m.fatal, isQuit(cmd))
+	if isQuit(cmd) || m.solved || m.recording {
+		t.Errorf("recorded namespace error: quit %v solved %v recording %v; want none", isQuit(cmd), m.solved, m.recording)
 	}
+	mustContain(t, m.View().Content, "namespace task-hello-abcde is missing", "x twice resets the episode here")
 }
 
 func TestWatchRecordSurvivesCancelAndIgnoresKeys(t *testing.T) {

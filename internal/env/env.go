@@ -769,6 +769,18 @@ func (s *Session) Expire(ctx context.Context) (*journal.Episode, error) {
 	return done, nil
 }
 
+// CheckNamespace verifies that the namespace of the active episode exists
+// and carries its seed. It returns an error wrapping ErrNamespaceMissing or
+// ErrNamespaceForeign, with the learner-facing text, when it does not, and
+// ErrNoActiveEpisode without an episode.
+func (s *Session) CheckNamespace(ctx context.Context) error {
+	_, rd, err := s.Current()
+	if err != nil {
+		return err
+	}
+	return s.checkNamespace(ctx, rd)
+}
+
 // checkNamespace verifies that the episode's namespace exists and carries the
 // episode's seed before a grade reads it.
 func (s *Session) checkNamespace(ctx context.Context, rd *scenario.Rendered) error {

@@ -310,8 +310,10 @@ Solve and quit:
 
 Errors:
 
-- A missing or foreign scenario namespace ends watch with the same error line
-  as `check`, exit 1.
+- A missing or foreign scenario namespace does not end watch: it shows `[err ]`
+  with the same text as `check` and `x twice resets the episode here; this
+  pane follows a kubedrill reset run in the shell`, keeps polling, and clears
+  the line at the next grade that reads the namespace.
 - In exam mode it refuses, before the terminal check: `watch is not
   available in exam mode; kubedrill submit grades once`.
 
@@ -653,6 +655,15 @@ On a terminal (stdin and stdout), outside the workstation and without
 - With an active episode it prints `resuming <id>; opening the workstation`
   and opens the workstation as `kubedrill shell` does (the exam workstation
   for an exam episode; an exam past its deadline is finished first).
+- Before that, outside an exam, it checks that the episode namespace still
+  exists. When it is gone (the cluster was recreated, for example after the
+  kind containers were removed) or belongs to another episode, it prints
+  `the namespace of <id> is gone or belongs to another episode; the cluster
+  was recreated or the namespace deleted` and asks `Reset it with a new seed
+  and open the workstation? [Y/n]`. Enter, `y` or `yes` runs the reset,
+  prints `reset <id>: seed N, namespace <ns> (hints reset to 0)` and opens
+  the workstation; any other answer prints `kept the episode; kubedrill reset
+  redeploys it` and opens nothing.
 - Without one it asks `Start <id> now? [Y/n]` for the recommended scenario.
   Enter, `y` or `yes` runs `kubedrill start <id>` with the recommended seed;
   any other answer prints `not started; run ./start.sh again or kubedrill
