@@ -433,7 +433,7 @@ func (s *Store) Update(e Episode) error {
 
 // Modify reads the current episode under the journal lock, applies fn to it
 // and writes the result, so changes made meanwhile by another process (a
-// hint in the watch pane, a check in the shell) are never overwritten. id
+// hint from the page, a check in the shell) are never overwritten. id
 // must name the current episode: ErrNoCurrent is returned when none is
 // active and ErrNotCurrent when another one is. When fn returns an error
 // nothing is written and that error is returned as is. When fn sets an

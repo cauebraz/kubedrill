@@ -33,16 +33,14 @@ grading, hints, diagnosis, telemetry and mastery applies to them. The
 meeting and quiz scores are kept in `web-progress.json` in your journal
 and never touch the grade.
 
-The same loop runs in the terminal. `kubedrill` takes you to the
-recommended scenario, or back to the one you were on. The commands of a
-session:
+The terminal in the page is the workstation, and the learner commands run
+there. The commands of a session:
 
 ```sh
-kubedrill start 000               # or pick one yourself: fresh namespace, the workstation opens with the ticket
 kubedrill check --explain         # what will be graded, nothing graded yet
 kubectl get pods; kubectl describe pod ...   # observe before you change anything
 kubedrill diagnose "<the cause>"  # commit to a cause in one line
-# change one thing, then watch the checks in the right pane turn to [pass]
+# change one thing, then watch the checks below the terminal turn green
 kubedrill solution                # after the solve: compare with the reference
 ```
 
@@ -88,18 +86,11 @@ stays the same, and the root cause usually changes.
 
 ## The workstation
 
-`kubedrill start` opens a tmux session with three panes:
-
-- Top left: the ticket. Scroll it with the mouse wheel while you type;
-  click it and press `s` for the story when the scenario has one.
-- Bottom left: a shell with `kubectl` (alias `k`), `helm`, `k9s` and `stern`,
-  already pointed at the episode namespace.
-- Right: `kubedrill watch`, re-grading every 5 seconds.
-
-Read at the top, work at the bottom. Below 120 columns you get a single
-shell instead. `--no-shell` keeps your own terminal, and `kubedrill shell`
-reopens the workstation after you close it. Tools, panes and options are in
-[workstation.md](workstation.md).
+Each run opens a terminal in the page: a container with `kubectl` (alias
+`k`), `helm`, `k9s` and `stern`, already pointed at the episode namespace.
+The ticket and the story are tabs beside it, and the live checks sit below
+it. A dropped terminal shows Reconnect, which opens a new container on the
+same namespace. Tools and options are in [workstation.md](workstation.md).
 
 ## Read the ticket
 
@@ -118,8 +109,8 @@ Expected: 10 min (yours: 7.2 min median over 3 solves)
 `Expected` is the time for someone at that level who has seen the problem
 before. A first attempt that takes three times longer is normal.
 
-If Kubernetes itself is new, start with `kubedrill story` (or `s` in the
-ticket pane) when the ticket names it: it tells this ticket from
+If Kubernetes itself is new, start with `kubedrill story` (or the Story
+tab) when the ticket names it: it tells this ticket from
 zero, explains each object as it appears and walks the read-only commands
 that follow the trail. If only the vocabulary is new, `kubedrill learn`
 prints the concept pages this scenario uses. Otherwise read them after the solve, to name what you did.
@@ -155,24 +146,11 @@ Each check prints what it expected and what it found:
 `kubedrill check --explain` lists every check with its assertion,
 dependencies and `why`, without grading anything.
 
-## watch or check
+## Live checks or check
 
-`kubedrill watch` runs in the right pane. It re-grades every 5 seconds and
-shows elapsed time and hints used. Useful keys:
-
-| Key | Effect |
-|-----|--------|
-| `c` | Grade now |
-| `h` | Next hint |
-| `w` | Show `why` for every failing check |
-| `x` twice | Restart with a new seed |
-| `s` twice | Surrender and see the solution |
-| `n` | After a solve: debrief, then start the recommended scenario |
-| `?` | All keys |
-| `q` | Quit |
-
-A solve never advances on its own. Before recording it, watch grades once
-more, so a state that passes for one tick only is not recorded.
+The page re-grades every 5 seconds while the tab is visible; each check
+opens with its `why`, the expected value and the actual one. Validate (or
+Cmd/Ctrl+Enter) grades now and, on a pass, opens the debrief.
 
 `kubedrill check` grades once. It exits with code 2 while a check fails, so
 it works in scripts. On a solve it prints the same banner and debrief.
@@ -212,7 +190,7 @@ a wrong belief.
 ## Surrender
 
 Giving up after a real attempt is a valid outcome. `kubedrill solution`
-during an episode, or `s` twice in watch, asks for confirmation. It then
+during an episode asks for confirmation. It then
 records the episode as `abandoned` and prints the walkthrough. A diagnosis is
 needed first. Start the scenario again with a new seed the same day.
 
@@ -359,22 +337,21 @@ The full field list is in [cli.md](cli.md#telemetry).
 
 ## Exam mode
 
-```sh
-kubedrill start <id> --exam
-```
+Every assignment has an exam rehearsal stage, linked as `rehearse` from the
+Exams page. It starts a random variant in a time box: the deadline is the
+start plus the scenario's expected minutes, and the page counts it down.
 
-An exam is timed. The deadline is the start plus the scenario's expected
-minutes, and the ticket footer shows it.
-
-- No hints, no solution, no watch and no reset.
-- `check --explain`, `ticket` and `diagnose` still work.
-- `kubedrill submit` grades once and ends the exam as `solved` or `failed`.
-- The workstation has the ticket pane but no watch pane. `k9s`, `stern`,
-  `kubectx` and `kubens` are off the `PATH`, as in the real exam.
-- If the deadline passes, the next kubedrill command grades one last time and
-  records `timed out`. A pass within 30 seconds of the deadline still counts
-  as `solved`. Time is taken when the command starts, so a `submit` you
-  started in time counts even if grading finishes late.
+- No hints, no guide, no story, no live checks and no reset.
+- `check --explain`, `ticket` and `diagnose` still work in the terminal.
+- Submit (or `kubedrill submit`) grades once and ends the exam as `solved`
+  or `failed`; the debrief then shows the root cause and the walkthrough.
+- At zero the page submits by itself.
+- The terminal runs in exam mode: `k9s`, `stern`, `kubectx` and `kubens` are
+  off the `PATH`, as in the real exam.
+- If the deadline passes, the next kubedrill command or page request grades
+  one last time and records `timed out`. A pass within 30 seconds of the
+  deadline still counts as `solved`. Time is taken when the submit starts,
+  so one you started in time counts even if grading finishes late.
 
 `kubedrill exam CKA` (or `CKAD`, `CKS`) shows your coverage per exam domain.
 Details are in [cli.md](cli.md#exam-mode).
@@ -404,7 +381,7 @@ namespaces.
   scenario lists what to solve first. It is advice, and nothing blocks a
   start.
 - **Exam preparation:** check `kubedrill exam CKA`, then rehearse tasks with
-  `--exam`.
+  the exam rehearsal stage.
 
 The levels, hours and planned scenarios are in `curriculum.yaml`; `kubedrill
 path` prints them with your progress.

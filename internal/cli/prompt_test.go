@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"io"
 	"strings"
@@ -81,56 +80,5 @@ func TestPromptsEndOnInterrupt(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestDefaultPromptEndsOnFirstInterrupt(t *testing.T) {
-	f := newFixture(t)
-	withWorkstation(f)
-	pr, pw := io.Pipe()
-	t.Cleanup(func() { pw.Close() })
-	ctx, cancel := context.WithCancel(context.Background())
-	var out, errb syncBuilder
-	done := make(chan int, 1)
-	go func() {
-		done <- Main(ctx, []string{"--root", f.root}, Options{
-			Factories:       f.factories(),
-			Stdout:          &out,
-			Stderr:          &errb,
-			Stdin:           pr,
-			Getenv:          func(k string) string { return f.env[k] },
-			Getwd:           func() (string, error) { return f.root, nil },
-			IsTerminal:      true,
-			IsInputTerminal: true,
-			Now:             f.nowFunc(),
-			Executable:      func() (string, error) { return "/usr/local/bin/kubedrill", nil },
-			Rand:            func(n int64) int64 { return 6 % n },
-			NamespaceSuffix: func() string { return "abcde" },
-		})
-	}()
-	const prompt = "Start 001-hello-down now? [Y/n]"
-	deadline := time.Now().Add(30 * time.Second)
-	for !strings.Contains(out.String(), prompt) {
-		if time.Now().After(deadline) {
-			t.Fatalf("the prompt never appeared:\n%s", out.String())
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	cancel()
-	select {
-	case code := <-done:
-		if code != ExitError {
-			t.Errorf("exit: got %d, want %d", code, ExitError)
-		}
-	case <-time.After(30 * time.Second):
-		t.Fatal("the Start now? prompt kept waiting after the interrupt")
-	}
-	mustContain(t, out.String(), prompt)
-	mustContain(t, errb.String(), "kubedrill: interrupted")
-	if cur, _ := f.journal.Current(); cur != nil {
-		t.Errorf("episode started after an interrupt at the prompt: %s", cur.ID)
-	}
-	if len(f.ws.shells) != 0 {
-		t.Errorf("workstation opened after an interrupt: %d shells", len(f.ws.shells))
 	}
 }

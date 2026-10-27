@@ -17,7 +17,6 @@ RUN apt-get update \
         netcat-openbsd=1.219-1 \
         openssh-client=1:9.2p1-2+deb12u10 \
         procps=2:4.0.2-3 \
-        tmux=3.3a-3 \
         vim-tiny=2:9.0.1378-2+deb12u2 \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/vim.tiny /usr/local/bin/vim \
@@ -77,12 +76,10 @@ RUN groupadd --gid 1000 learner \
     && chmod 0777 /home/learner /home/learner/.kube
 
 COPY --chmod=0644 bashrc /etc/kubedrill/bashrc
-COPY --chmod=0644 tmux.conf /etc/kubedrill/tmux.conf
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint.sh
 
 RUN printf '\n. /etc/kubedrill/bashrc\n' >> /home/learner/.bashrc \
-    && ln -s /etc/kubedrill/tmux.conf /home/learner/.tmux.conf \
-    && chown -h learner:learner /home/learner/.bashrc /home/learner/.tmux.conf
+    && chown -h learner:learner /home/learner/.bashrc
 
 ENV KUBEDRILL_WORKSTATION=1 \
     KUBECONFIG=/home/learner/.kube/config \

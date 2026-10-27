@@ -129,7 +129,7 @@ func TestWorkstationFactoryReportsTheStateDirError(t *testing.T) {
 	want := "workstation: " + cause.Error()
 	for name, err := range map[string]error{
 		"DockerAvailable": ws.DockerAvailable(context.Background()),
-		"Shell":           ws.Shell(context.Background(), workstation.ShellOptions{}),
+		"Prepare":         ws.Prepare(context.Background(), io.Discard),
 		"NodeShell":       ws.NodeShell(context.Background(), "kubedrill", "worker"),
 		"Replay":          ws.Replay(context.Background(), "x.cast"),
 	} {

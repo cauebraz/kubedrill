@@ -82,7 +82,7 @@ func (a *app) runList(level string, recommend bool) error {
 	a.println(a.printer().WrapLine(listLegend, "  "))
 	a.println()
 	if current != nil {
-		next := "kubedrill watch"
+		next := "kubedrill check"
 		if current.Mode == journal.ModeExam {
 			next = "kubedrill submit"
 		}

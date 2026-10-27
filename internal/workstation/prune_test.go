@@ -227,7 +227,7 @@ func TestEnsureBinaryBuildIsBounded(t *testing.T) {
 
 func TestEnsureDataDirsUseJournalLayout(t *testing.T) {
 	m, _, _, data, kubeconfig := shellHarness(t, nil)
-	if err := m.Shell(context.Background(), ShellOptions{Kubeconfig: kubeconfig}); err != nil {
+	if err := runShell(m, context.Background(), ShellOptions{Kubeconfig: kubeconfig}); err != nil {
 		t.Fatal(err)
 	}
 	for _, dir := range []string{filepath.Join(data, "shell"), filepath.Join(data, "recordings")} {

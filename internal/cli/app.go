@@ -1,6 +1,6 @@
 // Package cli holds the kubedrill cobra commands, the session assembly and
 // the command handlers; the terminal text toolkit lives in render and the
-// two Bubble Tea screens in tui/watch and tui/ticket. Every collaborator
+// browser workspace in web, whose Backend is web.go here. Every collaborator
 // arrives through Factories so the commands can be exercised with fakes;
 // cmd/kubedrill wires the real packages.
 package cli
@@ -18,8 +18,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	tea "charm.land/bubbletea/v2"
 
 	"github.com/cauebraz/kubedrill/internal/cluster"
 	"github.com/cauebraz/kubedrill/internal/concepts"
@@ -85,7 +83,6 @@ type Concepts interface {
 type Workstation interface {
 	DockerAvailable(ctx context.Context) error
 	Prepare(ctx context.Context, out io.Writer) error
-	Shell(ctx context.Context, opts workstation.ShellOptions) error
 	ShellCommand(ctx context.Context, opts workstation.ShellOptions) (*exec.Cmd, error)
 	RemoveContainer(ctx context.Context, name string) error
 	NodeShell(ctx context.Context, clusterName, node string) error
@@ -198,7 +195,6 @@ type app struct {
 	executable      func() (string, error)
 	rnd             func(n int64) int64
 	suffix          func() string
-	teaOptions      []tea.ProgramOption
 
 	rootFlag string
 	root     string

@@ -18,6 +18,7 @@ type StageProgress struct {
 	Learn    StageResult `json:"learn"`
 	Practice StageResult `json:"practice"`
 	DIY      StageResult `json:"diy"`
+	Exam     StageResult `json:"exam"`
 }
 
 // StageResult records a completed stage and its best score.
@@ -119,6 +120,8 @@ func (p *progressStore) complete(id string, stage Stage, score, total int) error
 		r = &sp.Practice
 	case StageDIY:
 		r = &sp.DIY
+	case StageExam:
+		r = &sp.Exam
 	default:
 		return fmt.Errorf("record progress: unknown stage %q", stage)
 	}

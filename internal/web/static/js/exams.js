@@ -37,7 +37,8 @@ function examCard(e, byID) {
         d.assignments.length
           ? el("ul", { class: "domain-list" }, d.assignments.map((id) => {
             const a = byID[id];
-            return el("li", null, el("a", { href: "#/a/" + encodeURIComponent(id), text: a ? a.title : id }), a ? statusPill(a.status) : null);
+            return el("li", null, el("a", { href: "#/a/" + encodeURIComponent(id), text: a ? a.title : id }),
+              el("span", { class: "row-end" }, a ? statusPill(a.status) : null, el("a", { class: "link small", href: "#/a/" + encodeURIComponent(id) + "/exam", text: "rehearse" })));
           }))
           : el("p", { class: "planned", text: "No assignment yet; planned in the curriculum." }));
     })));

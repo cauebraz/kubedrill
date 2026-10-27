@@ -775,6 +775,9 @@ button.chk:hover { border-color: var(--line-2); }
 .facts { display: grid; grid-template-columns: auto 1fr; gap: 10px 18px; margin: 12px 0 0; font-size: var(--t-sm); }
 .facts dt { color: var(--fg-2); }
 .facts dd { margin: 0; color: var(--fg); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.walkthrough { margin-bottom: 14px; }
+.walkthrough summary { cursor: pointer; font-weight: 500; }
+.walkthrough .prose { margin-top: 12px; }
 .reflection { display: flex; flex-direction: column; gap: 16px; }
 .reflection .q { display: flex; flex-direction: column; gap: 8px; font-size: var(--t-md); font-weight: 500; }
 .reflection textarea { width: 100%; min-height: 72px; resize: vertical; padding: 10px 12px; border-radius: var(--r-2); border: 1px solid var(--line-1); background: var(--bg-2); color: var(--fg); font: inherit; font-size: var(--t-md); font-weight: 400; line-height: 1.5; }

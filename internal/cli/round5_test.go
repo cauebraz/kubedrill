@@ -8,51 +8,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
-
-	tea "charm.land/bubbletea/v2"
 
 	"github.com/cauebraz/kubedrill/internal/grader"
 	"github.com/cauebraz/kubedrill/internal/journal"
 	"github.com/cauebraz/kubedrill/internal/scenario"
-	"github.com/cauebraz/kubedrill/internal/tui/ticket"
 )
-
-type noEpisodeWatcher struct {
-	*fakeWatcher
-}
-
-func (w noEpisodeWatcher) Grade(context.Context) (grader.Grade, *journal.Episode, error) {
-	return passGrade(), nil, nil
-}
-
-func TestRunWatchUnrecordedSolveIsAnError(t *testing.T) {
-	f := newFixture(t)
-	r, pw := io.Pipe()
-	var out lockedBuilder
-	a := newApp(Options{Factories: f.factories(), Stdout: &out, Stderr: &out, Stdin: r, Getenv: func(string) string { return "" }, Getwd: func() (string, error) { return f.root, nil }, Now: f.nowFunc(), IsTerminal: true})
-	a.teaOptions = []tea.ProgramOption{tea.WithWindowSize(120, 24)}
-	ep := &journal.Episode{ScenarioID: "001-hello-down", Seed: 3, StartedAt: f.nowFunc()()}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	go func() {
-		defer pw.Close()
-		if awaitOutput(ctx, out.String, "?: help  any other key") {
-			pw.Write([]byte("q"))
-		}
-	}()
-	err := a.runWatch(ctx, noEpisodeWatcher{&fakeWatcher{observe: passGrade()}}, ep, "Hello app is down", 2, 2, time.Hour)
-	r.Close()
-	if ctx.Err() != nil {
-		t.Fatalf("runWatch ended by the test timeout, not by q:\n%s", out.String())
-	}
-	if err == nil || !strings.Contains(err.Error(), "the solve was not recorded") {
-		t.Fatalf("runWatch: got %v, want the not recorded error", err)
-	}
-	if strings.Contains(out.String(), "Debrief: ") {
-		t.Errorf("an unrecorded solve printed the debrief:\n%s", out.String())
-	}
-}
 
 func TestLazyConnNeedsThePinnedKubeconfig(t *testing.T) {
 	tests := []struct {
@@ -209,52 +169,6 @@ type countingJournal struct {
 func (j *countingJournal) Episodes(id string) ([]journal.Episode, error) {
 	j.reads.Add(1)
 	return j.memJournal.Episodes(id)
-}
-
-func TestTicketLoaderRendersOncePerEpisodeAndWidth(t *testing.T) {
-	f := newFixture(t)
-	if code, _, errOut := f.run(t, "", "start", "001", "--seed", "1", "--no-shell"); code != 0 {
-		t.Fatalf("start: exit %d: %s", code, errOut)
-	}
-	cj := &countingJournal{memJournal: f.journal}
-	fs := f.factories()
-	fs.Journal = func(string) (Journal, error) { return cj, nil }
-	a := newApp(Options{Factories: fs, Getenv: func(string) string { return "" }, Getwd: func() (string, error) { return f.root, nil }, IsTerminal: true, Now: f.nowFunc()})
-	s, err := a.learnerSession(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	load := a.ticketLoaderFor(s)
-	steps := []struct {
-		width     int
-		restart   bool
-		wantReads int32
-	}{
-		{50, false, 1},
-		{50, false, 1},
-		{50, false, 1},
-		{70, false, 2},
-		{70, true, 3},
-	}
-	var prev ticket.Doc
-	for i, st := range steps {
-		if st.restart {
-			if code, _, errOut := f.run(t, "y\n", "start", "001", "--seed", "2", "--no-shell", "--yes"); code != 0 {
-				t.Fatalf("restart: exit %d: %s", code, errOut)
-			}
-		}
-		doc, err := load(st.width)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := cj.reads.Load(); got != st.wantReads {
-			t.Errorf("step %d (width %d): journal reads got %d, want %d", i, st.width, got, st.wantReads)
-		}
-		if st.restart && doc.Episode == prev.Episode {
-			t.Errorf("step %d: episode %q not reloaded after a new start", i, doc.Episode)
-		}
-		prev = doc
-	}
 }
 
 type cleanupKube struct {

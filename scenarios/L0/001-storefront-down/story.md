@@ -85,9 +85,8 @@ Next, ask a pod why. You need its name; you do not have to type it:
 - Press TAB: `kubectl describe pod stor` then TAB completes the name.
 - Or let a label pick the pods: `kubectl describe pods -l
   app.kubernetes.io/name=storefront` describes all 3 without any name.
-- Or copy it: in the workstation, press `Ctrl-b` then `m` to turn the tmux
-  mouse off, select the name with the mouse and copy it with `Cmd-c`; press
-  `Ctrl-b` `m` again to turn the mouse back on.
+- Or copy it: select the name in the terminal of the page with the mouse
+  and copy it with `Cmd-c` (`Ctrl-Shift-c` on Linux).
 
 ```sh
 kubectl describe pod <pod-name>
@@ -160,7 +159,7 @@ shows 3 pods `Running` with `1/1` READY. A pod named `kubedrill-probe-...`
 may appear for a few seconds: it is the grader sending one request through
 the Service, the way a customer would, and the grader deletes it. The EndpointSlice lists the pod
 addresses the Service sends traffic to; an empty list was the reason for the
-503. The right pane turns every check to `[pass]`, and `kubedrill check`
+503. The checks below the terminal turn green, and `kubedrill check`
 grades once from the shell.
 
 The habit to keep from this ticket: read the STATUS, then read the Events,

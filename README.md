@@ -53,29 +53,23 @@ Each assignment runs in the browser, in six stages:
 The home page always has one next step: the run you left open, or the
 assignment kubedrill recommends and why. The catalog filters every
 assignment by level, status, exam domain and concept, and the exams page
-shows how much of each CKA, CKAD and CKS domain you cover. Press `?` on any
-screen for its keyboard shortcuts.
+shows how much of each CKA, CKAD and CKS domain you cover. Each assignment
+also has an exam rehearsal: a random variant against the clock, no hints
+and one Submit. Press `?` on any screen for its keyboard shortcuts.
 
 ![The browser workspace on the guided practice of scenario 001: the steps on the left, the workstation terminal on the right, the live checks below](docs/images/web-practice.png)
 
 Everything runs on your machine: the page talks to `kubedrill` on
 `127.0.0.1` only, with a token from the link it prints.
 
-## The terminal workstation
+## In the terminal
 
-Prefer the terminal? `kubedrill` without arguments runs the same setup and
-opens the workstation in tmux instead. This is the first scenario, a
-minute in:
-
-![The kubedrill workstation on scenario 001: the ticket at the top left, the shell below it, the live checks on the right](docs/images/first-scenario.png)
-
-The ticket sits at the top left; the mouse wheel scrolls it while you type.
-Your shell below already points at the scenario namespace. The checks on
-the right re-grade every 5 seconds and turn to `[pass]` as you fix things.
-New to Kubernetes? `kubedrill story` (or `s` in the ticket pane) tells the
-ticket from zero: what each object is, which commands follow the trail and
-why the fix works. To copy a pod name, `Ctrl-b m` turns the tmux mouse off
-so the terminal can select; TAB also completes names. When you are stuck:
+The terminal in the page is the workstation: `kubectl`, `helm`, `k9s` and
+`stern`, already pointing at the scenario namespace. New to Kubernetes?
+`kubedrill story` (or the Story tab) tells the ticket from zero: what each
+object is, which commands follow the trail and why the fix works. Select
+text with the mouse to copy it; TAB also completes names. When you are
+stuck:
 
 ```sh
 kubedrill hint                   # the next hint: where to look, what to observe, what it means

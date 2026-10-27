@@ -187,7 +187,7 @@ func TestShellAuditMountAndDataDirs(t *testing.T) {
 	}
 	audit := t.TempDir()
 	m.auditDir = audit
-	if err := m.Shell(context.Background(), ShellOptions{Kubeconfig: kubeconfig}); err != nil {
+	if err := runShell(m, context.Background(), ShellOptions{Kubeconfig: kubeconfig}); err != nil {
 		t.Fatal(err)
 	}
 	run, _ := dockerRun(fr)
@@ -210,7 +210,7 @@ func TestShellAuditMountAndDataDirs(t *testing.T) {
 
 	fr.calls = nil
 	m.auditDir = filepath.Join(audit, "missing")
-	if err := m.Shell(context.Background(), ShellOptions{Kubeconfig: kubeconfig}); err != nil {
+	if err := runShell(m, context.Background(), ShellOptions{Kubeconfig: kubeconfig}); err != nil {
 		t.Fatal(err)
 	}
 	run, _ = dockerRun(fr)
@@ -436,7 +436,7 @@ func dockerRun(fr *fakeRunner) (call, bool) {
 func TestShellArgv(t *testing.T) {
 	m, fr, root, data, kubeconfig := shellHarness(t, nil)
 	m.goos = "darwin"
-	err := m.Shell(context.Background(), ShellOptions{Kubeconfig: kubeconfig, ClusterName: "kubedrill"})
+	err := runShell(m, context.Background(), ShellOptions{Kubeconfig: kubeconfig, ClusterName: "kubedrill"})
 	if err != nil {
 		t.Fatalf("Shell: got error %v, want nil", err)
 	}
@@ -468,7 +468,7 @@ func TestShellArgv(t *testing.T) {
 		" -e KUBEDRILL_CLUSTER=kubedrill ",
 		" -e TERM ",
 		" -w /workspace ",
-		" " + tag + " tmux ",
+		" " + tag + " shell ",
 	} {
 		if !strings.Contains(argv, want) {
 			t.Errorf("docker run argv lacks %q:\n%s", strings.TrimSpace(want), argv)
@@ -479,8 +479,8 @@ func TestShellArgv(t *testing.T) {
 			t.Errorf("docker run argv on darwin must not contain %q:\n%s", strings.TrimSpace(reject), argv)
 		}
 	}
-	if !strings.HasSuffix(argv, " "+tag+" tmux ") {
-		t.Errorf("argv must end with the tag and the layout, got %s", argv)
+	if !strings.HasSuffix(argv, " "+tag+" shell ") {
+		t.Errorf("argv must end with the tag and the entrypoint shell argument, got %s", argv)
 	}
 	if !slices.Contains(run.cmd.Env, "DOCKER_CLI_HINTS=false") {
 		t.Errorf("docker run env lacks DOCKER_CLI_HINTS=false")
@@ -493,19 +493,16 @@ func TestShellArgv(t *testing.T) {
 	}
 
 	fr.calls = nil
-	err = m.Shell(context.Background(), ShellOptions{Kubeconfig: kubeconfig, Layout: LayoutShell, Command: []string{"kubectl", "get", "nodes"}})
+	err = runShell(m, context.Background(), ShellOptions{Kubeconfig: kubeconfig, Command: []string{"kubectl", "get", "nodes"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	last := fr.calls[len(fr.calls)-1]
 	if got := strings.Join(last.args, " "); !strings.HasSuffix(got, " "+tag+" kubectl get nodes") {
-		t.Errorf("Command replaces layout: got %q", got)
+		t.Errorf("Command replaces the login shell: got %q", got)
 	}
 
-	if err := m.Shell(context.Background(), ShellOptions{Kubeconfig: kubeconfig, Layout: "screen"}); err == nil {
-		t.Errorf("Shell with unknown layout: got nil, want error")
-	}
-	if err := m.Shell(context.Background(), ShellOptions{}); err == nil {
+	if err := runShell(m, context.Background(), ShellOptions{}); err == nil {
 		t.Errorf("Shell with empty kubeconfig: got nil, want error")
 	}
 }
@@ -513,7 +510,7 @@ func TestShellArgv(t *testing.T) {
 func TestShellLinuxUser(t *testing.T) {
 	m, fr, _, _, kubeconfig := shellHarness(t, nil)
 	m.goos, m.uid, m.gid = "linux", 1234, 5678
-	if err := m.Shell(context.Background(), ShellOptions{Kubeconfig: kubeconfig}); err != nil {
+	if err := runShell(m, context.Background(), ShellOptions{Kubeconfig: kubeconfig}); err != nil {
 		t.Fatalf("Shell: %v", err)
 	}
 	run, _ := dockerRun(fr)
@@ -527,7 +524,7 @@ func TestShellLinuxUser(t *testing.T) {
 
 func TestShellKindNetworkMissing(t *testing.T) {
 	m, fr, _, _, kubeconfig := shellHarness(t, failing("docker network inspect kind"))
-	err := m.Shell(context.Background(), ShellOptions{Kubeconfig: kubeconfig})
+	err := runShell(m, context.Background(), ShellOptions{Kubeconfig: kubeconfig})
 	want := "start workstation: kind docker network not found; was the cluster created with docker? (kubedrill up)"
 	if err == nil || err.Error() != want {
 		t.Errorf("Shell without kind network: got %v, want %q", err, want)
@@ -545,7 +542,7 @@ func TestShellRejectsMountCharacters(t *testing.T) {
 			if err := os.WriteFile(kubeconfig, []byte("x"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			err := m.Shell(context.Background(), ShellOptions{Kubeconfig: kubeconfig})
+			err := runShell(m, context.Background(), ShellOptions{Kubeconfig: kubeconfig})
 			if err == nil || !strings.Contains(err.Error(), resolved(t, data)+"/"+bad) {
 				t.Errorf("Shell with %q in the path: got %v, want an error naming the path", bad, err)
 			}
@@ -575,7 +572,7 @@ func TestShellExitCodes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m, _, _, _, kubeconfig := shellHarness(t, map[string]string{"docker run": tt.script})
-			err := m.Shell(context.Background(), ShellOptions{Kubeconfig: kubeconfig})
+			err := runShell(m, context.Background(), ShellOptions{Kubeconfig: kubeconfig})
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("Shell: got %v, want nil", err)
@@ -686,14 +683,6 @@ func TestNodeShell(t *testing.T) {
 			}
 		}
 	})
-}
-
-func TestValidLayout(t *testing.T) {
-	for s, want := range map[string]bool{"tmux": true, "shell": true, "": false, "screen": false, "Tmux": false} {
-		if ValidLayout(s) != want {
-			t.Errorf("ValidLayout(%q): got %v, want %v", s, !want, want)
-		}
-	}
 }
 
 func TestDockerAvailable(t *testing.T) {
@@ -849,7 +838,7 @@ func TestShellWrapsPrepareErrors(t *testing.T) {
 		if err := os.Remove(filepath.Join(root, "workstation", "bashrc")); err != nil {
 			t.Fatal(err)
 		}
-		err := m.Shell(context.Background(), ShellOptions{Kubeconfig: kubeconfig})
+		err := runShell(m, context.Background(), ShellOptions{Kubeconfig: kubeconfig})
 		if err == nil {
 			t.Fatal("Shell: got nil, want an image tag error")
 		}
@@ -865,7 +854,7 @@ func TestShellWrapsPrepareErrors(t *testing.T) {
 	})
 	t.Run("failing go build", func(t *testing.T) {
 		m, fr, _, _, kubeconfig := shellHarness(t, failing("go build"))
-		err := m.Shell(context.Background(), ShellOptions{Kubeconfig: kubeconfig})
+		err := runShell(m, context.Background(), ShellOptions{Kubeconfig: kubeconfig})
 		if err == nil {
 			t.Fatal("Shell: got nil, want a build error")
 		}
@@ -883,7 +872,7 @@ func TestShellWrapsPrepareErrors(t *testing.T) {
 
 func TestDockerProbesAreBounded(t *testing.T) {
 	m, fr, _, _, kubeconfig := shellHarness(t, nil)
-	if err := m.Shell(context.Background(), ShellOptions{Kubeconfig: kubeconfig}); err != nil {
+	if err := runShell(m, context.Background(), ShellOptions{Kubeconfig: kubeconfig}); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.DockerAvailable(context.Background()); err != nil {
@@ -975,7 +964,7 @@ func TestShellRefusesFilesInsideTheJournal(t *testing.T) {
 	if err := os.WriteFile(inside, []byte("apiVersion: v1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err := m.Shell(context.Background(), ShellOptions{Kubeconfig: inside})
+	err := runShell(m, context.Background(), ShellOptions{Kubeconfig: inside})
 	if err == nil || !strings.Contains(err.Error(), "inside the journal directory") {
 		t.Errorf("Shell with the kubeconfig in the journal: got %v, want a refusal", err)
 	}
@@ -984,7 +973,7 @@ func TestShellRefusesFilesInsideTheJournal(t *testing.T) {
 	}
 	m2, _, _, data2, kubeconfig := shellHarness(t, nil)
 	m2.stateDir = data2
-	if err := m2.Shell(context.Background(), ShellOptions{Kubeconfig: kubeconfig}); err == nil || !strings.Contains(err.Error(), "inside the journal directory") {
+	if err := runShell(m2, context.Background(), ShellOptions{Kubeconfig: kubeconfig}); err == nil || !strings.Contains(err.Error(), "inside the journal directory") {
 		t.Errorf("Shell with the binary in the journal: got %v, want a refusal", err)
 	}
 }
@@ -1038,7 +1027,7 @@ func TestShellRefusesJournalOverlap(t *testing.T) {
 			if err := os.MkdirAll(m.dataDir, 0o700); err != nil {
 				t.Fatal(err)
 			}
-			err := m.Shell(context.Background(), ShellOptions{Kubeconfig: kubeconfig})
+			err := runShell(m, context.Background(), ShellOptions{Kubeconfig: kubeconfig})
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("Shell: got %v, want a refusal containing %q", err, tt.want)
 			}
@@ -1056,7 +1045,7 @@ func TestShellSkipsAuditMountWhenPathIsAFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.auditDir = file
-	if err := m.Shell(context.Background(), ShellOptions{Kubeconfig: kubeconfig}); err != nil {
+	if err := runShell(m, context.Background(), ShellOptions{Kubeconfig: kubeconfig}); err != nil {
 		t.Fatal(err)
 	}
 	run, _ := dockerRun(fr)
@@ -1169,4 +1158,16 @@ func TestNodeDebug(t *testing.T) {
 			}
 		})
 	}
+}
+
+// runShell is the interactive session the CLI used to run: ShellCommand,
+// attached to the manager's streams, with docker's own failures as errors.
+// The tests keep it to cover ShellCommand and sessionResult together.
+func runShell(m *Manager, ctx context.Context, o ShellOptions) error {
+	cmd, err := m.ShellCommand(ctx, o)
+	if err != nil {
+		return err
+	}
+	tail := m.attach(cmd)
+	return sessionResult("start workstation", cmd.Run(), tail)
 }

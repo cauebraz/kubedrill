@@ -15,28 +15,25 @@ import (
 	"github.com/cauebraz/kubedrill/internal/progress"
 	"github.com/cauebraz/kubedrill/internal/render"
 	"github.com/cauebraz/kubedrill/internal/scenario"
-	"github.com/cauebraz/kubedrill/internal/tui/ticket"
 )
 
-// startOptions are the flags of kubedrill start.
+// startOptions are the flags of kubedrill start; exam is set by the
+// browser workspace's exam rehearsal, never by a flag.
 type startOptions struct {
-	seed    int64
-	yes     bool
-	noShell bool
-	exam    bool
-	layout  string
+	seed int64
+	yes  bool
+	exam bool
 }
 
 func (a *app) startCommand() *cobra.Command {
 	var o startOptions
 	cmd := &cobra.Command{
 		Use:   "start <ref>",
-		Short: "Start a scenario in a fresh namespace, print its ticket and open the workstation",
-		Long: "start creates the episode namespace, applies the setup and records the episode.\n" +
-			"On a terminal with docker available it opens the workstation (kubectl, k9s and\n" +
-			"friends pinned to the training cluster), which shows the ticket; --no-shell or\n" +
-			"KUBEDRILL_NO_SHELL=1 prints the ticket and stays on the host. --exam starts a\n" +
-			"timed exam: no hints, no solution, no watch, one kubedrill submit.",
+		Short: "Start a scenario in a fresh namespace and print its ticket",
+		Long: "start creates the episode namespace, applies the setup, records the episode\n" +
+			"and prints the ticket. The browser workspace (kubedrill web) starts episodes\n" +
+			"for its practice, DIY and exam runs; start is the same step from a terminal,\n" +
+			"for example the one in the page.",
 		Args: usageArgs(1, "usage: kubedrill start <ref>; see kubedrill list"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.runStart(cmd.Context(), args[0], o)
@@ -44,22 +41,12 @@ func (a *app) startCommand() *cobra.Command {
 	}
 	cmd.Flags().Int64Var(&o.seed, "seed", 0, "seed for the variant (0 or omitted: random)")
 	cmd.Flags().BoolVarP(&o.yes, "yes", "y", false, "leave an active episode without confirmation")
-	cmd.Flags().BoolVar(&o.noShell, "no-shell", false, "print the ticket and stay on the host (also KUBEDRILL_NO_SHELL=1)")
-	cmd.Flags().BoolVar(&o.exam, "exam", false, "exam mode: time box of the scenario minutes, graded once by kubedrill submit")
-	addLayoutFlag(cmd, &o.layout)
 	return cmd
-}
-
-func addLayoutFlag(cmd *cobra.Command, layout *string) {
-	cmd.Flags().StringVar(layout, "layout", layoutTmux, "workstation layout: tmux (shell, ticket and kubedrill watch panes) or shell")
 }
 
 func (a *app) runStart(ctx context.Context, ref string, o startOptions) error {
 	if o.seed < 0 {
 		return fmt.Errorf("seed must be >= 1 (0 draws one), got %d", o.seed)
-	}
-	if err := checkLayout(o.layout); err != nil {
-		return err
 	}
 	cat, err := a.getCatalog()
 	if err != nil {
@@ -189,10 +176,6 @@ func (a *app) healFaults(ctx context.Context) error {
 // the reminder from a past debrief, the worked example offer, then the
 // ticket on the host or the workstation.
 func (a *app) presentEpisode(ctx context.Context, cat Catalog, j Journal, ep *journal.Episode, rd *scenario.Rendered, o startOptions) error {
-	ws, err := a.workstationToOpen(ctx, j, o)
-	if err != nil {
-		return err
-	}
 	a.printf("started %s (seed %d) in namespace %s\n", ep.ScenarioID, ep.Seed, rd.Namespace)
 	eps, err := allEpisodes(j)
 	if err != nil {
@@ -208,15 +191,11 @@ func (a *app) presentEpisode(ctx context.Context, cat Catalog, j Journal, ep *jo
 			return err
 		}
 	}
-	if ws == nil {
-		a.printTicket(ep, rd)
-		return nil
+	a.printTicket(ep, rd)
+	if !a.insideWorkstation() {
+		a.println(a.printer().WrapLine("Practice it in the browser with a terminal next to the ticket: kubedrill web", "  "))
 	}
-	a.println(ticketInWorkstation)
-	p := a.printer()
-	writeFundamentals(p, ep, rd.Scenario)
-	writeTicketFooter(p, ep, rd, a.expectedLine(ep, rd.Scenario))
-	return a.openWorkstation(ctx, j, ws, o.layout, ep)
+	return nil
 }
 
 // workedExampleNamespace is the namespace a worked example renders in; it
@@ -309,24 +288,6 @@ func siblingVariant(sc *scenario.Scenario, ep *journal.Episode) *scenario.Render
 	return nil
 }
 
-// workstationToOpen returns the workstation start will open, or nil when any
-// gate keeps the learner on the host: the flag, the environment, a missing
-// terminal, no wired workstation, or docker unavailable (a notice on stderr).
-func (a *app) workstationToOpen(ctx context.Context, j Journal, o startOptions) (Workstation, error) {
-	if o.noShell || a.getenv("KUBEDRILL_NO_SHELL") == "1" || a.insideWorkstation() || !a.term.IsTerminal || !a.isInputTerminal {
-		return nil, nil
-	}
-	ws, err := a.getWorkstation(j)
-	if err != nil || ws == nil {
-		return nil, err
-	}
-	if err := ws.DockerAvailable(ctx); err != nil {
-		fmt.Fprintf(a.stderr, "workstation skipped: docker is unavailable (%s); kubectl runs on the host\n", err)
-		return nil, nil
-	}
-	return ws, nil
-}
-
 // printTicket renders the instruction, the Fundamentals line, the footer
 // and the next steps.
 func (a *app) printTicket(ep *journal.Episode, rd *scenario.Rendered) {
@@ -370,7 +331,7 @@ func writeTicketFooter(p render.Printer, ep *journal.Episode, rd *scenario.Rende
 	p.Printf("Checked by %s: %s\n", render.Plural(len(rd.Checks), "check"), p.Style(render.StyleBold, "kubedrill check --explain"))
 	p.Println(p.WrapLine(expected, "  "))
 	if ep.Mode == journal.ModeExam && ep.Deadline != nil {
-		p.Println(p.WrapLine(fmt.Sprintf("Exam deadline: %s (%d min time box); no hints, no solution, no watch", ep.Deadline.Local().Format("15:04:05"), sc.Meta.Minutes), "  "))
+		p.Println(p.WrapLine(fmt.Sprintf("Exam deadline: %s (%d min time box); no hints, no solution, no live checks", ep.Deadline.Local().Format("15:04:05"), sc.Meta.Minutes), "  "))
 	}
 }
 
@@ -391,8 +352,7 @@ func writeFundamentals(p render.Printer, ep *journal.Episode, sc *scenario.Scena
 }
 
 func nextStepLine(p render.Printer) string {
-	return "Next: " + p.Style(render.StyleBold, "kubedrill watch") + " (live checks) | " +
-		p.Style(render.StyleBold, "kubedrill check") + " (grade once) | " +
+	return "Next: " + p.Style(render.StyleBold, "kubedrill check") + " (grade once) | " +
 		p.Style(render.StyleBold, "kubedrill hint") + " | " +
 		p.Style(render.StyleBold, `kubedrill diagnose "<cause>"`)
 }
@@ -407,24 +367,15 @@ func solvedNextLine(p render.Printer, id string) string {
 }
 
 func (a *app) ticketCommand() *cobra.Command {
-	var follow bool
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "ticket",
 		Short: "Print the ticket of the active episode again",
-		Long: "ticket prints the ticket of the active episode. --follow keeps it on screen\n" +
-			"instead: a scrollable view (mouse wheel, j/k, space/b, g/G, q quits) that\n" +
-			"follows resets and new starts; the workstation opens it above the shell.",
-		Args: cobra.NoArgs,
+		Long:  "ticket prints the ticket of the active episode; the page shows it beside the terminal.",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if follow && (!a.term.IsTerminal || !a.isInputTerminal) {
-				return fmt.Errorf("ticket --follow needs a terminal on stdin and stdout; use kubedrill ticket in scripts and pipes")
-			}
 			s, err := a.learnerSession(cmd.Context())
 			if err != nil {
 				return err
-			}
-			if follow {
-				return a.runTicketFollow(cmd.Context(), s, ticket.DefaultInterval)
 			}
 			ep, rd, err := s.Current()
 			if err != nil {
@@ -435,8 +386,6 @@ func (a *app) ticketCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&follow, "follow", false, "keep the ticket on screen in a scrollable view that follows the active episode")
-	return cmd
 }
 
 func (a *app) namespaceCommand() *cobra.Command {
@@ -852,7 +801,7 @@ func (a *app) printPath(ep *journal.Episode, solution string) {
 	}
 	if len(mine) == 0 {
 		a.printf("Your path: no kubectl commands recorded (telemetry: %s)\n", source)
-		a.println(a.printer().WrapLine("  commands typed outside the workstation are not logged; kubedrill shell records them", "  "))
+		a.println(a.printer().WrapLine("  commands typed outside the workstation are not logged; the terminal of kubedrill web records them", "  "))
 	} else {
 		a.printf("Your path (%s, from the shell log):\n", render.Plural(len(mine), "kubectl command"))
 		for i, c := range mine {
@@ -912,7 +861,7 @@ func sameScenario(cat Catalog, ref, id string) bool {
 	return err == nil && sc.Meta.ID == id
 }
 
-// errResetInExam refuses reset, and the watch x key, during an exam.
+// errResetInExam refuses reset during an exam.
 var errResetInExam = refusal{msg: "reset is not available in exam mode; kubedrill submit ends the exam", cause: env.ErrExamMode}
 
 // examRunning reports whether ep is an exam episode before its deadline.
@@ -989,7 +938,7 @@ func (a *app) diagnoseCommand() *cobra.Command {
 }
 
 // errSubmitPractice refuses submit on a practice episode.
-var errSubmitPractice = refusal{msg: "submit grades exam episodes (kubedrill start <id> --exam); a practice episode is graded with kubedrill check", cause: env.ErrNotExam}
+var errSubmitPractice = refusal{msg: "submit grades exam episodes (the exam rehearsal of kubedrill web); a practice episode is graded with kubedrill check", cause: env.ErrNotExam}
 
 func (a *app) submitCommand() *cobra.Command {
 	return &cobra.Command{
@@ -1027,4 +976,10 @@ func (a *app) submitCommand() *cobra.Command {
 			return err
 		},
 	}
+}
+
+// revealsSpoilers reports whether ep has taken a hint or recorded a
+// diagnosis, after which check prints the actual values of spoiler checks.
+func revealsSpoilers(ep *journal.Episode) bool {
+	return ep != nil && (ep.HintsUsed > 0 || ep.Diagnosis != nil)
 }

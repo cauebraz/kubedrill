@@ -32,5 +32,5 @@ jobs:
         with:
           persist-credentials: false
       - run: docker build -t kubedrill-workstation:ci workstation/
-      - run: docker run --rm kubedrill-workstation:ci bash -lc 'kubectl version --client && helm version && k9s version && stern --version && yq --version && kubectx --help >/dev/null && kubens --help >/dev/null && tmux -V && asciinema --version && test "$(id -u)" = 1000 && echo OK'
-      - run: docker run --rm kubedrill-workstation:ci tmux 2>&1 | grep -F 'starting a plain shell'
+      - run: docker run --rm kubedrill-workstation:ci bash -lc 'kubectl version --client && helm version && k9s version && stern --version && yq --version && kubectx --help >/dev/null && kubens --help >/dev/null && asciinema --version && test "$(id -u)" = 1000 && echo OK'
+      - run: echo 'kubectl version --client' | docker run --rm -i kubedrill-workstation:ci shell | grep -F 'Client Version'

@@ -289,8 +289,12 @@ func (f *Fake) Start(ctx context.Context, id string, stage web.Stage, replace bo
 		Namespace: "shop-abcde", Ticket: ticket, Story: story, StartedAt: f.now(), Minutes: a.Minutes,
 		HintsTotal: 4, Mentor: "Ask me for a hint whenever you are stuck.", Guide: []scenario.GuideStep{},
 	}
-	if a.Simulation != nil {
+	if a.Simulation != nil && stage != web.StageExam {
 		view.Guide = a.Simulation.Guide
+	}
+	if stage == web.StageExam {
+		deadline := view.StartedAt.Add(time.Duration(a.Minutes) * time.Minute)
+		view.Exam, view.Deadline, view.HintsTotal, view.Story, view.Mentor = true, &deadline, 0, "", ""
 	}
 	f.active = &activeEpisode{view: view, stage: stage}
 	f.hints = nil
@@ -306,24 +310,50 @@ func (f *Fake) Validate(context.Context) (web.Validation, error) {
 	if f.active == nil {
 		return web.Validation{}, errors.New("no active episode; launch the practice or the DIY run first")
 	}
+	if f.active.view.Exam {
+		return web.Validation{}, errors.New("check: exam mode: no feedback until the exam ends; run: kubedrill submit")
+	}
+	return f.end(), nil
+}
+
+// Submit ends an exam episode with one grade.
+func (f *Fake) Submit(context.Context) (web.Validation, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.active == nil || !f.active.view.Exam {
+		return web.Validation{}, errors.New("no active exam; launch the exam rehearsal first")
+	}
+	return f.end(), nil
+}
+
+// end grades the active episode: it passes when Passed is set or it was
+// fixed. A pass, or any exam submit, ends it. Callers hold mu.
+func (f *Fake) end() web.Validation {
 	pass := f.Passed || f.active.fixed
 	v := web.Validation{EpisodeID: f.active.view.EpisodeID, ScenarioID: f.active.view.ScenarioID, Passed: pass, Checks: f.checks(pass)}
-	if !pass {
+	exam := f.active.view.Exam
+	if !pass && !exam {
 		v.Score = 1.0 / 3
-		return v, nil
+		return v
 	}
 	v.Score = 1
+	outcome := "solved"
+	if !pass {
+		v.Score, outcome = 1.0/3, "failed"
+	}
+	v.Outcome = outcome
 	v.RootCause = "The Deployment image points at a registry the new nodes cannot resolve."
 	v.Diagnosis = f.active.diagnosis
 	v.Solution = "## Change\n\n```\nkubectl set image deployment/storefront web=nginx:1.27-alpine\n```\n"
 	f.ended[v.EpisodeID] = &endedEpisode{debrief: web.Debrief{
-		EpisodeID: v.EpisodeID, ScenarioID: v.ScenarioID, Title: f.active.view.Title, Outcome: "solved",
+		EpisodeID: v.EpisodeID, ScenarioID: v.ScenarioID, Title: f.active.view.Title, Outcome: outcome,
 		Seconds: int(f.now().Sub(f.active.view.StartedAt).Seconds()), Minutes: f.active.view.Minutes, Hints: len(f.hints),
 		Telemetry: "audit+shell", ReadsBeforeWrite: 4, FirstWrite: "apps/deployments/storefront", FirstWriteKind: "fix-target",
 		FixTargets: []string{"apps/deployments/storefront"}, Verdict: "root-cause", Diagnosis: f.active.diagnosis, RootCause: v.RootCause,
+		Solution: v.Solution,
 	}}
 	f.active = nil
-	return v, nil
+	return v
 }
 
 var fakeHints = []string{

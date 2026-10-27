@@ -378,6 +378,7 @@ func (b *webBackend) Assignment(ctx context.Context, id string) (web.Assignment,
 }
 
 func (b *webBackend) Session(ctx context.Context, live bool) (web.Session, error) {
+	b.a.expireIfDue(ctx)
 	s, err := b.a.learnerSession(ctx)
 	if err != nil {
 		return web.Session{}, err
@@ -445,6 +446,12 @@ func activeView(ep *journal.Episode, rd *scenario.Rendered) *web.Active {
 		HintsTotal: len(rd.Hints),
 		Guide:      []scenario.GuideStep{},
 		Hints:      []string{},
+		Exam:       ep.Mode == journal.ModeExam,
+		Deadline:   ep.Deadline,
+	}
+	if v.Exam {
+		v.Story, v.HintsTotal, v.Hints = "", 0, []string{}
+		return v
 	}
 	if ep.HintsUsed <= len(rd.Hints) {
 		v.Hints = append(v.Hints, rd.Hints[:ep.HintsUsed]...)
@@ -502,7 +509,7 @@ func (b *webBackend) Start(ctx context.Context, id string, stage web.Stage, repl
 		restore := a.progress.Divert(progress)
 		defer restore()
 	}
-	if _, _, err := a.startEpisode(ctx, j, sc.Meta.ID, startOptions{seed: seed}, prev); err != nil {
+	if _, _, err := a.startEpisode(ctx, j, sc.Meta.ID, startOptions{seed: seed, exam: stage == web.StageExam}, prev); err != nil {
 		return web.Session{}, err
 	}
 	return b.Session(ctx, false)
@@ -510,11 +517,14 @@ func (b *webBackend) Start(ctx context.Context, id string, stage web.Stage, repl
 
 // stageSeed picks the seed of a stage: practice runs the first variant, so
 // the guide always meets the same planted cause; DIY runs another variant
-// at random, or a fresh seed of the only one.
+// at random, or a fresh seed of the only one; an exam draws any seed.
 func stageSeed(sc *scenario.Scenario, stage web.Stage) (int64, error) {
 	seeds := sc.VariantSeeds()
 	if len(seeds) == 0 {
 		return 0, fmt.Errorf("scenario %s has no variant seed", sc.Meta.ID)
+	}
+	if stage == web.StageExam {
+		return 0, nil
 	}
 	if stage == web.StagePractice || len(seeds) == 1 {
 		if stage == web.StageDIY {
@@ -554,6 +564,78 @@ func (b *webBackend) Validate(ctx context.Context) (web.Validation, error) {
 		}
 	}
 	return v, nil
+}
+
+// Submit ends the active exam: its one grade before the deadline, or its
+// expiry after it. The root cause and the walkthrough come back either way,
+// since the rehearsal is over.
+func (b *webBackend) Submit(ctx context.Context) (web.Validation, error) {
+	s, err := b.a.learnerSession(ctx)
+	if err != nil {
+		return web.Validation{}, err
+	}
+	ep, rd, err := s.Current()
+	if errors.Is(err, env.ErrTimedOut) {
+		return b.expireExam(ctx, s)
+	}
+	if errors.Is(err, env.ErrNoActiveEpisode) {
+		return web.Validation{}, errors.New("no active exam; launch the exam rehearsal first")
+	}
+	if err != nil {
+		return web.Validation{}, err
+	}
+	g, done, err := s.Submit(ctx)
+	if errors.Is(err, env.ErrTimedOut) {
+		return b.expireExam(ctx, s)
+	}
+	if err != nil {
+		return web.Validation{}, err
+	}
+	v := web.Validation{EpisodeID: ep.ID, ScenarioID: ep.ScenarioID, Passed: g.Passed, Score: g.Score, Checks: checkViews(g), RootCause: rd.Variant.RootCause, Solution: rd.Solution}
+	if done != nil {
+		v.Outcome = outcomeWord(done.Outcome)
+	}
+	return v, nil
+}
+
+// expireExam ends an exam past its deadline and reports its last grade.
+func (b *webBackend) expireExam(ctx context.Context, s *env.Session) (web.Validation, error) {
+	j, err := b.a.getJournal()
+	if err != nil {
+		return web.Validation{}, err
+	}
+	cur, err := j.Current()
+	if err != nil || cur == nil {
+		return web.Validation{}, errors.New("no active exam")
+	}
+	rd, err := b.render(cur)
+	if err != nil {
+		return web.Validation{}, err
+	}
+	done, err := s.Expire(ctx)
+	if done == nil {
+		return web.Validation{}, err
+	}
+	v := web.Validation{EpisodeID: done.ID, ScenarioID: done.ScenarioID, Outcome: outcomeWord(done.Outcome), RootCause: rd.Variant.RootCause, Solution: rd.Solution}
+	if n := len(done.Grades); n > 0 {
+		g := done.Grades[n-1]
+		v.Passed, v.Score, v.Checks = g.Passed && done.Outcome == journal.OutcomeSolved, g.Score, checkViews(g)
+	}
+	return v, nil
+}
+
+// render renders ep the way the session does, for an episode Current
+// refuses because its exam deadline passed.
+func (b *webBackend) render(ep *journal.Episode) (*scenario.Rendered, error) {
+	cat, err := b.catalog()
+	if err != nil {
+		return nil, err
+	}
+	sc, err := cat.Find(ep.ScenarioID)
+	if err != nil {
+		return nil, err
+	}
+	return sc.Render(ep.Seed, scenario.WithNamespace(ep.Namespace), scenario.WithVariant(ep.Variant))
 }
 
 func (b *webBackend) Hint(ctx context.Context) (web.Hint, error) {
@@ -613,6 +695,9 @@ func (b *webBackend) Debrief(ctx context.Context, id string) (web.Debrief, error
 		Telemetry:  "none",
 		FixTargets: nonNil(sc.Meta.FixTargets),
 		RootCause:  rootCause(sc, ep),
+	}
+	if rd, err := b.render(ep); err == nil {
+		d.Solution = rd.Solution
 	}
 	if t := ep.Telemetry; t != nil && t.Source != "" && t.Source != "none" {
 		d.Telemetry = t.Source
@@ -689,13 +774,19 @@ func (b *webBackend) Terminal(ctx context.Context, name string) (*exec.Cmd, func
 	if err := cl.WriteInternalKubeconfig(ctx, kubeconfig); err != nil {
 		return nil, nil, fmt.Errorf("write workstation kubeconfig: %w", err)
 	}
-	cmd, err := ws.ShellCommand(ctx, workstation.ShellOptions{
+	opts := workstation.ShellOptions{
 		Kubeconfig:  kubeconfig,
-		Layout:      workstation.LayoutShell,
 		ClusterName: cluster.Name,
 		Name:        name,
 		Web:         true,
-	})
+	}
+	if cur, err := j.Current(); err == nil && cur != nil && cur.Mode == journal.ModeExam {
+		opts.Exam = true
+		if cur.Deadline != nil {
+			opts.Deadline = *cur.Deadline
+		}
+	}
+	cmd, err := ws.ShellCommand(ctx, opts)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,48 +13,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cauebraz/kubedrill/internal/cluster"
-	"github.com/cauebraz/kubedrill/internal/env"
-	"github.com/cauebraz/kubedrill/internal/journal"
 	"github.com/cauebraz/kubedrill/internal/render"
 )
-
-func (a *app) runDefault(ctx context.Context) error {
-	tools, err := a.runDoctor(ctx)
-	if err != nil {
-		return err
-	}
-	for _, t := range tools {
-		if t.Name == "docker" && !t.Found {
-			return fmt.Errorf("docker is not available: %s; install it, start the daemon and run kubedrill again", t.Install)
-		}
-	}
-	cl, err := a.getCluster()
-	if err != nil {
-		return err
-	}
-	practice := a.interactive() && !a.insideWorkstation() && a.getenv("KUBEDRILL_NO_SHELL") != "1"
-	var prep *preparation
-	if practice {
-		if err := a.offerRecreate(ctx, cl); err != nil {
-			return err
-		}
-		prep = a.startPreparation(ctx)
-		defer prep.stop()
-	}
-	a.printf("ensuring cluster %s (profile %s)...\n", cluster.Name, defaultProfile)
-	if err := a.ensureCluster(ctx, cl, defaultProfile, nil); err != nil {
-		return err
-	}
-	a.println()
-	if err := a.runList("", true); err != nil {
-		return err
-	}
-	if !practice {
-		return nil
-	}
-	a.finishPreparation(ctx, prep)
-	return a.continuePractice(ctx)
-}
 
 // recreateOfferFile, under the journal directory, records the cluster
 // whose recreation the learner declined, so the offer is made once per
@@ -191,87 +150,8 @@ func (a *app) finishPreparation(ctx context.Context, p *preparation) {
 		a.println(out)
 	}
 	if err != nil && ctx.Err() == nil {
-		fmt.Fprintf(a.stderr, "warning: %v; kubedrill tries again when it opens the workstation\n", err)
+		fmt.Fprintf(a.stderr, "warning: %v; kubedrill tries again when the page opens a terminal\n", err)
 	}
-}
-
-// continuePractice takes the learner from the default run into practice:
-// the workstation of the active episode, or the recommended scenario after
-// a [Y/n] prompt, so kubedrill alone is the terminal way in.
-func (a *app) continuePractice(ctx context.Context) error {
-	a.expireIfDue(ctx)
-	j, err := a.getJournal()
-	if err != nil {
-		return err
-	}
-	cur, err := j.Current()
-	if err != nil {
-		return fmt.Errorf("read current episode: %w", err)
-	}
-	if cur != nil {
-		resume, err := a.resetIfNamespaceGone(ctx, cur)
-		if err != nil || !resume {
-			return err
-		}
-		a.printf("\nresuming %s; opening the workstation\n", cur.ScenarioID)
-		return a.runShell(ctx, layoutTmux, false)
-	}
-	pick, ok := a.nextPick()
-	if !ok {
-		return nil
-	}
-	a.println()
-	ans, err := a.ask(fmt.Sprintf("Start %s now? [Y/n]", pick.Ref))
-	if err != nil {
-		return err
-	}
-	switch strings.ToLower(ans) {
-	case "", "y", "yes":
-		return a.runStart(ctx, pick.Ref, startOptions{seed: pick.Seed, layout: layoutTmux})
-	}
-	a.println(a.printer().WrapLine(fmt.Sprintf("not started; run kubedrill again or kubedrill start %s when you are ready", pick.Ref), "  "))
-	return nil
-}
-
-// resetIfNamespaceGone checks that the namespace of the active episode cur
-// still exists before the workstation reopens it. When the cluster was
-// recreated or the namespace deleted, it says so and offers a reset with a
-// new seed; resume is false when the learner declines. An exam episode is
-// never reset here.
-func (a *app) resetIfNamespaceGone(ctx context.Context, cur *journal.Episode) (resume bool, err error) {
-	if a.examRunning(cur) {
-		return true, nil
-	}
-	s, err := a.learnerSession(ctx)
-	if err != nil {
-		return false, err
-	}
-	err = s.CheckNamespace(ctx)
-	if err == nil {
-		return true, nil
-	}
-	if !errors.Is(err, env.ErrNamespaceMissing) && !errors.Is(err, env.ErrNamespaceForeign) {
-		return false, err
-	}
-	a.println()
-	a.println(a.printer().WrapLine(fmt.Sprintf("the namespace of %s is gone or belongs to another episode; the cluster was recreated or the namespace deleted", cur.ScenarioID), "  "))
-	ans, err := a.ask("Reset it with a new seed and open the workstation? [Y/n]")
-	if err != nil {
-		return false, err
-	}
-	switch strings.ToLower(ans) {
-	case "", "y", "yes":
-	default:
-		a.println("kept the episode; kubedrill reset redeploys it")
-		return false, nil
-	}
-	ep, rd, err := s.Reset(ctx, cur.ScenarioID, 0)
-	if err != nil {
-		return false, err
-	}
-	a.progress.Finish()
-	a.printf("reset %s: seed %d, namespace %s (hints reset to 0)\n", ep.ScenarioID, ep.Seed, rd.Namespace)
-	return true, nil
 }
 
 func (a *app) doctorCommand() *cobra.Command {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,25 +11,21 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
-
 	"github.com/cauebraz/kubedrill/internal/faults"
 	"github.com/cauebraz/kubedrill/internal/grader"
 	"github.com/cauebraz/kubedrill/internal/journal"
-	"github.com/cauebraz/kubedrill/internal/render"
 	"github.com/cauebraz/kubedrill/internal/scenario"
 )
 
 func TestWorkedExampleEmptyAnswerSaysSkipped(t *testing.T) {
 	f := newFixture(t)
 	terminal(f)
-	_, out, _ := f.run(t, "", "start", "001", "--seed", "1", "--no-shell")
+	_, out, _ := f.run(t, "", "start", "001", "--seed", "1")
 	mustContain(t, out, "before your ticket? [y/N] worked example skipped\n", "The hello app returns 503")
 	mustNotContain(t, out, "Worked example (variant")
 	f2 := newFixture(t)
 	terminal(f2)
-	_, out, _ = f2.run(t, "n\n", "start", "001", "--seed", "1", "--no-shell")
+	_, out, _ = f2.run(t, "n\n", "start", "001", "--seed", "1")
 	mustNotContain(t, out, "worked example skipped", "Worked example (variant")
 }
 
@@ -49,9 +44,7 @@ func TestWorkedExampleKeepsSymptomAndCandidates(t *testing.T) {
 func TestExamRefusesResetAndAsksToLeaveTheExam(t *testing.T) {
 	f := newFixture(t)
 	f.grader.grades = []grader.Grade{failGrade()}
-	if code, _, errOut := f.run(t, "", "start", "001", "--seed", "1", "--exam"); code != 0 {
-		t.Fatalf("start --exam: exit %d: %s", code, errOut)
-	}
+	f.startExam(t, 1, false)
 	code, _, errOut := f.run(t, "", "reset")
 	if code != 1 || !strings.Contains(errOut, "reset is not available in exam mode; kubedrill submit ends the exam") {
 		t.Errorf("reset in exam: exit %d err %q", code, errOut)
@@ -70,7 +63,7 @@ func TestPrincipleAskedAfterAnotherVariantOfTheSameScenario(t *testing.T) {
 	earlier := solvedEpisode("old", "001-hello-down", 2, time.Date(2026, 10, 24, 9, 0, 0, 0, time.UTC))
 	earlier.Variant = "probe"
 	f.journal.episodes = []journal.Episode{earlier}
-	f.run(t, "\n", "start", "001", "--seed", "1", "--no-shell")
+	f.run(t, "\n", "start", "001", "--seed", "1")
 	f.run(t, "\n\n\n", "check")
 	_, out, _ := f.run(t, "the probe port must match\n", "solution", "001")
 	mustContain(t, out, "Which principle made this observation necessary? (one line)", "principle recorded")
@@ -84,7 +77,7 @@ func TestPrincipleAskedAfterAnotherVariantOfTheSameScenario(t *testing.T) {
 	same.grader.grades = []grader.Grade{passGrade()}
 	earlier.Variant = "image"
 	same.journal.episodes = []journal.Episode{earlier}
-	same.run(t, "\n", "start", "001", "--seed", "1", "--no-shell")
+	same.run(t, "\n", "start", "001", "--seed", "1")
 	same.run(t, "\n\n\n", "check")
 	_, out, _ = same.run(t, "", "solution", "001")
 	mustNotContain(t, out, "Which principle made this observation necessary?")
@@ -109,14 +102,14 @@ func TestExamHidesPracticeAids(t *testing.T) {
 	done := solvedEpisode("old", "002-service-dns", 1, start)
 	done.Debrief = &journal.Debrief{NextTimeFirst: "the pod events"}
 	f.journal.episodes = []journal.Episode{done}
-	_, out, _ := f.run(t, "", "start", "001", "--seed", "1", "--exam")
+	out := f.startExam(t, 1, false)
 	mustNotContain(t, out, "Fundamentals:", "Last time you said", "kubedrill story")
 	_, out, _ = f.run(t, "", "ticket")
 	mustNotContain(t, out, "Fundamentals:", "kubedrill story")
 	_, out, _ = f.run(t, "", "diagnose", "the image tag does not exist")
 	mustContain(t, out, "Next: change one thing, then kubedrill submit\n")
 	mustNotContain(t, out, "kubedrill hint")
-	for _, args := range [][]string{{"learn"}, {"learn", "pods"}, {"story"}, {"story", "001"}, {"watch"}} {
+	for _, args := range [][]string{{"learn"}, {"learn", "pods"}, {"story"}, {"story", "001"}} {
 		code, _, errOut := f.run(t, "", args...)
 		if code != 1 || !strings.Contains(errOut, args[0]+" is not available in exam mode") {
 			t.Errorf("%v in exam without a terminal: exit %d err %q", args, code, errOut)
@@ -151,22 +144,6 @@ func TestSolutionAfterExamOrFailureAsks(t *testing.T) {
 	_, out, _ := f.run(t, "", "solution", "001")
 	mustNotContain(t, out, "show the solution anyway")
 	mustContain(t, out, "## Symptom")
-}
-
-func TestLastEndedOfFallsBackToTheRecordedSolve(t *testing.T) {
-	f := newFixture(t)
-	start := time.Date(2026, 10, 25, 9, 0, 0, 0, time.UTC)
-	f.journal.episodes = []journal.Episode{solvedEpisode("old", "001-hello-down", 1, start.Add(-time.Hour)), solvedEpisode("new", "001-hello-down", 2, start)}
-	a := newApp(Options{Factories: f.factories(), Getenv: func(string) string { return "" }})
-	if ep := a.lastEndedOf("001-hello-down", start); ep == nil || ep.ID != "new" {
-		t.Errorf("lastEndedOf: got %+v, want the episode new", ep)
-	}
-	if ep := a.lastEndedOf("001-hello-down", start.Add(time.Minute)); ep != nil {
-		t.Errorf("lastEndedOf before the episode started: got %+v, want nil", ep)
-	}
-	if ep := a.lastEndedOf("002-service-dns", start); ep != nil {
-		t.Errorf("lastEndedOf of another scenario: got %+v, want nil", ep)
-	}
 }
 
 func TestStartPrintsLeaveLineBeforeProgress(t *testing.T) {
@@ -395,74 +372,6 @@ func TestSmokeSolveGetsBinAndEpisode(t *testing.T) {
 	}
 	env := strings.Join(f.runs[0][1:], " ")
 	mustContain(t, env, "KUBEDRILL_BIN=/usr/local/bin/kubedrill", "KUBEDRILL_EPISODE=002-service-dns-")
-}
-
-func TestRunWatchQuitBeforeSolvePrintsNext(t *testing.T) {
-	f := newFixture(t)
-	var out strings.Builder
-	a := newApp(Options{Factories: f.factories(), Stdout: &out, Stderr: &out, Stdin: strings.NewReader("q"), Getenv: func(string) string { return "" }, Now: f.nowFunc()})
-	ep := &journal.Episode{ScenarioID: "001-hello-down", Seed: 3, StartedAt: f.nowFunc()()}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := a.runWatch(ctx, &fakeWatcher{observe: failGrade()}, ep, "Hello app is down", 2, 2, time.Hour); err != nil {
-		t.Fatalf("runWatch: %v", err)
-	}
-	mustContain(t, out.String(), "Next: kubedrill check | kubedrill hint\n")
-}
-
-func TestRunWatchNextRunsDebriefBeforeStarting(t *testing.T) {
-	f := newFixture(t)
-	r, w := io.Pipe()
-	var out lockedBuilder
-	a := newApp(Options{Factories: f.factories(), Stdout: &out, Stderr: &out, Stdin: r, Getenv: func(string) string { return "" }, Now: f.nowFunc(), IsTerminal: true})
-	a.teaOptions = []tea.ProgramOption{tea.WithWindowSize(50, 24)}
-	ep := &journal.Episode{ScenarioID: "001-hello-down", Seed: 3, StartedAt: f.nowFunc()()}
-	fw := &fakeWatcher{observe: passGrade()}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	done := make(chan struct{})
-	go func() {
-		defer w.Close()
-		if !awaitOutput(ctx, out.String, "n: debrief, then start 001-hello-down") {
-			return
-		}
-		w.Write([]byte("n"))
-		if !awaitOutput(ctx, out.String, "starting 001-hello-down: ") {
-			return
-		}
-		for {
-			select {
-			case <-done:
-				return
-			default:
-			}
-			if _, err := w.Write([]byte("q")); err != nil {
-				return
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-	}()
-	err := a.runWatch(ctx, fw, ep, "Hello app is down", 2, 2, time.Hour)
-	close(done)
-	r.Close()
-	if err != nil {
-		t.Fatalf("runWatch: %v", err)
-	}
-	got := out.String()
-	debrief := strings.Index(got, "Debrief: 001-hello-down")
-	start := strings.Index(got, "starting 001-hello-down: ")
-	if debrief < 0 || start < 0 || debrief > start || len(fw.starts) != 1 {
-		t.Fatalf("debrief at %d, start at %d, starts %v:\n%s", debrief, start, fw.starts, got)
-	}
-	if got := a.printer().Width; got != render.DefaultWidth {
-		t.Errorf("width after watch: got %d, want the run's width %d (the pane width must not outlive the debrief)", got, render.DefaultWidth)
-	}
-	for _, l := range strings.Split(render.StripANSI(got[debrief:start]), "\n") {
-		if lipgloss.Width(l) > 50 {
-			t.Errorf("debrief line of %d columns after a 50 column pane: %q", lipgloss.Width(l), l)
-		}
-	}
-	mustContain(t, got[debrief:start], "your diagnosis: none recorded")
 }
 
 // awaitOutput polls read until it contains want or ctx ends; it reports

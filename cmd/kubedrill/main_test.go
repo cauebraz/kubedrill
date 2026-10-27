@@ -49,7 +49,7 @@ func TestWorkstationClusterRefusesLifecycle(t *testing.T) {
 		{name: "AuditEnabled", call: func() error { _, err := w.AuditEnabled(ctx); return err }, want: "the audit check runs on the host, not inside the workstation"},
 		{name: "Delete", call: func() error { return w.Delete(ctx) }, want: "kubedrill down runs on the host, not inside the workstation"},
 		{name: "Doctor", call: func() error { _, err := w.Doctor(ctx); return err }, want: "kubedrill doctor runs on the host, not inside the workstation"},
-		{name: "WriteInternalKubeconfig", call: func() error { return w.WriteInternalKubeconfig(ctx, "/tmp/x") }, want: "kubedrill shell runs on the host, not inside the workstation"},
+		{name: "WriteInternalKubeconfig", call: func() error { return w.WriteInternalKubeconfig(ctx, "/tmp/x") }, want: "kubedrill web runs on the host, not inside the workstation"},
 		{name: "Created", call: func() error { _, err := w.Created(ctx); return err }, want: "the cluster creation time runs on the host, not inside the workstation"},
 		{name: "RenderProfile", call: func() error { _, err := w.RenderProfile("base", cluster.ProfileData{}); return err }, want: "rendering a cluster profile runs on the host, not inside the workstation"},
 		{name: "AuditPolicyStale", call: func() error { _, err := w.AuditPolicyStale(ctx); return err }, want: "the audit policy check runs on the host, not inside the workstation"},

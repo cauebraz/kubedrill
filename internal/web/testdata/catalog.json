@@ -80,6 +80,9 @@
                 "diy": {
                   "done": false
                 },
+                "exam": {
+                  "done": false
+                },
                 "learn": {
                   "done": false
                 },
@@ -118,6 +121,9 @@
               "minutes": 12,
               "progress": {
                 "diy": {
+                  "done": false
+                },
+                "exam": {
                   "done": false
                 },
                 "learn": {
@@ -169,6 +175,9 @@
                 "diy": {
                   "done": false
                 },
+                "exam": {
+                  "done": false
+                },
                 "learn": {
                   "done": false
                 },
@@ -207,6 +216,9 @@
               "minutes": 15,
               "progress": {
                 "diy": {
+                  "done": false
+                },
+                "exam": {
                   "done": false
                 },
                 "learn": {
@@ -266,6 +278,9 @@
               "minutes": 20,
               "progress": {
                 "diy": {
+                  "done": false
+                },
+                "exam": {
                   "done": false
                 },
                 "learn": {

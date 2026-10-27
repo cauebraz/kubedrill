@@ -112,7 +112,8 @@ What runs in CI:
   scenario scripts.
 - `.github/workflows/workstation.yml` builds the workstation image for amd64
   and arm64 and runs a tool smoke (`kubectl`, `helm`, `k9s`, `stern`, `yq`,
-  `kubectx`, `kubens`, `tmux`, `asciinema`). It runs on pull requests that
+  `kubectx`, `kubens`, `asciinema`) and checks that the `shell`
+  entrypoint runs a command. It runs on pull requests that
   change the workstation paths, on push to main and weekly. `just check-ci`
   does not run it.
 - Dependabot (`.github/dependabot.yml`) opens weekly pull requests for Go

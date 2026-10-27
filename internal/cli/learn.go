@@ -132,8 +132,8 @@ func (a *app) storyCommand() *cobra.Command {
 			"Kubernetes objects involved explained from zero, the read-only commands that\n" +
 			"follow the trail and what each output means, then why the fix works. Without\n" +
 			"an argument it prints the story of the active episode, with its namespace;\n" +
-			"with a ref it prints that scenario's. In the workstation the ticket pane shows\n" +
-			"it with s. It is refused during an exam.",
+			"with a ref it prints that scenario's. The browser workspace shows it as the\n" +
+			"Story tab. It is refused during an exam.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := a.refuseInExam("story"); err != nil {

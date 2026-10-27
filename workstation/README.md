@@ -12,19 +12,18 @@ and exam mode are in [docs/workstation.md](../docs/workstation.md).
 | `versions.env`   | The one place a tool version is written; the Dockerfile reads it                         |
 | `checksums.txt`  | `<sha256>  <filename>` for every downloaded file, amd64 and arm64                        |
 | `bashrc`         | Login shell: aliases, completion, prompt, episode namespace, `ssh <node>`, shell log, banner |
-| `tmux.conf`      | tmux settings: mouse on, `C-b m` mouse toggle for copying, OSC 52 clipboard, 20000 lines of history, status line with the mouse state and the cluster name |
-| `entrypoint.sh`  | Takes `shell` or `tmux`, builds the pane layout and starts the asciinema recording       |
+| `entrypoint.sh`  | Takes `shell` (the login shell under the asciinema recording, exam `PATH` in exam mode) or a command to exec |
 | `builder.env`    | `GO_BUILD_IMAGE`, the golang image pinned by digest that builds `kubedrill` when `go` is not on the host; not part of the image or its tag. Bump it with `go.mod`: a test requires the same Go version |
 
 The runtime behavior of `bashrc` and `entrypoint.sh` is described in
-[docs/workstation.md](../docs/workstation.md): the layout and its
-fallbacks, the shell log, the recording and exam mode.
+[docs/workstation.md](../docs/workstation.md): the entrypoint, the shell
+log, the recording and exam mode.
 
 ## Image tag
 
-The tag is `kubedrill-workstation:<12 hex>`, a sha256 over the six files
-above other than `builder.env`. Any change here yields a new tag, and the next `kubedrill shell` or
-`kubedrill start` builds it. Nothing needs cleaning by hand: older tags are
+The tag is `kubedrill-workstation:<12 hex>`, a sha256 over the five files
+above other than `builder.env`. Any change here yields a new tag, and the
+next terminal `kubedrill web` opens builds it. Nothing needs cleaning by hand: older tags are
 pruned after a build (rules in
 [docs/workstation.md](../docs/workstation.md#image-and-binary)).
 

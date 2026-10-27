@@ -48,16 +48,14 @@ const (
 	builderFile  = "builder.env"
 	builderVar   = "GO_BUILD_IMAGE"
 
-	// LayoutTmux opens a tmux session with `kubedrill ticket --follow`
-	// above the shell on the left and `kubedrill watch` on the right.
-	LayoutTmux = "tmux"
-	// LayoutShell opens a single login shell.
-	LayoutShell = "shell"
+	// entryShell is the entrypoint argument of a session: one login
+	// shell, recorded.
+	entryShell = "shell"
 )
 
 // imageFiles are the files whose content decides the image tag, in the order
 // they are hashed.
-var imageFiles = []string{"Dockerfile", "versions.env", "checksums.txt", "bashrc", "tmux.conf", "entrypoint.sh"}
+var imageFiles = []string{"Dockerfile", "versions.env", "checksums.txt", "bashrc", "entrypoint.sh"}
 
 // createdAtLayout is the format of docker image ls --format {{.CreatedAt}}.
 const createdAtLayout = "2006-01-02 15:04:05 -0700 MST"
@@ -96,11 +94,6 @@ func namesDocker(msg string) bool {
 		}
 	}
 	return false
-}
-
-// ValidLayout reports whether s is LayoutTmux or LayoutShell.
-func ValidLayout(s string) bool {
-	return s == LayoutTmux || s == LayoutShell
 }
 
 // Runner builds the command for one external process; tests replace it.
@@ -202,14 +195,13 @@ type ShellOptions struct {
 	// lie outside the journal directory, which the container mounts
 	// read-write: cluster.InternalKubeconfigPath is the place for it.
 	Kubeconfig string
-	// Layout is LayoutTmux (default) or LayoutShell.
-	Layout string
-	// Command, when set, replaces the layout and runs inside the container.
+	// Command, when set, replaces the login shell and runs inside the
+	// container.
 	Command []string
 	// ClusterName is exported as KUBEDRILL_CLUSTER.
 	ClusterName string
-	// Exam exports KUBEDRILL_EXAM=1: no watch pane, the allowed-docs
-	// banner, and PATH=/opt/exam/bin:/usr/bin:/bin, where /opt/exam/bin
+	// Exam exports KUBEDRILL_EXAM=1: the allowed-docs banner and
+	// PATH=/opt/exam/bin:/usr/bin:/bin, where /opt/exam/bin
 	// holds kubectl, helm, yq, kubedrill and vim. /usr/bin and /bin stay on
 	// PATH (jq, curl, git and the base system), and the repository stays
 	// readable at /workspace/repo, solutions included: exam mode is a
@@ -229,8 +221,7 @@ type ShellOptions struct {
 
 // ImageTag returns the image reference for the current workstation files:
 // "kubedrill-workstation:" followed by the first 12 hex digits of a sha256
-// over Dockerfile, versions.env, checksums.txt, bashrc, tmux.conf and
-// entrypoint.sh.
+// over Dockerfile, versions.env, checksums.txt, bashrc and entrypoint.sh.
 func (m *Manager) ImageTag() (string, error) {
 	h := sha256.New()
 	dir := filepath.Join(m.root, imageDir)
@@ -681,19 +672,6 @@ func sessionResult(op string, err error, tail *tailWriter) error {
 	return fmt.Errorf("%s: docker exited with status %d: %s: %w", op, code, msg, err)
 }
 
-// Shell runs the workstation container attached to the current terminal and
-// returns when it exits. A shell that ends with any exit status is a normal
-// end of session; only docker's own failures (exit codes 125, 126 and 127)
-// are errors.
-func (m *Manager) Shell(ctx context.Context, o ShellOptions) error {
-	cmd, err := m.ShellCommand(ctx, o)
-	if err != nil {
-		return err
-	}
-	tail := m.attach(cmd)
-	return sessionResult("start workstation", cmd.Run(), tail)
-}
-
 // ShellCommand prepares a workstation session (image, linux binary, kind
 // network, data directories, mount checks) and returns its `docker run
 // --rm -it` command without starting it or setting its standard streams,
@@ -703,13 +681,6 @@ func (m *Manager) Shell(ctx context.Context, o ShellOptions) error {
 func (m *Manager) ShellCommand(ctx context.Context, o ShellOptions) (*exec.Cmd, error) {
 	if o.Kubeconfig == "" {
 		return nil, errors.New("start workstation: kubeconfig path is empty")
-	}
-	layout := o.Layout
-	if layout == "" {
-		layout = LayoutTmux
-	}
-	if !ValidLayout(layout) {
-		return nil, fmt.Errorf("start workstation: layout %q is not %q or %q", layout, LayoutTmux, LayoutShell)
 	}
 	tag, err := m.EnsureImage(ctx)
 	if err != nil {
@@ -783,7 +754,7 @@ func (m *Manager) ShellCommand(ctx context.Context, o ShellOptions) (*exec.Cmd, 
 	if len(o.Command) > 0 {
 		args = append(args, o.Command...)
 	} else {
-		args = append(args, layout)
+		args = append(args, entryShell)
 	}
 	return m.docker(ctx, args...), nil
 }

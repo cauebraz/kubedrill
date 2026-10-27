@@ -650,7 +650,7 @@ func TestStartResetsAndPrintsTicket(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit: got %d, want 0 (%s)", code, errOut)
 	}
-	mustContain(t, out, "started 001-hello-down (seed 2) in namespace task-hello-abcde", "The hello app returns 503", "kubedrill watch", "kubedrill check", "kubedrill hint",
+	mustContain(t, out, "started 001-hello-down (seed 2) in namespace task-hello-abcde", "The hello app returns 503", "kubedrill check", "kubedrill hint",
 		"Checked by 1 check: kubedrill check --explain\nExpected: 15 min\n")
 	if strings.Contains(out, "probe") {
 		t.Errorf("start output leaks the variant name:\n%s", out)
@@ -1015,23 +1015,6 @@ func TestDoctorAndUpDown(t *testing.T) {
 	mustContain(t, errOut, "docker is missing")
 }
 
-func TestDefaultCommand(t *testing.T) {
-	f := newFixture(t)
-	code, out, errOut := f.run(t, "")
-	if code != 0 {
-		t.Fatalf("default exit %d: %s", code, errOut)
-	}
-	mustContain(t, out, "TOOL", "ensuring cluster kubedrill (profile base)", "001-hello-down", "kubedrill start 001-hello-down")
-	if len(f.cluster.ensured) != 1 {
-		t.Errorf("ensured: got %v, want one call", f.cluster.ensured)
-	}
-	f.cluster.tools[0] = cluster.Tool{Name: "docker", Found: false, Install: "https://docs.docker.com/get-docker/"}
-	code, _, errOut = f.run(t, "")
-	if code != 1 || !strings.Contains(errOut, "docker is not available: https://docs.docker.com/get-docker/") {
-		t.Errorf("default without docker: exit %d err %q", code, errOut)
-	}
-}
-
 func TestSmoke(t *testing.T) {
 	f := newFixture(t)
 	f.grader.grades = []grader.Grade{failGrade(), passGrade(), failGrade(), passGrade(), failGrade(), passGrade()}
@@ -1278,17 +1261,6 @@ func TestConfirmOnTerminalWithoutInput(t *testing.T) {
 	}
 }
 
-func TestWatchNeedsTerminalOnStdin(t *testing.T) {
-	f := newFixture(t)
-	f.stdoutTTY = true
-	f.run(t, "", "start", "001-hello-down", "--seed", "1")
-	code, _, errOut := f.run(t, "", "watch")
-	if code != 1 {
-		t.Errorf("watch with piped stdin: exit %d", code)
-	}
-	mustContain(t, errOut, "watch needs a terminal on stdin and stdout")
-}
-
 func TestStartNegativeSeed(t *testing.T) {
 	f := newFixture(t)
 	code, _, errOut := f.run(t, "", "start", "001", "--seed", "-1")
@@ -1359,35 +1331,6 @@ func TestRepoRootInvalid(t *testing.T) {
 	mustContain(t, errb.String(), "kubedrill: root "+empty+" lacks curriculum.yaml or scenarios/")
 	if out.Len() != 0 {
 		t.Errorf("stdout: got %q, want empty", out.String())
-	}
-}
-
-func TestWatchGuards(t *testing.T) {
-	tests := []struct {
-		name string
-		tty  bool
-		args []string
-		want string
-	}{
-		{name: "interval below one second", tty: true, args: []string{"watch", "--interval", "500ms"}, want: "kubedrill: interval must be at least 1s, got 500ms"},
-		{name: "no terminal", tty: false, args: []string{"watch"}, want: "kubedrill: watch needs a terminal on stdin and stdout; use kubedrill check in scripts and pipes"},
-		{name: "terminal on stdout only", tty: true, args: []string{"watch"}, want: "kubedrill: watch needs a terminal on stdin and stdout; use kubedrill check in scripts and pipes"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			f := newFixture(t)
-			f.stdoutTTY = tc.tty
-			f.run(t, "", "start", "001-hello-down", "--seed", "1")
-			before := len(f.kube.calls)
-			code, _, errOut := f.run(t, "", tc.args...)
-			if code != 1 {
-				t.Errorf("exit: got %d, want 1", code)
-			}
-			mustContain(t, errOut, tc.want)
-			if len(f.kube.calls) != before {
-				t.Errorf("watch touched the cluster: %v", f.kube.calls[before:])
-			}
-		})
 	}
 }
 

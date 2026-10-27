@@ -195,7 +195,7 @@ object for the first time. The ticket told as a story for a learner who has
 never used Kubernetes: what happened in plain words, every object the ticket
 involves explained from zero, the read-only commands that follow the trail
 and what each output means, then the fix and why it works. `kubedrill story`
-prints it, `s` in the workstation ticket pane shows it, and the ticket points
+prints it, the Story tab of the page shows it, and the ticket points
 at it with `New to Kubernetes? kubedrill story tells this ticket from zero`.
 Exam mode hides it.
 
@@ -384,8 +384,8 @@ command history, so several valid fixes pass.
 | `critical` | Optional; when it does not pass, the score is 0 |
 | `spoiler` | Optional boolean; `true` when the actual value names the root cause |
 
-`why` is printed under the check in `kubedrill check` and `kubedrill watch`
-while it fails. Write it as the sentence under a failing production alert:
+`why` is printed under the check in `kubedrill check` and in the live checks
+of the page while it fails. Write it as the sentence under a failing production alert:
 the consequence (`A Service without a ready endpoint refuses every
 connection`), one or two sentences, never the root cause of a variant. It
 starts with a capital letter unless the first word is a field name
@@ -393,8 +393,8 @@ starts with a capital letter unless the first word is a field name
 
 `spoiler: true` fits a check whose actual value names the root cause, such
 as an image reference or a selector value. The grader copies the flag into
-the result, and `check` and `watch` hide the actual value until the first
-hint or a recorded diagnosis. `001-storefront-down` sets it on `image-correct`.
+the result; `check` hides the actual value until the first hint or a
+recorded diagnosis, and the page never shows it. `001-storefront-down` sets it on `image-correct`.
 
 Templated fields: `description`, `resource.namespace`, `resource.name`,
 `resource.selector`, `path`, `equals`, `not_equals`, `matches`, `contains`,

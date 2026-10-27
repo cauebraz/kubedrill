@@ -18,9 +18,8 @@ variable and exit code. For how to study with these commands, read
 - `./start.sh` without arguments is the one command a learner needs: it
   runs [`kubedrill web`](#web), so the first run sets everything up and
   opens the browser workspace on `http://127.0.0.1:8642`, and every later
-  run opens it again with the progress kept. The terminal flow of
-  [kubedrill without a command](#kubedrill-without-a-command) stays
-  available as `kubedrill`.
+  run opens it again with the progress kept. `kubedrill` without a command
+  does the same.
 - Before that it makes `kubedrill` typeable when it is not yet: when
   `~/.local/bin` is on `PATH` and holds no `kubedrill` other than a symlink,
   it links `~/.local/bin/kubedrill` to `bin/kubedrill` and prints `kubedrill
@@ -37,9 +36,9 @@ Conventions shared by every command:
 - `<ref>` is a scenario id (`001-storefront-down`), its numeric prefix (`000`) or
   any id prefix that matches one scenario.
 - `kubedrill <command> --help` prints a two to five line description for
-  `start`, `watch`, `check`, `hint`, `diagnose`, `debrief`, `submit`,
-  `replay`, `fault`, `up`, `namespace`, `node`, `path`, `concepts`, `lint`,
-  `learn`, `shell`, `solution`, `smoke` and `profile render`.
+  `start`, `check`, `hint`, `diagnose`, `debrief`, `submit`, `replay`,
+  `fault`, `up`, `namespace`, `node`, `path`, `concepts`, `lint`, `learn`,
+  `solution`, `smoke` and `profile render`.
 
 ## Overview
 
@@ -49,10 +48,9 @@ Conventions shared by every command:
 | [`web`](#web) | Doctor, `up`, then the workspace on `127.0.0.1` | yes (creates it) |
 | **Learner loop** | | |
 | [`start`](#start) | Start a scenario in a fresh namespace and open the workstation | yes (checked first) |
-| [`ticket`](#ticket) | Print the ticket again, or keep it on screen with `--follow` | no |
+| [`ticket`](#ticket) | Print the ticket again | no |
 | [`namespace`](#namespace) | Print the namespace of the active episode | no |
 | [`check`](#check) | Grade once | yes |
-| [`watch`](#watch) | Live view of the checks | yes |
 | [`hint`](#hint) | Next hint of the ladder | no |
 | [`diagnose`](#diagnose) | Record your one-line diagnosis | no |
 | [`solution`](#solution) | Walkthrough; surrenders an active episode | no |
@@ -78,8 +76,6 @@ Conventions shared by every command:
 | [`fault`](#fault) | Inject a node fault | yes (docker) |
 | [`heal`](#heal) | Undo every recorded fault | yes (docker) |
 | [`node`](#node) | Root shell on a kind node | yes |
-| **Workstation** | | |
-| [`shell`](#shell) | Open the workstation again | yes (and docker) |
 | **Authoring** | | |
 | [`lint`](#lint) | Validate scenarios, curriculum and concept pages | no |
 | [`new`](#new) | Scaffold a scenario | no |
@@ -96,10 +92,12 @@ Conventions shared by every command:
 kubedrill web [--port 8642] [--no-open] [--preview <ref>] [--static-dir <dir>]
 ```
 
-Runs the doctor, the recreate offer and `up` as
-[kubedrill without a command](#kubedrill-without-a-command) does, prepares
-the workstation while the cluster starts, then serves the workspace on
-`127.0.0.1:<port>` until Ctrl-C and opens it in the browser.
+Runs the doctor (it stops when docker is missing), offers to recreate a
+cluster built with an older audit policy when no episode is active (see
+[kubedrill without a command](#kubedrill-without-a-command)), runs `up` with the base profile, prepares the workstation while
+the cluster starts, then serves the workspace on `127.0.0.1:<port>` until
+Ctrl-C and opens it in the browser. `kubedrill` without a command runs it
+with the default port.
 
 - It prints `kubedrill web is ready: http://127.0.0.1:<port>/?t=<token>`.
   The token is new on every run; the link stores it in an HttpOnly,
@@ -139,7 +137,7 @@ Screens:
 | Exams | Each exam domain with its weight, the assignments that train it and how many are solved |
 | Assignment | The stages below, with the concept pages as chips (each opens in a drawer) and the mastery meter |
 
-An assignment walks through six stages:
+An assignment walks through six stages, plus the exam rehearsal:
 
 | Stage | What happens | Recorded |
 |-------|--------------|----------|
@@ -148,6 +146,7 @@ An assignment walks through six stages:
 | Learn the pieces | The object diagram of `simulation.yaml`, `story.md`, the ticket and the concept pages as tabs | read |
 | Guided practice | `start` on the first variant; the steps beside a terminal into the workstation, the live checks and a timer | passed |
 | Do it yourself | `start` on another variant at random, the ticket and the story instead of the steps, the mentor | passed |
+| Exam rehearsal | `start` on a random variant in a time box, the ticket and a terminal, no hints, guide or live checks; one Submit grades it (see [Exam mode](#exam-mode)) | best passing score |
 | Result | The badge, the stage results with redo links, and the mastery rule with the learner's numbers | - |
 
 Launching a run:
@@ -200,7 +199,7 @@ Keyboard (`?` lists the shortcuts of the current screen):
 | `Enter` | home, meeting, quiz, learn, launch, result | the screen's main action |
 | `/` | catalog | focus the search |
 | `c` | home | open the catalog |
-| `Cmd`/`Ctrl` `Enter` | lab, debrief | validate, save the debrief |
+| `Cmd`/`Ctrl` `Enter` | lab, debrief | validate (submit in an exam), save the debrief |
 | `Cmd`/`Ctrl` `.` | lab | open the mentor |
 | `Cmd`/`Ctrl` `=` and `-` | lab | terminal text size (remembered) |
 | `Cmd`/`Ctrl` arrows | assignment | previous and next stage |
@@ -210,8 +209,8 @@ Single keys never fire while typing in a field or the terminal.
 
 Storage:
 
-- Each terminal is one `docker run --rm -it` of the workstation (layout
-  `shell`, `KUBEDRILL_WEB=1`) in a pseudo-terminal on the host, named
+- Each terminal is one `docker run --rm -it` of the workstation (`KUBEDRILL_WEB=1`,
+  exam mode during an exam) in a pseudo-terminal on the host, named
   `kubedrill-web-<8 hex>`. Closing the tab kills the docker client and runs
   `docker rm -f` on the container.
 - Stage progress lives in `web-progress.json` in the journal directory
@@ -227,22 +226,18 @@ Storage:
 ### start
 
 ```
-kubedrill start <ref> [--seed N] [--yes|-y] [--no-shell] [--exam] [--layout tmux|shell]
+kubedrill start <ref> [--seed N] [--yes|-y]
 ```
 
-Creates the episode namespace, applies the setup, runs `setup/hook.sh` and
-records the episode. On a terminal it then opens the workstation.
+Creates the episode namespace, applies the setup, runs `setup/hook.sh`,
+records the episode and prints the ticket. The browser workspace starts its
+practice, DIY and exam runs the same way; `start` is that step from a
+terminal, for example the one in the page.
 
 Flags:
 
 - `--seed N`: seed for the variant (0 or omitted: random).
 - `--yes`, `-y`: leave an active episode without confirmation.
-- `--no-shell`: print the ticket and stay on the host (also
-  `KUBEDRILL_NO_SHELL=1`).
-- `--exam`: exam mode, a time box of the scenario minutes, graded once by
-  `kubedrill submit` (see [Exam mode](#exam-mode)).
-- `--layout`: described as `tmux (shell, ticket and kubedrill watch panes)
-  or shell`; see [Workstation](#workstation).
 
 Namespace and progress:
 
@@ -296,57 +291,21 @@ Before the ticket:
 - An empty answer (for example one typed before the prompt and lost) prints
   `worked example skipped`.
 
-Where the ticket goes:
+The ticket:
 
-- When stdout and stdin are terminals, a workstation is wired and docker is
-  reachable, it prints `ticket shown in the workstation (kubedrill ticket
-  reprints it)`, the Fundamentals line and the ticket footer, then opens the
-  workstation.
-- With `--exam` it opens the exam workstation and leaves out the
-  Fundamentals line.
-- When the shell exits with an episode still active it prints `back on the
-  host; kubedrill check grades from here too`.
-- Otherwise it prints the ticket, the Fundamentals line, the footer and the
-  next steps on the host. The cases that keep it on the host are listed under
-  [Workstation](#workstation).
+- It prints the ticket, the Fundamentals line, the footer and the next
+  steps; an exam leaves out the Fundamentals line.
+- On the host it ends with `Practice it in the browser with a terminal next
+  to the ticket: kubedrill web`.
 
 ### ticket
 
 ```
-kubedrill ticket [--follow]
+kubedrill ticket
 ```
 
-Prints the ticket of the active episode again.
-
-- The ticket is wrapped to the terminal width (see
-  [Markdown rendering](#markdown-rendering)).
-- The footer is `Checked by N checks: kubedrill check --explain` and
-  `Expected: M min (yours: 0.8 min median over K solves)`; the part in
-  parentheses appears only after a solve.
-- When the scenario has a `story.md`, the line `New to Kubernetes?
-  kubedrill story tells this ticket from zero` comes before the
-  `Fundamentals:` line.
-- An exam ticket leaves out the story and `Fundamentals:` lines and adds `Exam
-  deadline: HH:MM:SS (M min time box); no hints, no solution, no watch`.
-
-`--follow` keeps the ticket on screen instead, in the alternate screen:
-
-- A header `<id> (seed N), namespace <ns>`, the ticket wrapped to the pane
-  width, and the footer `lines A-B of N  wheel scrolls; click here for j/k
-  space b g G` (`all N lines shown` when it fits).
-- When the scenario has a story, the footer names `s (story)`; `s` shows the
-  story from the top under the header `story of <id> ...`, with `s (ticket)`
-  in the footer, and `s` again returns to the ticket. A reset or a new start
-  returns to the ticket. Exam mode has no story.
-- Keys: the mouse wheel scrolls 3 lines, `j`/`k` one, `space`/`f`/`b` a
-  page, `g`/`G` top and end, `s` story or ticket, `q` quits.
-- It re-reads the active episode every 2 s, keeps the scroll position for
-  the same episode and goes back to the top after a reset or a new start.
-- Without an episode it shows `no active episode; kubedrill start <ref>
-  opens one and this pane shows its ticket` and keeps waiting.
-- It allows exam mode.
-- It needs a terminal on stdin and stdout: `ticket --follow needs a terminal
-  on stdin and stdout; use kubedrill ticket in scripts and pipes`.
+Prints the ticket of the active episode again, with its namespace and the
+elapsed time; the page shows it beside the terminal. It allows exam mode.
 
 ### namespace
 
@@ -399,66 +358,6 @@ Grades once, prints one line per check and records the grade.
   rendered check always does.
 - Then, when they apply: `runs after <ids>`, `critical: if it does not pass
   (failed, errored or skipped) the score is 0` and `why: ...`.
-
-### watch
-
-```
-kubedrill watch [--interval 5s]
-```
-
-Live view, re-graded every interval. The keys are under
-[Watch keys](#watch-keys).
-
-- `--interval`: time between grading runs, at least 1 s; less is `interval
-  must be at least 1s, got 500ms`, exit 1.
-- While a grade runs the header shows `checking (N checks)...`.
-- Failed checks are expanded with expected/actual and why; passed checks
-  collapse into one line `[pass] N checks: id, id, ...`.
-- Spoiler checks hide their actual value like `check` until the episode has
-  a hint or a diagnosis.
-- The footer is `c check  h hint  w why  x reset  ? help  q quit` at every
-  width.
-
-Width:
-
-- At 80 columns or more, check lines wider than the terminal are cut and end
-  with `...`, measured in visible columns (color codes do not count and a
-  character is never split).
-- Below 80 columns (a tmux pane) they wrap with a hanging indent instead.
-- At every width the status line (`elapsed ... hints ... checked ... ago`),
-  the solved banner, the `Next:` and `n:` lines, the confirmations and the
-  full help entries wrap to the pane width with a hanging indent; a single
-  token wider than the pane is cut with `...`.
-- The banner and the debrief printed after `n` or a quit wrap to the width
-  the pane had.
-
-Solve and quit:
-
-- A solve shows the banner and never advances on its own.
-- While the solve is being recorded, every key but `ctrl+c` only shows
-  `recording the solve...`. The recording runs detached from the screen with
-  its own timeout, so even `ctrl+c` does not lose it.
-- Quitting after a solve prints the banner, the recommendation and the
-  debrief. When the quit races the recording of the solve, the episode just
-  recorded is used.
-- Quitting before a solve prints `Next: kubedrill check | kubedrill hint`.
-- When recording the solve fails (not a namespace error), watch leaves the
-  solved screen, shows `recording the solve failed: <err>; the next passing
-  check records it` and keeps polling. Quitting with a passing grade that
-  was never recorded exits 1 with `the checks of <id> passed but the solve
-  was not recorded; kubedrill check grades and records it`, without banner
-  or debrief.
-- A hint, surrender or start that returns after `x` started another episode
-  is dropped, so it never lands on the new episode.
-
-Errors:
-
-- A missing or foreign scenario namespace does not end watch: it shows `[err ]`
-  with the same text as `check` and `x twice resets the episode here; this
-  pane follows a kubedrill reset run in the shell`, keeps polling, and clears
-  the line at the next grade that reads the namespace.
-- In exam mode it refuses, before the terminal check: `watch is not
-  available in exam mode; kubedrill submit grades once`.
 
 ### hint
 
@@ -535,7 +434,7 @@ After a solve:
   code blocks.
 - With none recorded it prints `Your path: no kubectl commands recorded
   (telemetry: <source>)` and `commands typed outside the workstation are not
-  logged; kubedrill shell records them`.
+  logged; the terminal of kubedrill web records them`.
 - When you already solved, before this episode, another scenario sharing a
   concept or another variant of this scenario, a terminal first shows the
   text up to `## Observation that splits them` and that heading, rendered
@@ -580,8 +479,8 @@ ends the exam.
 - The outcome line is `exam submitted: solved in 12.1 min` or `failed`.
 - Exit 2 when a check fails.
 - A solved exam is followed by the banner and the debrief.
-- On a practice episode: `submit grades exam episodes (kubedrill start <id>
-  --exam); a practice episode is graded with kubedrill check`, exit 1.
+- On a practice episode: `submit grades exam episodes (the exam rehearsal of
+  kubedrill web); a practice episode is graded with kubedrill check`, exit 1.
 
 ### debrief
 
@@ -629,7 +528,7 @@ Columns `ID TITLE LEVEL TYPE MIN YOURS LAST4 STATUS`.
 - Below it, with no active episode, the recommendation (see
   [Next scenario](#next-scenario)).
 - With an active episode: `Active: <id> (seed N); continue with: kubedrill
-  watch` (`kubedrill submit` for an exam).
+  check` (`kubedrill submit` for an exam).
 
 ### path
 
@@ -790,47 +689,24 @@ one named (the active one included), inside the workstation image.
 kubedrill
 ```
 
-Runs the doctor, then `up` with the base profile (base addons included),
-then prints the scenario list and the next recommended scenario.
+Runs [`kubedrill web`](#web) on the default port. Its setup, before the
+server starts:
 
-On a terminal (stdin and stdout), outside the workstation and without
-`KUBEDRILL_NO_SHELL=1`:
-
-- Before `up`, when the cluster exists, was created with an older audit
-  policy and no episode is active, it prints `the cluster was created with
-  an older audit policy, so the debrief misses part of what you change; no
-  episode is active, so recreating it loses nothing and takes about 2
-  minutes` and asks `Recreate the cluster now? [Y/n]`. Enter, `y` or `yes`
-  deletes the cluster (`cluster kubedrill deleted`) and `up` creates it
-  again; any other answer prints `kept the cluster; kubedrill down --yes &&
-  kubedrill up recreates it`, and the question is not asked again for that
-  cluster (`.recreate-offer` in the journal directory).
+- On a terminal, outside the workstation, when the cluster exists, was
+  created with an older audit policy and no episode is active, it prints
+  `the cluster was created with an older audit policy, so the debrief
+  misses part of what you change; no episode is active, so recreating it
+  loses nothing and takes about 2 minutes` and asks `Recreate the cluster
+  now? [Y/n]`. Enter, `y` or `yes` deletes the cluster (`cluster kubedrill
+  deleted`) and `up` creates it again; any other answer prints `kept the
+  cluster; kubedrill down --yes && kubedrill up recreates it`, and the
+  question is not asked again for that cluster (`.recreate-offer` in the
+  journal directory).
 - While `up` runs, it builds the workstation image and the linux binary in
-  the background and prints their output after the scenario list, behind a
-  `finishing the workstation build` progress line when they are still
-  running. A failure there is a `warning: ...; kubedrill tries again when it
-  opens the workstation` on stderr.
-
-Then it continues into practice:
-
-- With an active episode it prints `resuming <id>; opening the workstation`
-  and opens the workstation as `kubedrill shell` does (the exam workstation
-  for an exam episode; an exam past its deadline is finished first).
-- Before that, outside an exam, it checks that the episode namespace still
-  exists. When it is gone (the cluster was recreated, for example after the
-  kind containers were removed) or belongs to another episode, it prints
-  `the namespace of <id> is gone or belongs to another episode; the cluster
-  was recreated or the namespace deleted` and asks `Reset it with a new seed
-  and open the workstation? [Y/n]`. Enter, `y` or `yes` runs the reset,
-  prints `reset <id>: seed N, namespace <ns> (hints reset to 0)` and opens
-  the workstation; any other answer prints `kept the episode; kubedrill reset
-  redeploys it` and opens nothing.
-- Without one it asks `Start <id> now? [Y/n]` for the recommended scenario.
-  Enter, `y` or `yes` runs `kubedrill start <id>` with the recommended seed;
-  any other answer prints `not started; run kubedrill again or kubedrill
-  start <id> when you are ready`.
-
-In a pipe or a script it stops after the list.
+  the background and prints their output afterwards, behind a `finishing
+  the workstation build` progress line when they are still running. A
+  failure there is a `warning: ...; kubedrill tries again when the page
+  opens a terminal` on stderr.
 
 ### doctor
 
@@ -1013,69 +889,28 @@ until `kubedrill down`.
 
 ## Workstation
 
-### shell
+The terminal of the browser workspace is the containerized workstation of
+`internal/workstation` ([workstation.md](workstation.md)): a docker image
+with `kubectl`, `helm`, `k9s` and `stern`, plus a Linux build of `kubedrill`
+mounted in.
 
-```
-kubedrill shell [--layout tmux|shell] [--exam]
-```
+For each terminal the page opens, `kubedrill web`:
 
-Opens the workstation again.
-
-- With an active episode it opens the same session `start` opened (the exam
-  workstation during an exam); without one, the tools against the cluster.
-- `--exam`: exam workstation, a rehearsal with `PATH` limited to the exam
-  tools (kubectl, helm, yq, jq, vim), no watch pane and the allowed docs
-  listed; automatic for an exam episode.
-- `--layout`: as in `start`.
-- It needs a terminal on stdin and stdout: `shell needs a terminal on stdin
-  and stdout; run it from an interactive terminal`.
-- A missing cluster or unreachable docker is an error (`cluster kubedrill:
-  missing; ...`, `the workstation needs docker: ...`).
-- Inside the workstation it refuses to nest.
-- It prints `back on the host; kubedrill check grades from here too` when the
-  shell exits with an episode active.
-
-### How start and shell use the workstation
-
-`start` (unless told otherwise), `shell` and `node` use the containerized
-workstation of `internal/workstation`: a docker image with `kubectl`,
-`helm`, `k9s`, `stern` and `tmux`, plus a Linux build of `kubedrill` mounted
-in.
-
-After the episode is recorded, `start` runs this sequence:
-
-1. Write `<cluster state dir>/kubeconfig-internal`: the cluster context
+1. Writes `<cluster state dir>/kubeconfig-internal`: the cluster context
    rewritten to the address reachable from inside docker. It sits outside
    the journal, so the read-write `/data` mount cannot rewrite it.
-2. Call `workstation.Shell`, which builds the binary when the sources are
-   newer, builds the image when missing and opens the shell. Progress lines
-   go to stderr.
-3. The ticket is shown in the workstation, not on the host.
-
-`--layout` picks:
-
-- `tmux` (default): a ticket pane above the shell and a `kubedrill watch`
-  pane.
-- `shell`: one shell, no tmux.
-- Another value is an error, exit 1.
-
-`start` stays on the host and prints the ticket when any of these holds:
-
-- `--no-shell` or `KUBEDRILL_NO_SHELL=1`.
-- `KUBEDRILL_WORKSTATION=1`: already inside the container.
-- stdout or stdin is not a terminal.
-- No workstation is wired.
-- Docker is unreachable: it prints `workstation skipped: docker is
-  unavailable (<reason>); kubectl runs on the host` on stderr, prints the
-  ticket and exits 0.
+2. Calls `workstation.ShellCommand`, which builds the binary when the
+   sources are newer and the image when missing, and runs the container in
+   a pseudo-terminal on the host, in exam mode during an exam.
 
 Inside the container:
 
 - `KUBEDRILL_WORKSTATION=1` is set and `KUBECONFIG` points at the internal
   kubeconfig, which holds a single context.
 - `kubedrill` there hands that path unchanged to scenario scripts and
-  connects with it directly, so `check`, `watch`, `hint` and `solution` grade
-  the same episode from either side.
+  connects with it directly, so `check`, `hint` and `solution` grade the
+  same episode as the page.
+- `start` inside it prints the ticket without the `kubedrill web` line.
 
 ## Authoring
 
@@ -1176,28 +1011,6 @@ kubedrill version
 Prints the module version, the VCS revision (or `revision unknown (built
 from an unversioned tree)`) and the Go version.
 
-## Watch keys
-
-| Key | Effect |
-|-----|--------|
-| `c` | Grade now instead of waiting for the interval (`a check is already running` while one runs) |
-| `h` | Next hint, labeled like `kubedrill hint` and rendered the same way (the paragraph reflows to the pane width); the last one waits for `kubedrill diagnose`. A second `h` while the first is on its way only says `a hint is already on its way` |
-| `s` twice | Surrender and print the solution (needs a diagnosis); any other key cancels |
-| `x` twice | Start the same scenario again with a new seed, in place; any other key cancels. While a hint is on its way it only says `a hint is on its way; press x again once it shows`. The start's progress lines (`creating namespace <ns>...`) replace the status line instead of printing over the screen. Refused during an exam with the `reset` message |
-| `n` | After a solve only; see below. Before a solve it only explains itself |
-| `w` | Toggle why between the first failing check and every failing check |
-| `?` | Full help: every key grouped under Checks (`c`, `w`), Assist (`h`, `s`) and Episode (`x`, `n`, `?`, `q`), each entry indented two spaces; `?` closes it |
-| `q`, `esc`, `ctrl+c` | Quit; after a solve any key other than `n` and `?` quits, once the solve is recorded |
-
-The `n` key, shown as `n: debrief, then start <id> (<reason>)` on the solved
-screen:
-
-1. Leaves the live view and prints the banner.
-2. Runs the debrief prompts, which end with one line: `debrief recorded;
-   kubedrill debrief shows it again`, or `kubedrill debrief --redo answers
-   the questions later` when they get no answer.
-3. Starts the recommended scenario and watches it.
-
 ## Next scenario
 
 `list` and `path` print the recommendation of `progress.Next`:
@@ -1227,7 +1040,7 @@ Edge cases:
 ## Diagnosis and debrief
 
 `kubedrill diagnose "<text>"` commits to a cause (see [diagnose](#diagnose)).
-After a solve (`check`, `watch`, `submit`) the debrief prints:
+After a solve (`check`, `submit`, or the page) the debrief prints:
 
 ```
 Debrief: <id> (episode <episode id>, solved)
@@ -1276,22 +1089,44 @@ After the questions:
 
 ## Exam mode
 
-`kubedrill start <id> --exam` starts a timed episode. The deadline is the
-start plus the scenario minutes.
+The exam rehearsal is a stage of every assignment in `kubedrill web`
+(`#/a/<id>/exam`, also linked as `rehearse` from the Exams page). Starting it
+(`POST /api/start` with stage `exam`) runs a random variant, seed 0, in a
+time box: the deadline is the start plus the scenario minutes.
 
-Ticket and commands:
+The page:
 
-- The ticket shows the deadline and `Next: kubedrill submit (grade once,
-  ends the exam) | kubedrill check --explain (what is graded)`.
-- It leaves out the story line, the `Fundamentals:` line and the "Last time
-  you said" reminder.
-- `check`, `hint`, `watch`, `learn`, `story` and `solution` refuse with `<command> is
+- Shows the ticket only: no story, guide, mentor or hints.
+- Counts down `MM:SS left` and submits by itself at zero.
+- Runs no live checks; the checks panel says `Exam mode: the checks run
+  once, when you submit`.
+- The Submit button (or Cmd/Ctrl+Enter) asks `Submit and end the exam`, then
+  posts `/api/submit`, which grades once, ends the episode as solved or
+  failed and opens the debrief with the outcome, the root cause and the
+  walkthrough.
+- A pass is recorded as the exam stage with the score in percent; the
+  result page shows the best one.
+
+The terminal of the page runs the workstation in exam mode
+(`KUBEDRILL_EXAM=1`, `KUBEDRILL_DEADLINE`):
+
+- `PATH` is `/opt/exam/bin:/usr/bin:/bin`. `/opt/exam/bin` holds links to
+  kubectl, helm, yq, kubedrill and vim; jq and the other `/usr/bin` tools
+  stay reachable.
+- The banner lists the allowed documentation and says `Submit on the page
+  (or kubedrill submit) when done`.
+- It is a rehearsal of the exam conditions, not a sandbox: a tool called by
+  its full path still runs, and the repository stays readable at
+  `/workspace/repo` (an accepted risk, see [workstation.md](workstation.md)).
+
+Commands during an exam:
+
+- `check`, `hint`, `learn`, `story` and `solution` refuse with `<command> is
   not available in exam mode; kubedrill submit grades once`.
-- `reset` and the watch `x` key refuse with `reset is not available in exam
-  mode; kubedrill submit ends the exam`.
+- `reset` refuses with `reset is not available in exam mode; kubedrill
+  submit ends the exam`.
 - `check --explain`, `ticket`, `diagnose` and `submit` work; `diagnose` ends
   with `Next: change one thing, then kubedrill submit`.
-- `submit` grades once and ends the exam as solved or failed.
 - `start` over an active exam asks `Leave the exam of <id>? It will be
   recorded as failed. [y/N]`.
 - After an exam, `solution <id>` asks `Your latest episode of <id> was an
@@ -1299,34 +1134,22 @@ Ticket and commands:
   latest episode of <id> ended <outcome>; show the solution anyway? [y/N]`
   otherwise.
 
-Workstation (`KUBEDRILL_EXAM=1`, `KUBEDRILL_DEADLINE`):
-
-- No watch pane.
-- `PATH` is `/opt/exam/bin:/usr/bin:/bin`. `/opt/exam/bin` holds links to
-  kubectl, helm, yq, kubedrill and vim; jq and the other `/usr/bin` tools
-  stay reachable.
-- The allowed documentation is listed.
-- It is a rehearsal of the exam conditions, not a sandbox: a tool called by
-  its full path still runs, and the repository stays readable at
-  `/workspace/repo` (an accepted risk, see [workstation.md](workstation.md)).
-
 Deadline:
 
-- Any command run at or after the deadline first grades the episode one last
-  time and prints `exam time box of <id> expired at HH:MM: outcome timed out
-  (N of M checks passed)` on stderr, so `$(kubedrill namespace)` in a script
-  never captures it.
+- Any command run at or after the deadline, and the page's next request,
+  first grade the episode one last time; a command prints `exam time box of
+  <id> expired at HH:MM: outcome timed out (N of M checks passed)` on
+  stderr, so `$(kubedrill namespace)` in a script never captures it.
 - At or after means 12:15:00 for a 12:15:00 deadline; 12:14:59 is still
   inside it.
 - The exceptions are `doctor`, `up`, `down`, `lint`, `new`, `smoke`,
-  `version`, `help`, `fault`, `heal` and `profile render`. Bare `kubedrill`
-  is an exception too, except on a terminal, where it finishes an expired
-  exam before it reopens the workstation.
+  `version`, `help`, `fault`, `heal`, `profile render` and bare `kubedrill`
+  (the workspace then finishes it on its first request).
 - The outcome stays `timed_out` (printed `timed out`) when that grade passes, except within 30
   seconds after the deadline, when a pass counts as `solved` (`env.Expire`).
 - Both the deadline and the 30 seconds are judged at the moment the command
-  starts, before grading: a `submit` started before the deadline counts
-  even when its grading ends after it.
+  or request starts, before grading: a submit started before the deadline
+  counts even when its grading ends after it.
 
 ## Telemetry
 
@@ -1375,8 +1198,8 @@ How it is computed:
 - When the wrapper cannot be written, a warning says the plain kubectl runs
   and counts. Without kubectl on the host there is nothing to wrap and no
   warning.
-- The shell log and the recordings need the workstation: `kubedrill start`
-  on a terminal, or `kubedrill shell`.
+- The shell log and the recordings need the workstation: the terminal of
+  `kubedrill web`.
 - The audit policy records the request body of the learner's `patch` and
   `update` on workloads, pods, services, ConfigMaps, PVCs, service accounts,
   Ingresses and NetworkPolicies (user group `kubeadm:cluster-admins`), never
@@ -1443,7 +1266,7 @@ Width:
 - Text wraps at the terminal width: `COLUMNS` when it is a positive integer,
   else the width the terminal on stdout reports (`TIOCGWINSZ`), else 80,
   kept between 40 and 120.
-- A 77-column tmux pane wraps at 77 and never breaks a word.
+- A 77-column terminal wraps at 77 and never breaks a word.
 - The same width wraps the long lines outside markdown on a terminal: the
   `list` and `stats` legends, `Next:` and `Recommended:` lines, the ticket
   footer, the `path` concepts lines and the debrief diagnosis and root
@@ -1481,7 +1304,6 @@ Width:
 | `KUBECONFIG` | Its first entry (default `~/.kube/config`) is where the cluster manager places the kind context and the source of the pinned copy exported to scripts |
 | `NO_COLOR` | Any value disables color and markdown styling; output is also plain when stdout is not a terminal |
 | `COLUMNS` | Wrap width on a terminal when it is a positive integer (kept between 40 and 120); otherwise the terminal's own width, else 80 |
-| `KUBEDRILL_NO_SHELL` | `1` makes `start` print the ticket and stay on the host, like `--no-shell` |
 | `KUBEDRILL_NO_BROWSER` | `1` makes `web` print its link without opening a browser, like `--no-open` |
 | `KUBEDRILL_WEB` | Set to `1` inside a workstation the browser workspace opened; the welcome text points at the ticket panel of the page |
 | `KUBEDRILL_BIN` | Set by the CLI for `setup/hook.sh` and the `smoke` run of `solution/solve.sh`: the path of the running binary |
@@ -1489,8 +1311,8 @@ Width:
 | `KUBEDRILL_AUDIT_LOG` | Path of the API audit log telemetry reads instead of `cluster.AuditLogPath()`; the workstation sets `/audit/audit.log` |
 | `KUBEDRILL_WORKSTATION` | Set to `1` inside the workstation container. `start` never opens a nested shell, `shell` refuses to run, `status` prints `present (inside the workstation)`, and `KUBECONFIG` is used as is (no pinned copy is rewritten) |
 | `KUBEDRILL_NO_TERM_QUERY` | Set to `1` inside the workstation; markdown keeps its fixed style and nothing queries the terminal background (the CLI never does) |
-| `KUBEDRILL_CLUSTER` | Set inside the workstation to the kind cluster name (`kubedrill`); the prompt and the tmux status line show it |
-| `KUBEDRILL_EXAM` | Set to `1` inside the exam workstation: no watch pane, the exam `PATH`, the allowed docs listed |
+| `KUBEDRILL_CLUSTER` | Set inside the workstation to the kind cluster name (`kubedrill`); the prompt shows it |
+| `KUBEDRILL_EXAM` | Set to `1` inside the exam workstation: no live checks, the exam `PATH`, the allowed docs listed |
 | `KUBEDRILL_DEADLINE` | Set inside the exam workstation to the exam deadline, RFC 3339 in UTC |
 | `KUBEDRILL_SHELL_LOG` | Path the workstation shell logs commands to; default `$KUBEDRILL_DATA/shell/commands.jsonl` (`/data/shell/commands.jsonl` in the container) |
 
@@ -1517,15 +1339,13 @@ Exit 1 cases:
   recording.
 - A missing tool, an unknown scenario or an unknown concept.
 - No active episode, `namespace` included.
-- A missing cluster on `start` or `shell`.
-- `--layout` other than `tmux` or `shell`.
-- `shell` without a terminal on stdin and stdout.
+- A missing cluster on `start`.
 - `node` with an unknown node name.
-- `shell` or `node` without docker.
+- `node` without docker.
 - A scenario namespace that exists without the
   `app.kubernetes.io/managed-by=kubedrill` label, or is still terminating
   after 2 minutes.
-- `check` or `watch` when the scenario namespace is missing or foreign
+- `check` when the scenario namespace is missing or foreign
   (`env.ErrNamespaceMissing`, `env.ErrNamespaceForeign`): one line pointing
   at `kubedrill reset`.
 - A confirmation needed without a terminal.

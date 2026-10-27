@@ -5,79 +5,27 @@ the Kubernetes tools installed, connected to the training cluster. Like the
 remote terminal of the CKA exam, it is the same environment on every
 machine.
 
-`kubedrill start <id>` opens it for you. On the host you only need Docker.
-Go cross-compiles the linux `kubedrill` binary the container uses: the
-host's `go` when it is on `PATH`, otherwise the golang image of
-`workstation/builder.env`.
+The browser workspace (`kubedrill web`) opens it in the page, next to the
+ticket or the guide, for the practice, DIY and exam runs. On the host you
+only need Docker. Go cross-compiles the linux `kubedrill` binary the
+container uses: the host's `go` when it is on `PATH`, otherwise the golang
+image of `workstation/builder.env`.
 
-## What you see
+## In the page
 
-With an active episode and a terminal of at least 120 columns, the
-workstation opens a tmux session with three panes:
-
-![The workstation on scenario 001: ticket at the top left, shell below, checks on the right](images/first-scenario.png)
-
-```
-+--------------------------------+---------------------+
-| ticket                         | kubedrill watch     |
-|  (kubedrill ticket --follow)   |  checks, re-graded  |
-|  scrolls on its own            |  every 5 s          |
-+--------------------------------+                     |
-| shell  <- the keyboard is here |                     |
-|  kubectl, helm, k9s, ...       |                     |
-+--------------------------------+---------------------+
- kubedrill 1:work*                     cluster: kubedrill
-```
-
-- Left column, 60% of the width: the ticket on top (45% of the height) and
-  the shell below.
-- Right column, 40%: `kubedrill watch`. Its keys are in
-  [cli.md](cli.md#watch-keys).
-- Status line: the mouse state (`C-b m: mouse off to copy` or `mouse off:
-  C-b m turns it on`) and the cluster name.
-
-Read on the top, work on the bottom, glance at the right.
-
-### Moving around
-
-- Scroll the ticket: move the mouse over it and use the wheel. The keyboard
-  stays in the shell, and typing there never moves the ticket.
-- Scroll with keys: click the ticket pane, then use `j`/`k` (one line),
-  `space`/`b` (one page) and `g`/`G` (top, end). Click the shell to type
-  again.
-- Zoom one pane to the full window: `Ctrl-b z`, and again to restore.
-- Resize panes: drag the border with the mouse.
-- Read the story: click the ticket pane and press `s` when its footer names
-  `s (story)`; `s` again returns to the ticket. `kubedrill story` prints it
-  in the shell.
-- Copy text (a pod name, an error line): press `Ctrl-b` then `m` to turn the
-  tmux mouse off. The terminal then selects with a drag and copies with its
-  own shortcut (`Cmd-c` on macOS). `Ctrl-b m` again turns the mouse back on
-  for the wheel and the pane borders. With the mouse on, a drag selects into
-  the tmux buffer; tmux also sends that selection to the system clipboard
-  through OSC 52 (`set-clipboard on`), which reaches it only in terminals
-  that accept OSC 52 writes; Terminal.app does not.
-- Skip the copy: TAB completes object names (`k describe pod <TAB>`), and a
-  label selector names every pod of the app (`k describe pods -l
-  app.kubernetes.io/name=storefront`).
-
-The ticket pane follows the episode. After `x` twice in the watch pane, or
-`kubedrill reset`, it shows the new ticket from the top. The shell switches
-to the new namespace at its next prompt.
-
-### Smaller terminals and other layouts
-
-| Situation                         | What opens                                              |
-|-----------------------------------|---------------------------------------------------------|
-| Under 120 columns                 | A plain shell, no tmux; it prints the ticket on login   |
-| Under 30 lines                    | tmux without the ticket pane; the shell prints the ticket |
-| No active episode                 | tmux with the shell only                                |
-| `--layout shell`                  | A single login shell, no tmux                           |
-| `kubedrill` binary not mounted    | `kubedrill binary not mounted at /usr/local/bin/kubedrill; starting a plain shell` |
-
-Exiting the shell ends the session and the container. Quitting the ticket
-or watch pane leaves a bash in its place; exiting that bash closes only
-that pane.
+- The terminal is xterm.js connected by a websocket to one `docker run
+  --rm -it` of this image in a pseudo-terminal on the host. The bar above
+  it shows the namespace, the time and the connection state.
+- Select text with the mouse and copy it with the system shortcut (`Cmd-c`
+  on macOS, `Ctrl-Shift-c` on most Linux terminals). TAB completes object
+  names (`k describe pod <TAB>`), and a label selector names every pod of
+  the app (`k describe pods -l app.kubernetes.io/name=storefront`).
+- `Cmd`/`Ctrl` `=` and `-` change the text size, remembered in the browser.
+- A dropped connection shows Reconnect, which starts a new container on the
+  same namespace. Closing the tab removes the container; the episode and the
+  cluster are untouched.
+- The shell follows the episode: after a new start or a reset it switches
+  to the new namespace at its next prompt.
 
 ## The shell
 
@@ -88,13 +36,9 @@ On login the shell:
   "kubedrill --help" for the trainer.`;
 - outside exam mode, prints `names: TAB completes them (k describe pod
   <TAB>); new to Kubernetes? kubedrill story`;
-- inside tmux, prints `copy: Ctrl-b m turns the tmux mouse off, then drag
-  selects and Cmd-c copies; Ctrl-b m again turns it on`;
 - prints `ticket: the panel on the left of the page (kubedrill ticket prints
-  it here)` in the browser workspace (`KUBEDRILL_WEB=1`), `ticket: the pane
-  above (mouse wheel scrolls it; kubedrill ticket prints it here)` when the
-  ticket pane is open (`KUBEDRILL_TICKET_PANE=1`), and the full ticket
-  (`kubedrill ticket`) otherwise;
+  it here)` in the browser workspace (`KUBEDRILL_WEB=1`), and the full
+  ticket (`kubedrill ticket`) otherwise;
 - points `kubectl` at the episode namespace, so `k get pods` needs no `-n`.
 
 The prompt shows that namespace: `learner@kubedrill /workspace
@@ -103,9 +47,9 @@ The prompt shows that namespace: `learner@kubedrill /workspace
 Other settings from `workstation/bashrc`: `alias k=kubectl` with
 completion, helm and `kubedrill` completion, `KUBE_EDITOR=vim`.
 
-All `kubedrill` commands work inside the workstation (`ticket`, `check`,
-`hint`, `watch` and the rest), because the binary and the journal are
-mounted.
+The learner commands of `kubedrill` work inside the workstation (`ticket`,
+`check`, `hint`, `diagnose`, `story` and the rest), because the binary and
+the journal are mounted; the page and the shell share the same episode.
 
 ### How the namespace is set
 
@@ -131,27 +75,17 @@ Debian bookworm-slim (pinned by digest in `workstation/Dockerfile`), user
 | asciinema       | v3.2.1  | github.com/asciinema/asciinema                          |
 
 From Debian bookworm through apt, versions pinned in the Dockerfile: jq,
-vim (vim-tiny), tmux, git, less, bash-completion, dnsutils, ping, nc, ssh,
-curl, ca-certificates, procps.
+vim (vim-tiny), git, less, bash-completion, dnsutils, ping, nc, ssh, curl,
+ca-certificates, procps.
 
-## Commands that open it
+## Node shells and replays
 
 | Command                     | What it does                                                             |
 |-----------------------------|--------------------------------------------------------------------------|
-| `kubedrill start <id>`      | Starts the episode and opens the workstation with its ticket             |
-| `kubedrill shell`           | Opens a new workstation for the active episode, or the tools without one |
 | `kubedrill node <name>`     | Opens a root shell on a kind node: `control-plane`, `worker` or `worker2` |
 | `ssh <name>`                | Same as `kubedrill node <name>`, inside the workstation                  |
-| `kubedrill replay [episode-id]` | Plays the latest recording of an episode                             |
+| `kubedrill replay [episode-id]` | Plays the latest recording of an episode in your terminal            |
 
-- `start` prints on the host `ticket shown in the workstation (kubedrill
-  ticket reprints it)`, the Fundamentals line and the ticket footer.
-  `--no-shell` stays on the host and prints the ticket there.
-- Every `shell` call starts a new container and a new tmux session. The
-  container runs with `--rm`, so the previous session is gone; the episode
-  and the cluster are untouched.
-- `--layout shell` opens one login shell without tmux. `--exam` opens the
-  exam workstation, which is automatic during an exam episode.
 - `node` opens a root shell on a kind node, for kubelet, containerd and
   systemd scenarios. On the host it runs `docker exec` into the node
   container. Inside the workstation there is no docker, on purpose: the
@@ -187,20 +121,22 @@ debrief through the audit log alone.
 
 ## Exam mode
 
-`kubedrill start <id> --exam` opens the exam workstation for the episode.
-`kubedrill shell --exam` opens it without one. Differences:
+The exam rehearsal of an assignment (the Exam rehearsal stage of the page,
+or "rehearse" on the exams page) opens the exam workstation. Differences:
 
-- No `kubedrill watch` pane. The ticket pane stays, as the real exam shows
-  the question next to the terminal.
+- The page shows the ticket only: no guide, no story, no mentor, no live
+  checks, and a countdown to the deadline. Submit grades once; at the
+  deadline the page submits.
 - `PATH` is `/opt/exam/bin:/usr/bin:/bin`. `/opt/exam/bin` holds `kubectl`,
   `helm`, `yq`, `kubedrill` and `vim`; `jq` and the Debian tools come from
   `/usr/bin`. `k9s`, `stern`, `kubectx` and `kubens` stay in
   `/usr/local/bin`, off the `PATH`.
 - The banner reads `EXAM MODE: use kubectl (k), helm, yq, jq and vim, as in
-  the real exam. No hints, no solution, no watch pane.` It lists the allowed
-  documentation (https://kubernetes.io/docs, https://kubernetes.io/blog,
-  https://helm.sh/docs, https://gateway-api.sigs.k8s.io) and prints the
-  deadline with `Run "kubedrill submit" when done.`
+  the real exam. No hints, no solution, no live checks.` It lists the
+  allowed documentation (https://kubernetes.io/docs,
+  https://kubernetes.io/blog, https://helm.sh/docs,
+  https://gateway-api.sigs.k8s.io) and prints the deadline with `Submit on
+  the page (or kubedrill submit) when done.`
 
 Exam mode rehearses the conditions; it is not a sandbox. A full path such
 as `/usr/local/bin/k9s` still runs, and the repository, solutions included,
@@ -208,10 +144,9 @@ stays readable at `/workspace/repo` (see Accepted risks).
 
 ## Limits
 
-- Docker is required. Without the daemon, `kubedrill shell` fails with
-  `the workstation needs docker: docker is not available (is Docker Desktop
-  or the daemon running?): docker info: <docker's message>: <exit status>`,
-  so a permission problem on the docker socket shows its own text.
+- Docker is required. Without the daemon the terminal of the page prints
+  the docker error in its first lines (`[kubedrill] ...`), so a permission
+  problem on the docker socket shows its own text.
 - The cluster must run on docker. Without the `kind` network it fails with
   `kind docker network not found; was the cluster created with docker?
   (kubedrill up)`.
@@ -304,9 +239,10 @@ No capability is added back. The image strips the file capability of `ping`
 
 ### Image and binary
 
-- Image tag: `kubedrill-workstation:<12 hex>`, a sha256 over the six image
-  files in `workstation/` (not `builder.env`). Changing any of them changes the tag, so the next
-  `kubedrill shell` builds the new image. Maintainer notes are in
+- Image tag: `kubedrill-workstation:<12 hex>`, a sha256 over the five image
+  files in `workstation/` (Dockerfile, versions.env, checksums.txt, bashrc,
+  entrypoint.sh; not `builder.env`). Changing any of them changes the tag,
+  so the next terminal builds the new image. Maintainer notes are in
   [workstation/README.md](../workstation/README.md).
 - `EnsureImage` runs `docker image inspect` and builds only when the tag is
   missing, with `docker build --progress quiet`. It prints `rebuilding
@@ -338,34 +274,23 @@ No capability is added back. The image strips the file capability of `ping`
   version equal to `go.mod`, which a test checks), with the repository
   mounted read-only and the module and build caches under `<state dir>/go`.
   `start.sh` reads the same file.
-- The default `kubedrill` run calls `Prepare`, which runs `EnsureImage` and
-  `EnsureBinary` while the cluster is created, so the first workstation
-  opens without a second wait.
+- `kubedrill web` calls `Prepare`, which runs `EnsureImage` and
+  `EnsureBinary` while the cluster is created, so the first terminal opens
+  without a second wait.
 
-### tmux layout
+### Entrypoint
 
-`workstation/entrypoint.sh` takes `shell` (one login shell) or `tmux`. For
-`tmux` it creates the session with the shell pane, then splits:
-
-- `kubedrill watch; exec bash -l` to the right at 40%, outside exam mode,
-  while an episode is active;
-- `kubedrill ticket --follow; exec bash -l` above the shell at 45%, while an
-  episode is active and the terminal has at least 30 lines, in exam mode
-  too.
-
-The shell pane gets `KUBEDRILL_TICKET_PANE` (1 or 0) and the keyboard.
-`workstation/tmux.conf` turns the mouse on, sets `set-clipboard on` with
-the `clipboard` terminal feature for every terminal, and binds `prefix m` to
-toggle the mouse with a message naming the new state. A
-`pane-exited` hook ends the session only when the exited pane is the shell
-pane. The container exits 0 when the shell ends.
+`workstation/entrypoint.sh` takes `shell` (the default): one login shell,
+recorded by asciinema while an episode is active; any other argument runs
+as a command (`kubedrill replay` uses this). In exam mode it sets the exam
+`PATH` first. The container exits 0 when the shell ends.
 
 ## Accepted risks
 
 - Read-only mounts protect against mistakes, not against a learner with host
   access. The internal kubeconfig and the linux binary live in the cluster
   state directory, outside `/data`, and are mounted read-only, so a process
-  in the container cannot edit what the next `kubedrill shell` mounts. The
+  in the container cannot edit what the next terminal mounts. The
   `:ro` mounts stop an `rm -rf` in the wrong directory or a `kubectl config`
   write.
 - `/data` is read-write. A process in the container can edit the shell log

@@ -19,26 +19,33 @@ const VERDICTS = {
 export function renderDebrief(stage, a, _next, _stageId, episodeId) {
   clear(stage, el("div", { class: "stage-inner" }, skeleton(6)));
   api.get("/api/debrief/" + encodeURIComponent(episodeId)).then((d) => {
-    const after = a.progress.diy && a.progress.diy.done ? "done" : "diy";
+    const after = d.stage === "practice" && !(a.progress.diy && a.progress.diy.done) ? "diy" : "done";
+    const solved = d.outcome === "solved";
+    const exam = d.stage === "exam";
+    const title = solved ? (exam ? "Exam passed" : "The customer is happy") : d.outcome === "timed out" ? "Time is up" : exam ? "Exam not passed" : "Run ended";
+    const lead = solved
+      ? (exam ? "Passed in " : "Solved in ") + duration(d.seconds) + " (expected " + d.minutes + " min)" + (exam ? "" : ", " + d.hints + " " + (d.hints === 1 ? "hint" : "hints")) + ". Take a minute on how you got there: it is what transfers to the next ticket."
+      : "The run ended after " + duration(d.seconds) + " without every check passing. The real cause and the walkthrough are below; the next rehearsal draws a variant again.";
     clear(stage, el("div", { class: "stage-inner debrief" },
       el("div", { class: "debrief-hero" },
-        el("div", { class: "result-icon ok", text: "\u2713" }),
+        el("div", { class: "result-icon " + (solved ? "ok" : "no"), text: solved ? "\u2713" : "!" }),
         el("div", null,
-          el("div", { class: "eyebrow", text: "Debrief" }),
-          el("h1", { text: "The customer is happy" }),
-          el("p", { class: "muted", text: "Solved in " + duration(d.seconds) + " (expected " + d.minutes + " min), " + d.hints + " " + (d.hints === 1 ? "hint" : "hints") + ". Take a minute on how you got there: it is what transfers to the next ticket." }))),
+          el("div", { class: "eyebrow", text: exam ? "Exam debrief" : "Debrief" }),
+          el("h1", { text: title }),
+          el("p", { class: "muted", text: lead }))),
       el("div", { class: "debrief-grid" },
-        compareCard(d),
+        compareCard(d, exam),
         trajectoryCard(d)),
+      d.solution ? el("details", { class: "card pad walkthrough" }, el("summary", { text: "Read the full walkthrough" }), el("div", { class: "prose compact", html: d.solution })) : null,
       reflectionCard(d, () => { location.hash = "#/a/" + encodeURIComponent(a.id) + "/" + after; })));
   }).catch((e) => clear(stage, el("div", { class: "stage-inner" }, errorState("Could not load the debrief: " + e.message))));
 }
 
-function compareCard(d) {
+function compareCard(d, exam) {
   return el("section", { class: "card pad" },
     el("div", { class: "eyebrow muted", text: "Diagnosis" }),
     el("div", { class: "compare" },
-      el("div", null, el("b", { text: "Your diagnosis" }), d.diagnosis || "None recorded. Next time, name the cause in the mentor panel before you change anything: committing to a cause is half the method."),
+      el("div", null, el("b", { text: "Your diagnosis" }), d.diagnosis || (exam ? "None recorded; an exam has no mentor. kubedrill diagnose in the terminal records one." : "None recorded. Next time, name the cause in the mentor panel before you change anything: committing to a cause is half the method.")),
       el("div", null, el("b", { text: "The real cause" }), d.rootCause || "-")));
 }
 
@@ -108,7 +115,8 @@ export function renderDone(stage, a) {
       el("p", { text: earned ? "Fixed with the guide, then again on your own with a different cause. That is the whole loop." : "Pass the Do it yourself run to complete this assignment and count it toward the plan badge." }),
       el("ul", { class: "stage-list" },
         a.simulation ? [row("Meeting, best questions first try", p.meeting, null), row("Quiz, right first try", p.quiz, null)] : null,
-        row("Learn", p.learn, base + "learn"), row("Guided practice", p.practice, base + "practice"), row("Do it yourself", p.diy, base + "diy")),
+        row("Learn", p.learn, base + "learn"), row("Guided practice", p.practice, base + "practice"), row("Do it yourself", p.diy, base + "diy"),
+        row("Exam rehearsal, best score", p.exam, base + "exam")),
       a.simulation ? el("div", { class: "redo" }, el("button", { class: "btn small", text: "Redo the meeting", onclick: redoMeeting }), el("button", { class: "btn small", text: "Redo the quiz", onclick: redoQuiz })) : null),
     el("section", { class: "card pad mastery-card" },
       el("div", { class: "mastery-head" },

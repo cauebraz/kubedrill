@@ -13,7 +13,7 @@ import { renderDone, renderDebrief } from "./result.js";
 export function firstOpenStage(a) {
   for (const s of stagesFor(a)) {
     const p = a.progress[s.id];
-    if (s.id !== "done" && !(p && p.done)) { return s.id; }
+    if (s.id !== "done" && s.id !== "exam" && !(p && p.done)) { return s.id; }
   }
   return "done";
 }
@@ -43,13 +43,13 @@ export function showAssignment(app, ctx, id, stageId, extra) {
         el("div", { class: "chips" }, a.concepts.map((c) => el("button", { class: "chip", title: c.summary || c.title, onclick: () => openConcept(c) }, el("span", { class: "ic", html: icons.book }), c.title)))) : null,
       el("div", { class: "stepper-mastery" }, el("div", { class: "eyebrow muted", text: "Mastery" }), masteryMeter(a.mastery), el("span", { class: "small muted", text: a.mastery.mastered ? "mastered" : a.mastery.variantsSolved + " of " + Math.min(3, a.variants) + " variants" })));
     const stage = el("section", { class: "stage", tabindex: "-1" });
-    const lab = stageId === "practice" || stageId === "diy";
+    const lab = stageId === "practice" || stageId === "diy" || stageId === "exam";
     clear(app, el("div", { class: "assign" + (lab ? " lab-mode" : "") }, stepper, stage));
     const i = stages.findIndex((s) => s.id === stageId);
     const next = () => go(stages[Math.min(i + 1, stages.length - 1)].id);
     if (i > 0) { bind("mod+ArrowLeft", "Previous stage", () => go(stages[i - 1].id)); }
     if (i >= 0 && i < stages.length - 1) { bind("mod+ArrowRight", "Next stage", next); }
-    const render = { meeting: renderMeeting, quiz: renderQuiz, learn: renderLearn, practice: renderLab, diy: renderLab, done: renderDone, debrief: renderDebrief }[stageId];
+    const render = { meeting: renderMeeting, quiz: renderQuiz, learn: renderLearn, practice: renderLab, diy: renderLab, exam: renderLab, done: renderDone, debrief: renderDebrief }[stageId];
     if (!render) { location.replace("#/a/" + encodeURIComponent(a.id)); return; }
     render(stage, a, next, stageId, extra, ctx);
   }).catch((e) => clear(app, el("div", { class: "page" }, el("div", { class: "page-inner" }, errorState("Could not load the assignment: " + e.message, () => showAssignment(app, ctx, id, stageId, extra))))));

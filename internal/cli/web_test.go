@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"sigs.k8s.io/yaml"
 
@@ -12,7 +13,6 @@ import (
 	"github.com/cauebraz/kubedrill/internal/journal"
 	"github.com/cauebraz/kubedrill/internal/scenario"
 	"github.com/cauebraz/kubedrill/internal/web"
-	"github.com/cauebraz/kubedrill/internal/workstation"
 )
 
 func (f *fixture) webBackend(t *testing.T) *webBackend {
@@ -136,7 +136,7 @@ func TestWebBackendTerminal(t *testing.T) {
 		t.Fatal("Terminal: nil command or cleanup")
 	}
 	o := f.ws.shells[len(f.ws.shells)-1]
-	if o.Name != "kubedrill-web-1234" || o.Layout != workstation.LayoutShell || !o.Web || o.Kubeconfig == "" {
+	if o.Name != "kubedrill-web-1234" || o.Exam || !o.Web || o.Kubeconfig == "" {
 		t.Errorf("shell options: got %+v", o)
 	}
 	cleanup()
@@ -300,7 +300,7 @@ func TestWebTelemetryOutlivesTheFirstRequest(t *testing.T) {
 			return journal.Telemetry{Source: "audit"}
 		}
 	}
-	if code, _, errOut := f.run(t, "", "start", "001", "--seed", "1", "--no-shell"); code != 0 {
+	if code, _, errOut := f.run(t, "", "start", "001", "--seed", "1"); code != 0 {
 		t.Fatalf("start from the terminal: %s", errOut)
 	}
 	first, cancel := context.WithCancel(context.Background())
@@ -314,4 +314,66 @@ func TestWebTelemetryOutlivesTheFirstRequest(t *testing.T) {
 	if len(asked) == 0 || !asked[len(asked)-1] {
 		t.Errorf("audit available at validate: got %v, want true after the first request's context ended", asked)
 	}
+}
+
+func TestWebExamSubmitAndExpiry(t *testing.T) {
+	ctx := context.Background()
+	t.Run("submit before the deadline", func(t *testing.T) {
+		f := newFixture(t)
+		withWorkstation(f)
+		f.grader.grades = []grader.Grade{{Passed: true, Score: 1, Results: []grader.Result{{ID: "ready", Status: grader.StatusPass}}}}
+		b := f.webBackend(t)
+		sess, err := b.Start(ctx, "001", web.StageExam, false, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a := sess.Active; a == nil || !a.Exam || a.Deadline == nil || a.HintsTotal != 0 || a.Story != "" || len(a.Guide) != 0 {
+			t.Fatalf("exam session: got %+v, want exam with a deadline and no aids", sess.Active)
+		}
+		if _, err := b.Validate(ctx); err == nil {
+			t.Error("Validate during an exam: got nil error, want the exam refusal")
+		}
+		v, err := b.Submit(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !v.Passed || v.Outcome != "solved" || v.RootCause == "" || v.Solution == "" {
+			t.Errorf("submit: got %+v", v)
+		}
+		if _, err := b.Submit(ctx); err == nil {
+			t.Error("second submit: got nil error")
+		}
+	})
+	t.Run("past the deadline the exam expires", func(t *testing.T) {
+		f := newFixture(t)
+		withWorkstation(f)
+		f.grader.grades = []grader.Grade{failGrade()}
+		b := f.webBackend(t)
+		if _, err := b.Start(ctx, "001", web.StageExam, false, nil); err != nil {
+			t.Fatal(err)
+		}
+		f.now = time.Date(2026, 10, 25, 12, 20, 0, 0, time.UTC)
+		b = f.webBackend(t)
+		v, err := b.Submit(ctx)
+		if err != nil {
+			t.Fatalf("submit past the deadline: %v", err)
+		}
+		if v.Passed || v.Outcome != "timed out" || v.RootCause == "" {
+			t.Errorf("expired exam: got %+v, want timed out with the root cause", v)
+		}
+	})
+	t.Run("the session expires a due exam", func(t *testing.T) {
+		f := newFixture(t)
+		withWorkstation(f)
+		f.grader.grades = []grader.Grade{failGrade()}
+		b := f.webBackend(t)
+		if _, err := b.Start(ctx, "001", web.StageExam, false, nil); err != nil {
+			t.Fatal(err)
+		}
+		f.now = time.Date(2026, 10, 25, 12, 20, 0, 0, time.UTC)
+		sess, err := f.webBackend(t).Session(ctx, false)
+		if err != nil || sess.Active != nil {
+			t.Errorf("session after the deadline: got %+v %v, want no active episode", sess.Active, err)
+		}
+	})
 }

@@ -41,14 +41,12 @@ internal/workstation/     the workstation container: image tag, linux binary (ho
 internal/cli/             cobra commands, Factories/Options, session assembly and command handlers; web.go is the Backend of the browser workspace
 internal/web/             kubedrill web: HTTP server on 127.0.0.1 (token cookie, loopback Host, X-Kubedrill header), JSON API with snapshots in testdata/, NDJSON launch progress, stage progress (web-progress.json in the journal), websocket terminal in a host pseudo-terminal (stdlib, darwin and linux); static/ is the page (index.html, app.js, js/ ES modules, app.css design tokens, vendored xterm.js; static/README.md is the design system); webtest/ is the in-memory Backend, devserver/ serves it, browser_test.go (tag browser) drives headless Chrome
 internal/render/          terminal text: width resolution, wrap and truncate, markdown, styles, check result lines, Printer, progress line
-internal/tui/watch/       Bubble Tea model of kubedrill watch (Session, Options, Run)
-internal/tui/ticket/      Bubble Tea model of kubedrill ticket --follow (Loader, Run); s switches to the story
 scenarios/<level>/<id>/   one directory per scenario, id = NNN-kebab-slug
 cluster/profiles/         kind configurations as Go templates over the audit paths (base.yaml is the default)
 cluster/addons/<name>/    addon.yaml plus vendored upstream manifests: metrics-server (base), gateway, kwok; README.md lists sources and local changes
 LICENSES/                 Apache-2.0 text for the vendored addon manifests
 cluster/audit-policy.yaml API audit policy mounted on the control plane by base.yaml
-workstation/              Dockerfile, versions.env, checksums.txt, bashrc (shell logger), tmux.conf, entrypoint.sh (recording, exam PATH); builder.env pins the golang image that builds kubedrill when go is missing
+workstation/              Dockerfile, versions.env, checksums.txt, bashrc (shell logger), entrypoint.sh (shell with recording, exam PATH); builder.env pins the golang image that builds kubedrill when go is missing
 curriculum.yaml           the ladder
 docs/                     learner and contributor documentation
 docs/concepts/            concept pages, one file per id, referenced by scenario.toml concepts

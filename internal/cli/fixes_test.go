@@ -45,30 +45,11 @@ func TestExamExpiresAtExactlyTheDeadline(t *testing.T) {
 		if got := a.examRunning(ep); got != tc.running {
 			t.Errorf("examRunning at %s: got %v, want %v", tc.now.Format("15:04:05"), got, tc.running)
 		}
-		if got := a.examActive(); got != tc.running {
-			t.Errorf("examActive at %s: got %v, want %v", tc.now.Format("15:04:05"), got, tc.running)
-		}
 		f.grader.grades = []grader.Grade{failGrade()}
 		_, _, out := f.run(t, "", "status")
 		if expired := strings.Contains(out, "exam time box of 001-hello-down expired"); expired == tc.running {
 			t.Errorf("status at %s: expired %v, want %v:\n%s", tc.now.Format("15:04:05"), expired, !tc.running, out)
 		}
-	}
-}
-
-func TestExamActiveWithoutExam(t *testing.T) {
-	f := newFixture(t)
-	a := newApp(Options{Factories: f.factories(), Getenv: func(string) string { return "" }, Now: f.nowFunc()})
-	if a.examActive() {
-		t.Errorf("examActive without an episode: got true")
-	}
-	f.journal.current = &journal.Episode{ID: "p", ScenarioID: "001-hello-down", Mode: journal.ModePractice}
-	if a.examActive() {
-		t.Errorf("examActive on a practice episode: got true")
-	}
-	f.journal.current = &journal.Episode{ID: "e", ScenarioID: "001-hello-down", Mode: journal.ModeExam}
-	if !a.examActive() {
-		t.Errorf("examActive on an exam without deadline: got false")
 	}
 }
 
@@ -333,7 +314,7 @@ func TestSolutionPathWithoutShellLog(t *testing.T) {
 	f := newFixture(t)
 	f.journal.episodes = []journal.Episode{solvedEpisode("s1", "001-hello-down", 1, time.Date(2026, 10, 24, 9, 0, 0, 0, time.UTC))}
 	_, out, _ := f.run(t, "", "solution", "001")
-	mustContain(t, out, "Your path: no kubectl commands recorded (telemetry: none)\n  commands typed outside the workstation are not logged; kubedrill shell records them\n")
+	mustContain(t, out, "Your path: no kubectl commands recorded (telemetry: none)\n  commands typed outside the workstation are not logged; the terminal of kubedrill web records them\n")
 }
 
 func TestLegendWrapsToTerminalWidth(t *testing.T) {
@@ -400,9 +381,7 @@ func TestDebriefRedoShowsMatchedAsLetter(t *testing.T) {
 
 func TestCheckExplainInExam(t *testing.T) {
 	f := newFixture(t)
-	if code, _, errOut := f.run(t, "", "start", "001", "--exam"); code != 0 {
-		t.Fatalf("start: %s", errOut)
-	}
+	f.startExam(t, 0, false)
 	_, out, _ := f.run(t, "", "check", "--explain")
 	mustContain(t, out, "001-hello-down is checked by 1 check; kubedrill submit grades them once, this list grades nothing\n")
 }

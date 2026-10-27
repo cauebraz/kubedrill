@@ -13,9 +13,24 @@ export function renderLab(stage, a, next, stageId) {
   }).catch((e) => clear(stage, el("p", { class: "loading", text: e.message })));
 }
 
+const LAUNCH = {
+  practice: {
+    eyebrow: "Stage 4 / Guided practice", title: "Fix it step by step on a live cluster", button: "Launch the practice environment",
+    points: ["A fresh namespace on your local cluster with the problem planted.", "A terminal in the page, already pointed at the namespace, with kubectl, k9s and helm.", "The steps on the left; the ones that change the cluster turn green on their own."]
+  },
+  diy: {
+    eyebrow: "Stage 5 / Do it yourself", title: "Now fix it on your own", button: "Launch the DIY environment",
+    points: ["Same ticket, a different planted cause: what fixed the practice run will not be enough.", "No guide. The mentor gives hints, and the last one waits until you name a cause.", "Validate when you think the customer is happy; the checks grade the end state, so any fix that works passes."]
+  },
+  exam: {
+    eyebrow: "Exam rehearsal", title: "Fix it against the clock", button: "Start the exam",
+    points: ["A random variant in a time box of the expected minutes, like a CKA or CKAD task.", "No guide, no hints, no live checks. The terminal keeps only the exam tools (kubectl, helm, yq, jq, vim) and lists the documentation the exam allows.", "Submit grades once and ends the run; at the deadline the page submits for you. The walkthrough opens afterwards."]
+  }
+};
+
 function launchPanel(stage, a, stageId, act) {
-  const isDIY = stageId === "diy";
-  const btn = el("button", { class: "btn primary", text: isDIY ? "Launch the DIY environment" : "Launch the practice environment" });
+  const copy = LAUNCH[stageId];
+  const btn = el("button", { class: "btn primary", text: copy.button });
   const steps = el("ol", { class: "launch-steps", "aria-live": "polite" });
   const other = act ? el("div", { class: "callout" },
     el("div", null, el("b", { text: act.scenarioId === a.id ? "A run of this assignment is in progress. " : act.scenarioId + " is active. " }),
@@ -45,11 +60,10 @@ function launchPanel(stage, a, stageId, act) {
   btn.addEventListener("click", launch);
   bind("Enter", "Launch the environment", () => { if (!btn.disabled) { launch(); } });
   clear(stage, el("div", { class: "card launch" },
-    el("div", { class: "eyebrow", text: isDIY ? "Stage 5 / Do it yourself" : "Stage 4 / Guided practice" }),
-    el("h1", { text: isDIY ? "Now fix it on your own" : "Fix it step by step on a live cluster" }),
-    el("ul", { class: "launch-points" }, (isDIY
-      ? ["Same ticket, a different planted cause: what fixed the practice run will not be enough.", "No guide. The mentor gives hints, and the last one waits until you name a cause.", "Validate when you think the customer is happy; the checks grade the end state, so any fix that works passes."]
-      : ["A fresh namespace on your local cluster with the problem planted.", "A terminal in the page, already pointed at the namespace, with kubectl, k9s and helm.", "The steps on the left; the ones that change the cluster turn green on their own."]).map((t) => el("li", { text: t }))),
+    el("div", { class: "eyebrow", text: copy.eyebrow }),
+    el("h1", { text: copy.title }),
+    stageId === "exam" ? el("p", { class: "lede", text: a.minutes + " minutes from the moment the namespace is ready." }) : null,
+    el("ul", { class: "launch-points" }, copy.points.map((t) => el("li", { text: t }))),
     other, small,
     el("div", { class: "launch-actions" }, btn, el("span", { class: "small muted" }, el("kbd", { class: "kbd", text: "Enter" }), " about 20 seconds")),
     steps));
@@ -58,7 +72,8 @@ function launchPanel(stage, a, stageId, act) {
 
 function workspace(stage, a, stageId, act) {
   const isDIY = stageId === "diy";
-  const guided = !isDIY && act.guide && act.guide.length;
+  const isExam = stageId === "exam";
+  const guided = stageId === "practice" && act.guide && act.guide.length;
   const manualKey = "kd:guide:" + act.episodeId;
   const manual = store(manualKey) || [];
   const tabKey = "kd:tab:" + act.episodeId;
@@ -71,7 +86,7 @@ function workspace(stage, a, stageId, act) {
   const sideBody = el("div", { class: "side-body" });
   const side = el("aside", { class: "lab-side" },
     el("div", { class: "lab-side-head" },
-      el("div", { class: "eyebrow", text: isDIY ? "Stage 5 / Do it yourself" : "Stage 4 / Guided practice" }),
+      el("div", { class: "eyebrow", text: LAUNCH[stageId].eyebrow }),
       el("h3", { text: a.title }),
       sideTabs),
     sideBody);
@@ -80,12 +95,12 @@ function workspace(stage, a, stageId, act) {
   const timer = el("span", { class: "timer", title: "Time since the run started, against the expected minutes" });
   const reconnect = el("button", { class: "term-btn", hidden: true, title: "Open a new terminal", html: icons.refresh + "<span>Reconnect</span>" });
   const checksBar = el("div", { class: "checks", role: "status", "aria-label": "Live checks" });
-  const validateBtn = el("button", { class: "btn primary", title: "Grade the namespace now" }, "Validate ", el("kbd", { class: "kbd on-accent", text: navigator.platform.includes("Mac") ? "Cmd Enter" : "Ctrl Enter" }));
+  const validateBtn = el("button", { class: "btn primary", title: isExam ? "Grade once and end the exam" : "Grade the namespace now" }, isExam ? "Submit " : "Validate ", el("kbd", { class: "kbd on-accent", text: navigator.platform.includes("Mac") ? "Cmd Enter" : "Ctrl Enter" }));
   const hintPill = el("span", { class: "pill warn", hidden: act.hintsUsed === 0, title: "Hinted attempts still count as solves, not as clean solves for mastery" });
-  const mentorBtn = el("button", { class: "btn" }, "Mentor");
+  const mentorBtn = el("button", { class: "btn", hidden: isExam }, "Mentor");
   const updateMentor = () => {
     mentorBtn.textContent = act.hintsTotal ? "Mentor (" + act.hintsUsed + "/" + act.hintsTotal + ")" : "Mentor";
-    hintPill.hidden = act.hintsUsed === 0;
+    hintPill.hidden = isExam || act.hintsUsed === 0;
     hintPill.textContent = act.hintsUsed + " hint" + (act.hintsUsed === 1 ? "" : "s") + " used";
   };
   updateMentor();
@@ -103,7 +118,19 @@ function workspace(stage, a, stageId, act) {
   onLeave(() => term.close());
 
   const started = new Date(act.startedAt).getTime();
+  const deadline = act.deadline ? new Date(act.deadline).getTime() : 0;
+  let autoSubmitted = false;
   const tick = () => {
+    if (isExam && deadline) {
+      const left = (deadline - Date.now()) / 1000;
+      timer.textContent = duration(Math.max(0, left)) + " left";
+      timer.classList.toggle("over", left < 120);
+      if (left <= 0 && !autoSubmitted) {
+        autoSubmitted = true;
+        submitExam(true);
+      }
+      return;
+    }
     const s = (Date.now() - started) / 1000;
     timer.textContent = duration(s) + " / " + act.minutes + " min";
     timer.classList.toggle("over", s > act.minutes * 60);
@@ -186,6 +213,10 @@ function workspace(stage, a, stageId, act) {
   onLeave(() => { if (popover) { popover.remove(); } });
 
   function drawChecks(s) {
+    if (isExam) {
+      clear(checksBar, el("span", { class: "sum", text: "Exam mode: the checks run once, when you submit" }));
+      return;
+    }
     if (s.checkError) { clear(checksBar, el("span", { class: "chk error" }, el("span", { text: s.checkError }))); return; }
     const list = s.checks || [];
     const ok = list.filter((c) => c.status === "pass").length;
@@ -197,8 +228,11 @@ function workspace(stage, a, stageId, act) {
   function poll() {
     clearTimeout(timerID);
     if (document.hidden) { return; }
-    api.get("/api/session?live=1").then((s) => {
-      if (!s.active || s.active.episodeId !== act.episodeId) { return; }
+    api.get("/api/session" + (isExam ? "" : "?live=1")).then((s) => {
+      if (!s.active || s.active.episodeId !== act.episodeId) {
+        if (isExam) { location.hash = "#/a/" + encodeURIComponent(a.id) + "/done"; }
+        return;
+      }
       act = s.active;
       updateMentor();
       lastChecks = s.checks || [];
@@ -221,8 +255,16 @@ function workspace(stage, a, stageId, act) {
 
   const openMentorDrawer = () => openMentor(act, () => updateMentor());
   mentorBtn.addEventListener("click", openMentorDrawer);
+  function submitExam(timedOut) {
+    validateBtn.disabled = true;
+    api.post("/api/submit").then((v) => {
+      location.hash = "#/a/" + encodeURIComponent(a.id) + "/debrief/" + encodeURIComponent(v.episodeId);
+    }).catch((e) => { validateBtn.disabled = false; toast(e.message, true); });
+    if (timedOut) { toast("Time is up; the exam was submitted."); }
+  }
   const validate = () => {
     if (validateBtn.disabled) { return; }
+    if (isExam) { confirmSubmit(submitExam); return; }
     validateBtn.disabled = true;
     api.post("/api/validate").then((v) => {
       if (v.passed) {
@@ -233,10 +275,27 @@ function workspace(stage, a, stageId, act) {
     }).catch((e) => toast(e.message, true)).finally(() => { validateBtn.disabled = false; });
   };
   validateBtn.addEventListener("click", validate);
-  bind("mod+Enter", "Validate the namespace", validate);
-  bind("mod+.", "Open the mentor", openMentorDrawer);
+  bind("mod+Enter", isExam ? "Submit the exam" : "Validate the namespace", validate);
+  if (!isExam) { bind("mod+.", "Open the mentor", openMentorDrawer); }
   bind("mod+=", "Larger terminal text", () => term.zoom(1));
   bind("mod+-", "Smaller terminal text", () => term.zoom(-1));
+}
+
+// confirmSubmit asks before the one grade of an exam.
+function confirmSubmit(onYes) {
+  const back = el("div", { class: "modal-back", role: "dialog", "aria-modal": "true", "aria-label": "Submit the exam" });
+  let release = () => {};
+  const close = () => { release(); back.remove(); };
+  release = pushOverlay(close);
+  back.addEventListener("click", (e) => { if (e.target === back) { close(); } });
+  const yes = el("button", { class: "btn primary", text: "Submit and end the exam", onclick: () => { close(); onYes(false); } });
+  back.appendChild(el("div", { class: "modal narrow" },
+    el("div", { class: "eyebrow", text: "Exam rehearsal" }),
+    el("h2", { class: "modal-title", text: "Submit now?" }),
+    el("p", { class: "muted", text: "The checks run once and the exam ends; there is no second try on this run." }),
+    el("div", { class: "modal-actions" }, el("button", { class: "btn", text: "Keep working", onclick: close }), yes)));
+  document.body.appendChild(back);
+  yes.focus();
 }
 
 function startTerminal(box, stateEl, reconnect) {

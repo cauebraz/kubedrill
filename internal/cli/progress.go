@@ -10,7 +10,6 @@ import (
 	"github.com/cauebraz/kubedrill/internal/progress"
 	"github.com/cauebraz/kubedrill/internal/render"
 	"github.com/cauebraz/kubedrill/internal/scenario"
-	"github.com/cauebraz/kubedrill/internal/tui/watch"
 )
 
 // scenarioInfos is the catalog as progress sees it, sorted by id.
@@ -122,27 +121,6 @@ func reasonSentence(reason string) string {
 		return fmt.Sprintf("review: you mastered %s %s", m[1], days)
 	}
 	return reason
-}
-
-// nextPick is the recommendation the watch n key starts.
-func (a *app) nextPick() (watch.Pick, bool) {
-	cat, err := a.getCatalog()
-	if err != nil {
-		return watch.Pick{}, false
-	}
-	j, err := a.getJournal()
-	if err != nil {
-		return watch.Pick{}, false
-	}
-	eps, err := allEpisodes(j)
-	if err != nil {
-		return watch.Pick{}, false
-	}
-	rec, ok := a.recommend(cat, eps)
-	if !ok {
-		return watch.Pick{}, false
-	}
-	return watch.Pick{Ref: rec.ScenarioID, Seed: rec.Seed, Reason: reasonSentence(rec.Reason)}, true
 }
 
 // lastCell prints the clean attempts of the window as "3/4", or "-".

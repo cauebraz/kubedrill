@@ -150,22 +150,17 @@ fi
 __kubedrill_motd() {
   printf 'kubedrill workstation: cluster %s\n' "${KUBEDRILL_CLUSTER:-kubedrill}"
   if [ "${KUBEDRILL_EXAM:-}" = 1 ]; then
-    printf 'EXAM MODE: use kubectl (k), helm, yq, jq and vim, as in the real exam. No hints, no solution, no watch pane.\n'
+    printf 'EXAM MODE: use kubectl (k), helm, yq, jq and vim, as in the real exam. No hints, no solution, no live checks.\n'
     printf 'Allowed documentation: https://kubernetes.io/docs, https://kubernetes.io/blog, https://helm.sh/docs, https://gateway-api.sigs.k8s.io\n'
     if [ -n "${KUBEDRILL_DEADLINE:-}" ]; then
-      printf 'Deadline: %s. Run "kubedrill submit" when done.\n' "$KUBEDRILL_DEADLINE"
+      printf 'Deadline: %s. Submit on the page (or kubedrill submit) when done.\n' "$KUBEDRILL_DEADLINE"
     fi
   else
     printf 'tools: kubectl (alias k), helm, k9s, stern, kubectx, kubens, yq, jq, vim. Type "kubedrill --help" for the trainer.\n'
     printf 'names: TAB completes them (k describe pod <TAB>); new to Kubernetes? kubedrill story\n'
   fi
-  if [ -n "${TMUX:-}" ]; then
-    printf 'copy: Ctrl-b m turns the tmux mouse off, then drag selects and Cmd-c copies; Ctrl-b m again turns it on\n'
-  fi
   if [ "${KUBEDRILL_WEB:-}" = 1 ]; then
     printf 'ticket: the panel on the left of the page (kubedrill ticket prints it here)\n'
-  elif [ "${KUBEDRILL_TICKET_PANE:-}" = 1 ]; then
-    printf 'ticket: the pane above (mouse wheel scrolls it; kubedrill ticket prints it here)\n'
   elif command -v kubedrill >/dev/null 2>&1; then
     kubedrill ticket 2>/dev/null || true
   fi

@@ -237,8 +237,6 @@ func (u unavailableWorkstation) DockerAvailable(context.Context) error { return 
 
 func (u unavailableWorkstation) Prepare(context.Context, io.Writer) error { return u.err }
 
-func (u unavailableWorkstation) Shell(context.Context, workstation.ShellOptions) error { return u.err }
-
 func (u unavailableWorkstation) ShellCommand(context.Context, workstation.ShellOptions) (*exec.Cmd, error) {
 	return nil, u.err
 }
@@ -395,7 +393,7 @@ func (w *workstationCluster) Exists(ctx context.Context) (bool, error) {
 
 func (w *workstationCluster) Kubeconfig() (string, string, error) {
 	if w.kubeconfig == "" {
-		return "", "", errors.New("KUBECONFIG is not set inside the workstation; start it with kubedrill shell")
+		return "", "", errors.New("KUBECONFIG is not set inside the workstation; open a terminal from kubedrill web")
 	}
 	return w.kubeconfig, "", nil
 }
@@ -451,7 +449,7 @@ func (w *workstationCluster) Doctor(context.Context) ([]cluster.Tool, error) {
 }
 
 func (w *workstationCluster) WriteInternalKubeconfig(context.Context, string) error {
-	return hostOnly("kubedrill shell")
+	return hostOnly("kubedrill web")
 }
 
 func hostOnly(op string) error {

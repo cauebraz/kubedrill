@@ -40,6 +40,9 @@ const (
 	StageLearn    Stage = "learn"
 	StagePractice Stage = "practice"
 	StageDIY      Stage = "diy"
+	// StageExam is the exam rehearsal: a random variant in a time box of
+	// the scenario minutes, no hints, no guide, no live checks, one submit.
+	StageExam Stage = "exam"
 )
 
 // ErrActiveElsewhere is returned by Backend.Start when another episode is
@@ -57,6 +60,7 @@ type Backend interface {
 	Next(ctx context.Context) (Next, error)
 	Start(ctx context.Context, id string, stage Stage, replace bool, progress func(step string)) (Session, error)
 	Validate(ctx context.Context) (Validation, error)
+	Submit(ctx context.Context) (Validation, error)
 	Hint(ctx context.Context) (Hint, error)
 	Diagnose(ctx context.Context, text string) error
 	Debrief(ctx context.Context, episodeID string) (Debrief, error)
@@ -195,6 +199,8 @@ type Active struct {
 	Story      string               `json:"story,omitempty"`
 	StartedAt  time.Time            `json:"startedAt"`
 	Minutes    int                  `json:"minutes"`
+	Exam       bool                 `json:"exam,omitempty"`
+	Deadline   *time.Time           `json:"deadline,omitempty"`
 	Guide      []scenario.GuideStep `json:"guide"`
 	Mentor     string               `json:"mentor"`
 	HintsUsed  int                  `json:"hintsUsed"`
@@ -220,6 +226,7 @@ type Validation struct {
 	EpisodeID  string  `json:"episodeId"`
 	ScenarioID string  `json:"scenarioId"`
 	Passed     bool    `json:"passed"`
+	Outcome    string  `json:"outcome,omitempty"`
 	Score      float64 `json:"score"`
 	Checks     []Check `json:"checks"`
 	RootCause  string  `json:"rootCause,omitempty"`
@@ -248,6 +255,8 @@ type Debrief struct {
 	RootCause        string         `json:"rootCause,omitempty"`
 	Matched          *bool          `json:"matched,omitempty"`
 	Answers          DebriefAnswers `json:"answers"`
+	Solution         string         `json:"solution,omitempty"`
+	Stage            Stage          `json:"stage,omitempty"`
 }
 
 // DebriefAnswers are the learner's reflections on an episode.
@@ -347,6 +356,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/debrief/{id}", s.api(s.recordDebrief))
 	mux.HandleFunc("POST /api/start", s.start)
 	mux.HandleFunc("POST /api/validate", s.api(s.validate))
+	mux.HandleFunc("POST /api/submit", s.api(s.submit))
 	mux.HandleFunc("POST /api/hint", s.api(s.hint))
 	mux.HandleFunc("POST /api/diagnose", s.api(s.diagnose))
 	mux.HandleFunc("POST /api/progress", s.api(s.recordProgress))
@@ -547,9 +557,9 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadRequest, err)
 		return
 	}
-	if req.Stage != StagePractice && req.Stage != StageDIY {
+	if req.Stage != StagePractice && req.Stage != StageDIY && req.Stage != StageExam {
 		w.WriteHeader(http.StatusBadRequest)
-		fail(http.StatusBadRequest, fmt.Errorf("stage %q does not run an episode; want practice or diy", req.Stage))
+		fail(http.StatusBadRequest, fmt.Errorf("stage %q does not run an episode; want practice, diy or exam", req.Stage))
 		return
 	}
 	s.mu.Lock()
@@ -605,7 +615,15 @@ func (s *Server) debrief(r *http.Request) (any, error) {
 	if err != nil {
 		return nil, badRequest("%v", err)
 	}
-	return d, nil
+	return s.debriefView(d), nil
+}
+
+// debriefView adds the stage the workspace started the episode in and
+// renders the walkthrough.
+func (s *Server) debriefView(d Debrief) Debrief {
+	d.Stage = s.progress.stageOf(d.EpisodeID)
+	d.Solution = toHTML(d.Solution)
+	return d
 }
 
 func (s *Server) recordDebrief(r *http.Request) (any, error) {
@@ -619,7 +637,11 @@ func (s *Server) recordDebrief(r *http.Request) (any, error) {
 	if err := s.d.Backend.RecordDebrief(r.Context(), r.PathValue("id"), a); err != nil {
 		return nil, badRequest("%v", err)
 	}
-	return s.d.Backend.Debrief(r.Context(), r.PathValue("id"))
+	d, err := s.d.Backend.Debrief(r.Context(), r.PathValue("id"))
+	if err != nil {
+		return nil, err
+	}
+	return s.debriefView(d), nil
 }
 
 func (s *Server) validate(r *http.Request) (any, error) {
@@ -633,6 +655,22 @@ func (s *Server) validate(r *http.Request) (any, error) {
 			if err := s.progress.complete(v.ScenarioID, stage, 1, 1); err != nil {
 				return nil, err
 			}
+		}
+	}
+	return v, nil
+}
+
+// submit ends an exam run with its one grade (or its expiry past the
+// deadline) and records a pass as the exam stage, the score in percent.
+func (s *Server) submit(r *http.Request) (any, error) {
+	v, err := s.d.Backend.Submit(r.Context())
+	if err != nil {
+		return nil, badRequest("%v", err)
+	}
+	v.Solution = toHTML(v.Solution)
+	if v.Passed {
+		if err := s.progress.complete(v.ScenarioID, StageExam, int(v.Score*100+0.5), 100); err != nil {
+			return nil, err
 		}
 	}
 	return v, nil

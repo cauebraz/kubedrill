@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/cauebraz/kubedrill/internal/grader"
 	"github.com/cauebraz/kubedrill/internal/journal"
 	"github.com/cauebraz/kubedrill/internal/scenario"
+	"github.com/cauebraz/kubedrill/internal/web"
 )
 
 func strPtr(s string) *string { return &s }
@@ -80,7 +82,7 @@ func TestCheckSolvedDebriefPrompts(t *testing.T) {
 	terminal(f)
 	f.telemetry = goodTelemetry()
 	f.grader.grades = []grader.Grade{passGrade()}
-	f.run(t, "\n", "start", "001", "--seed", "1", "--no-shell")
+	f.run(t, "\n", "start", "001", "--seed", "1")
 	f.run(t, "", "diagnose", "the image tag does not exist")
 	code, out, errOut := f.run(t, "y\nthe pod events\nkubectl get events\n", "check")
 	if code != 0 {
@@ -198,12 +200,9 @@ func TestDiagnoseValidation(t *testing.T) {
 func TestExamRefusalsSubmitAndTicket(t *testing.T) {
 	f := newFixture(t)
 	f.grader.grades = []grader.Grade{failGrade()}
-	code, out, errOut := f.run(t, "", "start", "001", "--seed", "1", "--exam")
-	if code != 0 {
-		t.Fatalf("start --exam: exit %d %s", code, errOut)
-	}
+	out := f.startExam(t, 1, false)
 	deadline := time.Date(2026, 10, 25, 12, 15, 0, 0, time.UTC).Local().Format("15:04:05")
-	mustContain(t, out, "Exam deadline: "+deadline+" (15 min time box); no hints, no solution, no watch", "Next: kubedrill submit (grade once, ends the exam)")
+	mustContain(t, out, "Exam deadline: "+deadline+" (15 min time box); no hints, no solution, no live checks", "Next: kubedrill submit (grade once, ends the exam)")
 	mustNotContain(t, out, "kubedrill hint")
 	for _, cmd := range [][]string{{"check"}, {"hint"}, {"solution", "--yes"}} {
 		code, _, errOut := f.run(t, "", cmd...)
@@ -212,16 +211,10 @@ func TestExamRefusalsSubmitAndTicket(t *testing.T) {
 		}
 		mustContain(t, errOut, "kubedrill: "+cmd[0]+" is not available in exam mode; kubedrill submit grades once\n")
 	}
-	terminal(f)
-	code, _, errOut = f.run(t, "", "watch")
-	if code != 1 || !strings.Contains(errOut, "watch is not available in exam mode; kubedrill submit grades once") {
-		t.Errorf("watch in exam: exit %d err %q", code, errOut)
-	}
-	f.stdoutTTY, f.stdinTTY = false, false
 	if code, out, _ := f.run(t, "", "check", "--explain"); code != 0 || !strings.Contains(out, "is checked by 1 check") {
 		t.Errorf("check --explain in exam: exit %d out %q", code, out)
 	}
-	code, out, _ = f.run(t, "", "submit")
+	code, out, _ := f.run(t, "", "submit")
 	if code != 2 {
 		t.Errorf("failed submit: exit %d, want 2", code)
 	}
@@ -241,7 +234,7 @@ func TestSubmitPassesAndPracticeRefuses(t *testing.T) {
 	if code, _, errOut := f.run(t, "", "submit"); code != 1 || !strings.Contains(errOut, "submit grades exam episodes") {
 		t.Errorf("submit in practice: exit %d err %q", code, errOut)
 	}
-	f.run(t, "", "start", "001", "--seed", "1", "--exam", "--yes")
+	f.startExam(t, 1, true)
 	code, out, _ := f.run(t, "", "submit")
 	if code != 0 {
 		t.Fatalf("passing submit exit %d", code)
@@ -252,7 +245,7 @@ func TestSubmitPassesAndPracticeRefuses(t *testing.T) {
 func TestExamExpiryKeepsNamespaceOutputClean(t *testing.T) {
 	f := newFixture(t)
 	f.grader.grades = []grader.Grade{failGrade()}
-	f.run(t, "", "start", "001", "--seed", "1", "--exam")
+	f.startExam(t, 1, false)
 	f.now = time.Date(2026, 10, 25, 12, 20, 0, 0, time.UTC)
 	_, out, errOut := f.run(t, "", "namespace")
 	if out != "" {
@@ -264,7 +257,7 @@ func TestExamExpiryKeepsNamespaceOutputClean(t *testing.T) {
 func TestExamExpiresOnAnyCommand(t *testing.T) {
 	f := newFixture(t)
 	f.grader.grades = []grader.Grade{failGrade()}
-	f.run(t, "", "start", "001", "--seed", "1", "--exam")
+	f.startExam(t, 1, false)
 	f.now = time.Date(2026, 10, 25, 12, 20, 0, 0, time.UTC)
 	code, out, errOut := f.run(t, "", "list")
 	if code != 0 {
@@ -368,7 +361,7 @@ func TestFirstExposureOffer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t)
 			terminal(f)
-			_, out, _ := f.run(t, tc.stdin, "start", "001", "--seed", "1", "--no-shell")
+			_, out, _ := f.run(t, tc.stdin, "start", "001", "--seed", "1")
 			mustContain(t, out, "First time with pods, deployments. See a worked example from another variant before your ticket? [y/N] ", "The hello app returns 503")
 			got := strings.Contains(out, "Worked example (variant probe, not yours)")
 			if got != tc.example {
@@ -387,11 +380,11 @@ func TestFirstExposureOffer(t *testing.T) {
 		f := newFixture(t)
 		terminal(f)
 		f.journal.episodes = []journal.Episode{solvedEpisode("a", "001-hello-down", 2, time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC))}
-		_, out, _ := f.run(t, "", "start", "001", "--seed", "1", "--no-shell")
+		_, out, _ := f.run(t, "", "start", "001", "--seed", "1")
 		mustNotContain(t, out, "First time with")
 		f = newFixture(t)
 		terminal(f)
-		_, out, _ = f.run(t, "", "start", "001", "--seed", "1", "--no-shell", "--exam")
+		out = f.startExam(t, 1, false)
 		mustNotContain(t, out, "First time with")
 		f = newFixture(t)
 		_, out, _ = f.run(t, "y\n", "start", "001", "--seed", "1")
@@ -618,25 +611,23 @@ func TestReplay(t *testing.T) {
 	}
 }
 
-func TestExamWorkstationGetsDeadline(t *testing.T) {
+func TestExamTerminalGetsDeadline(t *testing.T) {
 	f := newFixture(t)
-	terminal(f)
 	withWorkstation(f)
-	if code, _, errOut := f.run(t, "", "start", "001", "--seed", "1", "--exam"); code != 0 {
-		t.Fatalf("exit %d: %s", code, errOut)
+	b := f.webBackend(t)
+	if _, err := b.Start(context.Background(), "001", web.StageExam, false, nil); err != nil {
+		t.Fatalf("start the exam: %v", err)
+	}
+	if cur, _ := f.journal.Current(); cur == nil || cur.Mode != journal.ModeExam {
+		t.Fatalf("episode: got %+v, want an exam", cur)
+	}
+	if _, _, err := b.Terminal(context.Background(), "kubedrill-web-exam"); err != nil {
+		t.Fatal(err)
 	}
 	want := time.Date(2026, 10, 25, 12, 15, 0, 0, time.UTC)
-	if len(f.ws.shells) != 1 || !f.ws.shells[0].Exam || !f.ws.shells[0].Deadline.Equal(want) {
-		t.Fatalf("exam shell: got %+v, want Exam and deadline %s", f.ws.shells, want)
-	}
-	f.run(t, "", "shell")
-	if len(f.ws.shells) != 2 || !f.ws.shells[1].Exam {
-		t.Errorf("shell during an exam: got %+v, want Exam", f.ws.shells)
-	}
-	f.journal.current = nil
-	f.run(t, "", "shell", "--exam")
-	if len(f.ws.shells) != 3 || !f.ws.shells[2].Exam || !f.ws.shells[2].Deadline.IsZero() {
-		t.Errorf("shell --exam: got %+v, want Exam without deadline", f.ws.shells)
+	o := f.ws.shells[len(f.ws.shells)-1]
+	if !o.Exam || !o.Deadline.Equal(want) {
+		t.Fatalf("exam terminal: got %+v, want Exam and deadline %s", o, want)
 	}
 }
 

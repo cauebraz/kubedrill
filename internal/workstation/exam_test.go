@@ -27,7 +27,7 @@ func TestShellExamEnvAndDataDirs(t *testing.T) {
 			m.goos = "darwin"
 			o := tc.opts
 			o.Kubeconfig = kubeconfig
-			if err := m.Shell(context.Background(), o); err != nil {
+			if err := runShell(m, context.Background(), o); err != nil {
 				t.Fatalf("Shell: %v", err)
 			}
 			run, ok := dockerRun(fr)

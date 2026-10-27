@@ -581,7 +581,7 @@ func (s *Session) activeAt(at time.Time) (*journal.Episode, *scenario.Rendered, 
 }
 
 // Observe grades the active practice episode without recording the grade.
-// It is what the watch mode polls. An exam episode returns ErrExamMode: it
+// It is what the browser workspace polls for its live checks. An exam episode returns ErrExamMode: it
 // is graded once, by Submit or Expire.
 func (s *Session) Observe(ctx context.Context) (grader.Grade, error) {
 	ep, rd, err := s.active()

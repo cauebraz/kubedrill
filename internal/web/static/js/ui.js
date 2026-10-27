@@ -8,7 +8,8 @@ export const STAGES = [
   { id: "learn", label: "Learn the pieces", sub: "Diagram, story, concepts" },
   { id: "practice", label: "Guided practice", sub: "Step by step, live cluster" },
   { id: "diy", label: "Do it yourself", sub: "A new cause, no guide" },
-  { id: "done", label: "Result", sub: "Badge and mastery" }
+  { id: "done", label: "Result", sub: "Badge and mastery" },
+  { id: "exam", label: "Exam rehearsal", sub: "Timed, no help, one submit" }
 ];
 
 export function stagesFor(a) {

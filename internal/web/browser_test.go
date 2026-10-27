@@ -413,6 +413,33 @@ func TestBrowser(t *testing.T) {
 		b.wait("home updated", "document.querySelector('.profile').textContent.includes('1 of 5')")
 	})
 
+	sub("exam rehearsal", func(t *testing.T) {
+		b.go_("#/a/001-storefront-down/exam")
+		b.wait("exam launch", "document.querySelector('.launch') && document.querySelector('.launch').textContent.includes('against the clock')")
+		b.shot("16-exam-launch")
+		b.key("Enter", 0)
+		b.wait("exam workspace", "document.querySelector('.lab .xterm') && document.querySelector('.term-bar .timer').textContent.includes('left')")
+		if v := b.eval("document.querySelector('.foot-actions .btn:not(.primary)').hidden"); v != "true" {
+			t.Errorf("mentor button in an exam: hidden=%s, want true", v)
+		}
+		if got := b.text(".side-tabs"); strings.Contains(got, "Steps") || strings.Contains(got, "Story") {
+			t.Errorf("exam tabs: got %q, want the ticket only", got)
+		}
+		b.wait("exam checks note", "document.querySelector('.checks').textContent.includes('run once, when you submit')")
+		b.shot("17-exam")
+		b.key("Enter", modKey())
+		b.wait("confirm", "document.querySelector('.modal-title') && document.querySelector('.modal-title').textContent === 'Submit now?'")
+		b.clickText("Submit and end the exam")
+		b.wait("exam debrief", "location.hash.includes('/debrief/') && document.querySelector('.debrief-hero h1')")
+		if got := b.text(".debrief-hero h1"); got != "Exam not passed" {
+			t.Errorf("exam debrief title: got %q", got)
+		}
+		b.wait("walkthrough", "document.querySelector('.walkthrough')")
+		b.shot("18-exam-debrief")
+		b.clickText("Skip for now")
+		b.wait("result", "location.hash.endsWith('/done')")
+	})
+
 	sub("navigation shortcuts", func(t *testing.T) {
 		b.go_("#/")
 		b.wait("home", "document.querySelector('.continue')")

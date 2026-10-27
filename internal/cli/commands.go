@@ -19,14 +19,14 @@ func (a *app) rootCommand() *cobra.Command {
 		Use:   "kubedrill",
 		Short: "Local Kubernetes training: reset a scenario, fix it, get graded",
 		Long: "kubedrill drives a local kind cluster, deploys one scenario per episode and\n" +
-			"grades the end state. Without arguments it checks the tools, creates the\n" +
-			"cluster and prints the scenario list with the next recommended one; on a\n" +
-			"terminal it then reopens the active episode or offers to start that one.",
+			"grades the end state. Without arguments it runs kubedrill web: it checks the\n" +
+			"tools, creates the cluster and opens the workspace on 127.0.0.1 in the\n" +
+			"browser, where every assignment is practiced.",
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return a.runDefault(cmd.Context())
+			return a.runWeb(cmd.Context(), webOptions{port: defaultWebPort})
 		},
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			if !noExpiry[cmd.Name()] {
@@ -46,7 +46,6 @@ func (a *app) rootCommand() *cobra.Command {
 		a.startCommand(),
 		a.ticketCommand(),
 		a.checkCommand(),
-		a.watchCommand(),
 		a.hintCommand(),
 		a.namespaceCommand(),
 		a.learnCommand(),
@@ -61,7 +60,6 @@ func (a *app) rootCommand() *cobra.Command {
 		a.faultCommand(),
 		a.healCommand(),
 		a.resetCommand(),
-		a.shellCommand(),
 		a.nodeCommand(),
 		a.statusCommand(),
 		a.journalCommand(),

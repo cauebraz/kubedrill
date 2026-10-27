@@ -1,8 +1,8 @@
 // Package render is the terminal text toolkit of kubedrill: width
 // resolution, word wrapping that ignores escape sequences, markdown for the
-// terminal, the color styles, the check result lines shared by the command
-// output and the watch screen, and Printer, the value that carries a
-// writer, a width and the color switch.
+// terminal, the color styles, the check result lines of the command
+// output, and Printer, the value that carries a writer, a width and the
+// color switch.
 package render
 
 import (
@@ -80,9 +80,7 @@ func (t Terminal) PrinterAt(cols int) Printer {
 }
 
 // Printer writes learner-facing text to Out, wrapped at Width columns on a
-// terminal and styled when Color is set. Output that follows a watch pane
-// takes a Printer at the pane's width, so no width outlives the output it
-// was meant for.
+// terminal and styled when Color is set.
 type Printer struct {
 	Out        io.Writer
 	Width      int
