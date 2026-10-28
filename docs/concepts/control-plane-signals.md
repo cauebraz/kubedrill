@@ -6,13 +6,18 @@ k8s.af tags 9 of its 59 failure stories with etcd and 6 with the API server, and
 
 Every request passes API Priority and Fairness (APF, `flowcontrol.apiserver.k8s.io/v1`, GA in v1.29). A FlowSchema matches the request by user, group and verb and assigns it to a PriorityLevelConfiguration; each level owns a share of the server's concurrency (`--max-requests-inflight` plus `--max-mutating-requests-inflight`), counted in seats. A request that finds its level full waits in a queue; when the queue is full or the wait times out it gets HTTP 429 Too Many Requests.
 
-```
-client --> FlowSchema match --> priority level --> queue --> execute
-           (lowest matching     seats: LIST of      full ->   watch cache
-           Precedence wins)     many objects =      429       or etcd
-                                many seats                      |
-                                                    etcd: fsync WAL,
-                                                    quota 2 GiB default
+```mermaid
+flowchart TD
+  A(["<b>client</b>"])
+  F["<b>FlowSchema match</b><br/>lowest matching Precedence wins"]
+  P["<b>priority level</b><br/>seats: LIST of many objects = many seats"]
+  Q["<b>queue</b>"]
+  T["<b>429</b>"]
+  X["<b>execute</b><br/>watch cache or etcd"]
+  E["<b>etcd</b><br/>fsync WAL, quota 2 GiB default"]
+  A --> F --> P --> Q
+  Q -->|full| T
+  Q --> X --> E
 ```
 
 A LIST that the server estimates returns many objects occupies more seats in proportion. A watch costs a seat only for its initial burst of notifications and then streams changes, so a client that re-LISTs every few seconds costs far more than one that watches. Defaults include `workload-low` (service accounts, 100 shares), `global-default` (other users, 20 shares) and `catch-all` (5 shares); `exempt` covers `system:masters`.

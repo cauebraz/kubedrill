@@ -145,8 +145,9 @@ id, title, intro and the four sections. The reviewer also checks:
 - The id names the mechanism, not the scenario (`image-pull`, not
   `hello-down-images`).
 - The counts in the format: 400 to 900 words (`wc -w`), 150 to 300 words of
-  mechanism with one ASCII diagram, 3 to 6 commands, 4 to 8 failures, 2 to
-  4 links.
+  mechanism with one Mermaid `flowchart` diagram (the rules in
+  [docs/scenario-format.md](docs/scenario-format.md#storymd)), 3 to 6
+  commands, 4 to 8 failures, 2 to 4 links.
 - Plain ASCII (`grep -nP '[^\x00-\x7F]'` prints nothing), en-US.
 - Every number, field, flag and default is checked against the
   kubernetes.io page for v1.37 cited in `Go deeper`. A claim from another

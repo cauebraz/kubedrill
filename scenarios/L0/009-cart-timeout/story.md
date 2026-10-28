@@ -42,20 +42,14 @@ matches. The objects in this ticket, from the caller down to the program:
   labels every copy gets and the port the container listens on.
 - Pods `cart-...`: the two copies, each running nginx on port 80.
 
-```
-frontend pod            wget http://cart/
-      |
-      v
-Service cart            selector: app=cart ...   port 80 -> targetPort
-      |
-      v
-EndpointSlice           addresses of the pods the selector matched, + port
-      |                 (empty when no pod carries every selector label)
-      v
-kube-proxy              forwards to one address:port from the slice
-      |                 (no address -> Connection refused at once)
-      v
-Pod cart-xxxxx-yyyyy    nginx listens on 80; another port -> refused
+```mermaid
+flowchart TD
+  F(["<b>frontend pod</b><br/>wget http://cart/"])
+  S["<b>Service cart</b><br/>selector: app=cart ...<br/>port 80 -&gt; targetPort"]
+  E["<b>EndpointSlice</b><br/>addresses of the pods the selector matched,<br/>+ port<br/>(empty when no pod carries<br/>every selector label)"]
+  K["<b>kube-proxy</b><br/>forwards to one address:port from the slice<br/>(no address: Connection refused at once)"]
+  P["<b>Pod cart-xxxxx-yyyyy</b><br/>nginx listens on 80;<br/>another port: refused"]
+  F --> S --> E --> K --> P
 ```
 
 The ticket says the pods are `Running`. So the bottom of the chain works

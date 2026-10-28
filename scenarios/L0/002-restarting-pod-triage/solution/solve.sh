@@ -25,6 +25,9 @@ case "${VARIANT:-}" in
 esac
 
 kubectl -n "$TASK_NS" rollout status deployment/reviews --timeout=120s
+for d in $(kubectl -n "$TASK_NS" get deployments -o name); do
+  kubectl -n "$TASK_NS" rollout status "$d" --timeout=180s
+done
 
 for _ in $(seq 1 60); do
   terminating=$(kubectl -n "$TASK_NS" get pods -l app=reviews -o jsonpath='{.items[*].metadata.deletionTimestamp}')

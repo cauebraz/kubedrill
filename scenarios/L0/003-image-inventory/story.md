@@ -35,21 +35,19 @@ in this ticket, from the top down:
 - ConfigMap: a bag of key-value strings other things can read. The ticket
   asks for one named `inventory` with one key, `images`.
 
-```
-Deployment storefront   "keep 2 pods from this template"   replicas: 2
-Deployment checkout     "keep N pods from this template"   replicas: N
-      |
-      v
-Pod                     spec.initContainers: [warm-cache]  ran, exited
-                        spec.containers:     [web, ...]    running now
-                        status.containerStatuses[].image   the runtime's spelling
-      |
-      v
-ConfigMap inventory     data.images: one running image per line
+```mermaid
+flowchart TD
+  S["<b>Deployment storefront</b><br/>keep 2 pods from this template<br/>replicas: 2"]
+  C["<b>Deployment checkout</b><br/>keep N pods from this template<br/>replicas: N"]
+  P["<b>Pod</b><br/>spec.initContainers: [warm-cache] ran, exited<br/>spec.containers: [web, ...] running now<br/>status.containerStatuses[].image<br/>the runtime's spelling"]
+  M["<b>ConfigMap inventory</b><br/>data.images: one running image per line"]
+  S --> P
+  C --> P
+  P --> M
 ```
 
-The question "which images are running" is answered by the middle row of
-the pod box, `spec.containers`, over the pods that exist.
+The question "which images are running" is answered by the `spec.containers`
+line of the Pod box, over the pods that exist.
 
 ## Following the trail
 

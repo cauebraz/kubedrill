@@ -8,6 +8,7 @@ import { showCatalog } from "./js/catalog.js";
 import { showExams } from "./js/exams.js";
 import { showAssignment } from "./js/assignment.js";
 import { showKit } from "./js/kit.js";
+import "./js/mermaid.js";
 import { showWelcome } from "./js/welcome.js";
 
 const app = document.getElementById("app");

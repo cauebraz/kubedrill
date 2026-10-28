@@ -40,21 +40,14 @@ ticket the objects, from the top down:
   `nodePort`: kube-proxy, a program on every node, opens that port on the
   node and forwards every connection to one of the endpoints.
 
-```
-QA laptop                  http://<node-ip>:30080/
-      |
-      v
-Node (kube-proxy)          nodePort 30080 open on every node
-      |
-      v
-Service admin              selector picks Ready pods by label
-      |                    port 80 -> targetPort <container port>
-      v
-EndpointSlice              the pod IPs the selector matched
-      |
-      v
-Pod admin-...              nginx listens on the container port,
-                           serves ACME Admin 3.2.0 from the ConfigMap
+```mermaid
+flowchart TD
+  Q(["<b>QA laptop</b><br/>http://&lt;node-ip&gt;:30080/"])
+  N["<b>Node (kube-proxy)</b><br/>nodePort 30080 open on every node"]
+  S["<b>Service admin</b><br/>selector picks Ready pods by label<br/>port 80 -&gt; targetPort &lt;container port&gt;"]
+  E["<b>EndpointSlice</b><br/>the pod IPs the selector matched"]
+  P["<b>Pod admin-...</b><br/>nginx listens on the container port,<br/>serves ACME Admin 3.2.0 from the ConfigMap"]
+  Q --> N --> S --> E --> P
 ```
 
 The ticket's connection refused means the chain stops at the first arrow:

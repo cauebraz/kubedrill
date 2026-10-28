@@ -418,6 +418,12 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--s-5) 0; }
 .prose blockquote { margin: 14px 0; padding: 10px 16px; border-left: 2px solid var(--brand); background: var(--bg-2); border-radius: 0 var(--r-2) var(--r-2) 0; }
 .prose a { color: var(--brand); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--brand) 40%, transparent); }
 .prose a[href^="http"] { overflow-wrap: anywhere; }
+.mermaid-diagram { margin: 18px 0; padding: 18px; border: 1px solid var(--line); border-radius: var(--r-2); background: radial-gradient(circle at 1px 1px, var(--line-1) 1px, transparent 1px) 0 0 / 22px 22px, var(--bg-1); overflow-x: auto; text-align: center; }
+.mermaid-diagram svg { max-width: 100%; height: auto; }
+.mermaid-diagram .node rect, .mermaid-diagram .node path { rx: 10px; }
+.mermaid-diagram .nodeLabel { color: var(--fg-2); }
+.mermaid-diagram .nodeLabel b { color: var(--fg); font-weight: 600; }
+.mermaid-diagram.failed { font-family: var(--font-mono); font-size: 12px; white-space: pre; text-align: left; color: var(--fg-2); }
 .prose table { border-collapse: collapse; width: 100%; font-size: var(--t-sm); margin: 12px 0; }
 .prose th, .prose td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
 .prose th { color: var(--fg); font-weight: 600; }

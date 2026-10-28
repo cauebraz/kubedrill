@@ -44,20 +44,17 @@ in this ticket, from the request down to the pods:
 - Deployment `storefront`: the website that calls `http://catalog/`. It is
   fine; it is where you stand to reproduce the symptom.
 
-```
-storefront pod  --->  wget http://catalog/
-                            |
-                            v
-                Service catalog        selector: app.kubernetes.io/name=catalog
-                                       targetPort: 80
-                            |
-                            v  pods whose labels match AND are Ready
-                EndpointSlice          10.244.1.7:80, 10.244.2.4:80   (or empty)
-                            |
-                            v
-                Pods x2  <--- Deployment catalog   template labels, containerPort 80
-                                 |
-                                 `-- page from ConfigMap catalog-html
+```mermaid
+flowchart TD
+  F["<b>storefront pod</b><br/>wget http://catalog/"]
+  S["<b>Service catalog</b><br/>selector: app.kubernetes.io/name=catalog<br/>targetPort: 80"]
+  E["<b>EndpointSlice</b><br/>10.244.1.7:80, 10.244.2.4:80 (or empty)"]
+  P["<b>Pods x2</b><br/>carry the template labels, listen on port 80"]
+  D["<b>Deployment catalog</b><br/>template labels, containerPort 80"]
+  M["<b>ConfigMap catalog-html</b><br/>the page the pods serve"]
+  F --> S -->|labels match AND Ready| E --> P
+  D --> P
+  M --> D
 ```
 
 Three things must line up for a connection to arrive: the Deployment must

@@ -36,17 +36,13 @@ that runs on a timetable, three objects are stacked:
 - Pod: the running copy of the export program. Its log is the export log
   from the ticket.
 
-```
-CronJob invoice        every minute: "create a Job"
-      |                concurrencyPolicy: what to do if one still runs
-      v
-Job invoice-<minute>   "run the export once"
-      |
-      v
-Pod                    runs the export, appends to invoices.csv
-      |
-      v
-invoices.csv           two writers at once -> rows mixed together
+```mermaid
+flowchart TD
+  C["<b>CronJob invoice</b><br/>every minute: create a Job<br/>concurrencyPolicy: what to do<br/>if one still runs"]
+  J["<b>Job invoice-&lt;minute&gt;</b><br/>run the export once"]
+  P["<b>Pod</b><br/>runs the export, appends to invoices.csv"]
+  F["<b>invoices.csv</b><br/>two writers at once -&gt; rows mixed together"]
+  C --> J --> P --> F
 ```
 
 The policy of one CronJob only looks at its own Jobs. If anything else also

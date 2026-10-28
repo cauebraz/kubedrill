@@ -48,22 +48,18 @@ in this ticket, from the customer down:
   into each web pod. Its `listen` line is the port nginx really opens.
 - ConfigMap `web-html`: the page.
 
-```
-customer -> Service edge -> edge pod (nginx proxy)
-                                |  proxy_pass http://web:80/
-                                v
-                            Service web      port 80 -> targetPort ?
-                                |
-                                v
-                            EndpointSlice    pod addresses, Ready?, PORTS
-                                |
-                                v
-                            web pod x2       containerPort (named)
-                                               readinessProbe port
-                                               nginx: listen <port>   <- release 3.2.0
-                                                  |
-                                                  v
-                                               the page (web-html)
+```mermaid
+flowchart TD
+  C(["<b>customer</b>"])
+  SE["<b>Service edge</b>"]
+  EP["<b>edge pod</b><br/>nginx proxy"]
+  SW["<b>Service web</b><br/>port 80 -&gt; targetPort ?"]
+  ES["<b>EndpointSlice</b><br/>pod addresses, Ready?, PORTS"]
+  WP["<b>web pod x2</b><br/>containerPort (named)<br/>readinessProbe port<br/>nginx: listen &lt;port&gt; (release 3.2.0)"]
+  PG["<b>the page</b><br/>web-html"]
+  C --> SE --> EP
+  EP -->|proxy_pass http://web:80/| SW
+  SW --> ES --> WP --> PG
 ```
 
 Four places name the port: `listen` in `web-nginx`, `containerPort` in the

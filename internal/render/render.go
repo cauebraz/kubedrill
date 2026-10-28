@@ -123,8 +123,10 @@ func (p Printer) WrapLine(line, cont string) string {
 // spans never wrap (they overflow), and block quote and list item
 // continuation lines keep the "| " prefix and a hanging indent. A hard line
 // break (a line ending in a backslash or two spaces) stays a line break,
-// which glamour alone would turn into a space.
+// which glamour alone would turn into a space. A mermaid flowchart block
+// is drawn as plain text first (mermaidAsText).
 func (p Printer) Markdown(md string) string {
+	md = mermaidAsText(md)
 	if !p.Color {
 		md = strings.TrimRight(md, "\n") + "\n"
 		if !p.IsTerminal {

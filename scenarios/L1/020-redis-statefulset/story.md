@@ -42,19 +42,13 @@ in this ticket:
   (`redis-cli ping`, which answers `PONG`). Only a Ready pod gets its DNS
   entry.
 
-```
-session-api            "connect to redis-2.redis.<ns>.svc.cluster.local:6379"
-      |
-      v
-cluster DNS            entry exists only if:
-      |                  - Service redis is headless (clusterIP None)
-      |                  - StatefulSet redis names it in serviceName
-      |                  - pod redis-2 matches the selector and is Ready
-      v
-Pod redis-2            made by StatefulSet redis, label app=redis
-      |
-      v
-PVC data-redis-2       from volumeClaimTemplate data, disk on "standard"
+```mermaid
+flowchart TD
+  A["<b>session-api</b><br/>connect to<br/>redis-2.redis.&lt;ns&gt;.svc.cluster.local:6379"]
+  N["<b>cluster DNS</b><br/>entry exists only if:<br/>- Service redis is headless (clusterIP None)<br/>- StatefulSet redis names it in serviceName<br/>- pod redis-2 matches the selector and is Ready"]
+  P["<b>Pod redis-2</b><br/>made by StatefulSet redis, label app=redis"]
+  V["<b>PVC data-redis-2</b><br/>from volumeClaimTemplate data, disk on 'standard'"]
+  A --> N --> P --> V
 ```
 
 ## Following the trail

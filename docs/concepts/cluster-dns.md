@@ -6,15 +6,12 @@ k8s.af tags 9 of its 59 failure stories with DNS, 5 with CoreDNS, 4 with ndots a
 
 The kubelet writes `/etc/resolv.conf` into each pod: `nameserver` is the ClusterIP of the `kube-dns` Service, `search` lists `<namespace>.svc.cluster.local svc.cluster.local cluster.local`, and `options ndots:5`. A name with fewer than 5 dots is tried with each search domain appended before it is tried as written.
 
-```
-pod resolver (ndots:5)          kube-proxy / CNI        CoreDNS pods
-api.example.com has 2 dots      UDP 53 to the           kubernetes plugin:
-  -> api.example.com.shop.  --> kube-dns ClusterIP -->  cluster.local names
-     svc.cluster.local          DNAT + conntrack        from Services and
-  -> ...svc.cluster.local                               EndpointSlices
-  -> ...cluster.local                                   forward plugin:
-  -> api.example.com.                                   other names to the
-                                                        node's resolv.conf
+```mermaid
+flowchart TD
+  R["<b>pod resolver (ndots:5)</b><br/>api.example.com has 2 dots, so it tries<br/>api.example.com.shop.svc.cluster.local<br/>...svc.cluster.local, ...cluster.local<br/>api.example.com."]
+  K["<b>kube-proxy / CNI</b><br/>UDP 53 to the kube-dns ClusterIP<br/>DNAT + conntrack"]
+  C["<b>CoreDNS pods</b><br/>kubernetes plugin: cluster.local names<br/>from Services and EndpointSlices<br/>forward plugin: other names to the<br/>node's resolv.conf"]
+  R --> K --> C
 ```
 
 So `api.example.com` costs 3 NXDOMAIN lookups before the real one, 6 extra queries when the resolver asks for A and AAAA records, 8 in total. A trailing dot (`api.example.com.`) or a lower `ndots` in `spec.dnsConfig.options` removes them.

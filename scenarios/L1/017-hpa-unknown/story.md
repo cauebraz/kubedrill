@@ -32,18 +32,13 @@ broken.
 - Utilization: usage divided by request. A pod using 25m CPU with a 50m
   request is at 50%. Without a request there is nothing to divide by.
 
-```
-HPA api            every 15 s: "is average utilization above 50%?"
-  | scaleTargetRef
-  v
-Deployment api     which pods belong to it, and their requests
-  |
-  v
-Pods               metrics-server measures their usage
-  |
-  v
-usage / request = utilization  -> compared with 50% -> desired pod count
-                  any link missing -> <unknown>, no scaling
+```mermaid
+flowchart TD
+  H["<b>HPA api</b><br/>every 15 s: is average utilization above 50%?"]
+  D["<b>Deployment api</b><br/>which pods belong to it, and their requests"]
+  P["<b>Pods</b><br/>metrics-server measures their usage"]
+  U["<b>usage / request = utilization</b><br/>compared with 50% -&gt; desired pod count<br/>any link missing -&gt; &lt;unknown&gt;, no scaling"]
+  H -->|scaleTargetRef| D --> P --> U
 ```
 
 ## Following the trail

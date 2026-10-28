@@ -44,22 +44,18 @@ in this ticket, from the top down:
   only to pods that are Ready, and a pod stuck in an init container has no
   app container to be Ready.
 
-```
-Deployment api        "keep 2 pods from this template"
-      |
-      v
-Pod x2                1. scheduled on a node
-      |               2. init container migrate runs:
-      |                    waits for DB_HOST:DB_PORT   <-- Service db, port 5432
-      |                    waits for MIGRATE_FLAG      <-- ConfigMap mounted at mountPath
-      |                    exits 0
-      |               3. app container api starts
-      |               4. readiness probe passes -> pod is Ready
-      v
-Service api           sends traffic only to Ready pods
-      |
-      v
-other teams           no Ready pod -> connection refused
+```mermaid
+flowchart TD
+  D["<b>Deployment api</b><br/>keep 2 pods from this template"]
+  DB["<b>Service db</b><br/>port 5432"]
+  CM["<b>ConfigMap</b><br/>mounted at mountPath"]
+  P["<b>Pod x2</b><br/>1. scheduled on a node<br/>2. init container migrate runs, waits for both,<br/>exits 0<br/>3. app container api starts<br/>4. readiness probe passes: pod is Ready"]
+  S["<b>Service api</b><br/>sends traffic only to Ready pods"]
+  O(["<b>other teams</b><br/>no Ready pod: connection refused"])
+  D --> P
+  DB -->|DB_HOST:DB_PORT| P
+  CM -->|MIGRATE_FLAG| P
+  P --> S --> O
 ```
 
 The ticket says `0/2` ready and the pods show `Init:0/1`. So both pods are

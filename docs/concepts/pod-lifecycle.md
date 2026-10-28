@@ -8,17 +8,22 @@ The scheduler binds the pod to a node; the kubelet on that node creates the sand
 
 Each entry in `status.containerStatuses[]` has `state.waiting`, `state.running` or `state.terminated`. `waiting.reason` carries `ContainerCreating`, `ImagePullBackOff`, `ErrImagePull` or `CrashLoopBackOff`; `terminated.reason` carries `Completed`, `Error` or `OOMKilled` with `exitCode` (137 for OOMKilled) and `restartCount` grows on each restart.
 
-```
-spec.restartPolicy: Always | OnFailure | Never (default Always)
-
- Pending ------------> Running ------------> Succeeded (all exit 0)
-   |  scheduling,       |  at least one       \-> Failed (an exit != 0,
-   |  image pull,       |  container runs           no restart due)
-   |  ContainerCreating |  or restarts
-   |                    |
-   |  waiting:          |  Waiting <-> Running -> Terminated
-   |  ImagePullBackOff  |  CrashLoopBackOff        OOMKilled, Error,
-   |                    |  (10s, 20s, 40s ... 300s) Completed
+```mermaid
+flowchart TD
+  PE["<b>Pending</b><br/>scheduling, image pull, ContainerCreating<br/>waiting: ImagePullBackOff"]
+  RU["<b>Running</b><br/>at least one container runs or restarts<br/>spec.restartPolicy: Always | OnFailure |<br/>Never (default Always)"]
+  SU["<b>Succeeded</b><br/>all exit 0"]
+  FA["<b>Failed</b><br/>an exit != 0, no restart due"]
+  CW["<b>container Waiting</b><br/>CrashLoopBackOff<br/>(10s, 20s, 40s ... 300s)"]
+  CR["<b>container Running</b>"]
+  CT["<b>container Terminated</b><br/>OOMKilled, Error, Completed"]
+  PE --> RU
+  RU --> SU
+  RU --> FA
+  RU --> CW
+  CW --> CR
+  CR --> CW
+  CR --> CT
 ```
 
 `restartPolicy` applies to the app containers and to regular init containers; sidecar containers (init containers with their own `restartPolicy: Always`) ignore it. With `Always` a container that exits, even with code 0, is restarted; each restart waits an exponential backoff (10s, 20s, 40s) capped at 300s, reset after 10 minutes of running. `status.conditions[]` carries at least `PodScheduled`, `Initialized`, `PodReadyToStartContainers`, `ContainersReady` and `Ready`; the last one is what Services wait for (see `readiness-and-endpoints`).

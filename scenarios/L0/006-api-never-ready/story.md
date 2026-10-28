@@ -38,22 +38,14 @@ objects in this ticket, from the top down:
 - Service `api`: one stable name and address in front of the pods. It only
   sends traffic to Ready pods.
 
-```
-Deployment api          "keep 2 pods from this template, probe included"
-      |
-      v
-ReplicaSet              creates the pods
-      |
-      v
-Pod x2                  1. scheduled on a node
-      |                 2. image pulled, container started  -> STATUS Running
-      |                 3. kubelet runs the readiness probe
-      |                    pass -> READY 1/1, fail -> READY 0/1
-      v
-Service api             sends traffic only to Ready pods
-      |
-      v
-frontend                no Ready pod -> connection refused
+```mermaid
+flowchart TD
+  D["<b>Deployment api</b><br/>keep 2 pods from this template,<br/>probe included"]
+  R["<b>ReplicaSet</b><br/>creates the pods"]
+  P["<b>Pod x2</b><br/>1. scheduled on a node<br/>2. image pulled, container started: Running<br/>3. kubelet runs the readiness probe<br/>pass: READY 1/1, fail: READY 0/1"]
+  S["<b>Service api</b><br/>sends traffic only to Ready pods"]
+  F(["<b>frontend</b><br/>no Ready pod: connection refused"])
+  D --> R --> P --> S --> F
 ```
 
 The ticket says `Running` and `0/2`. So every pod reached step 2 and none

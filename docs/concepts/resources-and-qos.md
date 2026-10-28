@@ -6,13 +6,16 @@ Resource sizing is the leading technical cause in the public Kubernetes failure 
 
 `resources.requests` is what the scheduler adds up: a pod fits a node when the sum of requests on that node plus its own stays under `status.allocatable`. Actual usage plays no part in scheduling. `resources.limits` is enforced by the kernel through cgroups on the node.
 
-```
-pod spec            scheduler             kubelet + kernel (cgroups)
-requests.cpu  ----> sum(requests) <=      cpu limit  -> CFS quota per
-requests.memory     node allocatable      100ms period: throttled
-limits.cpu    -------------------------> memory limit -> OOM kill,
-limits.memory                              exit 137, OOMKilled
-                    node short of memory -> kubelet eviction, Evicted
+```mermaid
+flowchart TD
+  S["<b>pod spec</b><br/>requests.cpu, requests.memory<br/>limits.cpu, limits.memory"]
+  SC["<b>scheduler</b><br/>sum(requests) &lt;= node allocatable"]
+  K["<b>kubelet + kernel (cgroups)</b><br/>cpu limit -&gt; CFS quota per 100ms<br/>period: throttled<br/>memory limit -&gt; OOM kill,<br/>exit 137, OOMKilled"]
+  N["<b>node short of memory</b>"]
+  EV["<b>kubelet eviction</b><br/>Evicted"]
+  S -->|requests| SC
+  S -->|limits| K
+  N --> EV
 ```
 
 A CPU limit becomes a CFS quota (`cpuCFSQuota` defaults to true, `cpuCFSQuotaPeriod` to 100ms). A container with `limits.cpu: 500m` may run 50ms per 100ms period; a request burst that needs 80ms of CPU waits for the next period. That is why a service with 20% average CPU still shows throttling and latency spikes: the average hides the bursts. A memory limit is enforced by the kernel OOM killer; the container is restarted with `Last State: Terminated, Reason: OOMKilled, Exit Code: 137`.

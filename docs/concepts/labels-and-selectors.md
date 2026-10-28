@@ -8,19 +8,16 @@ A label key is an optional DNS-subdomain prefix, a slash, and a name of at most 
 
 Selectors come in two forms. Equality-based: `app=hello`, `tier!=frontend`, comma-separated requirements ANDed. Set-based: `environment in (production, qa)`, `tier notin (frontend)`, `partition` (key exists), `!partition` (key absent). There is no OR. In manifests a Service uses only the equality form (`spec.selector` is a map); Deployments, ReplicaSets, Jobs and DaemonSets use `spec.selector.matchLabels` plus `matchExpressions` with `operator: In | NotIn | Exists | DoesNotExist`.
 
-```
-Deployment hello                    Service hello
-  spec.selector.matchLabels:          spec.selector:
-    app: hello                          app: hello
-    |                                   |
-    v matches                           v matches (Ready pods only)
-  ReplicaSet hello-7c9f5b6d8           EndpointSlice hello-8kz2n
-    template.metadata.labels:            endpoints[].addresses: 10.244.1.7
-      app: hello                           conditions.ready: true
-      pod-template-hash: 7c9f5b6d8
-    |
-    v creates
-  Pod hello-7c9f5b6d8-xk2lp  labels: app=hello, pod-template-hash=7c9f5b6d8
+```mermaid
+flowchart TD
+  D["<b>Deployment hello</b><br/>spec.selector.matchLabels:<br/>app: hello"]
+  RS["<b>ReplicaSet hello-7c9f5b6d8</b><br/>template.metadata.labels:<br/>app: hello<br/>pod-template-hash: 7c9f5b6d8"]
+  P["<b>Pod hello-7c9f5b6d8-xk2lp</b><br/>labels: app=hello,<br/>pod-template-hash=7c9f5b6d8"]
+  S["<b>Service hello</b><br/>spec.selector:<br/>app: hello"]
+  E["<b>EndpointSlice hello-8kz2n</b><br/>endpoints[].addresses: 10.244.1.7<br/>conditions.ready: true"]
+  D -->|matches| RS
+  RS -->|creates| P
+  S -->|matches Ready pods only| E
 ```
 
 `Deployment.spec.selector` must match `spec.template.metadata.labels` or the API rejects the object, and in `apps/v1` the selector is immutable after creation: a change to the pod template labels that breaks the match is refused, and renaming the selector means a new Deployment. The controller adds `pod-template-hash` to each ReplicaSet and its pods so two revisions of one Deployment never overlap. Two controllers whose selectors overlap in one namespace fight over the same pods.

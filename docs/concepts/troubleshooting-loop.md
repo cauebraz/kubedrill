@@ -14,14 +14,16 @@ Novices form a hypothesis from the first error they read, then keep collecting e
 
 The functional model is the chain a request for a running pod walks through. Each layer has its own object, its own status field and its own Events:
 
-```
-object       -> controller    -> scheduler    -> kubelet  -> runtime
-Deployment      ReplicaSet,      spec.nodeName   probes,     image pull,
-spec, status    pods created     or Pending      Ready       container
-                                                             start
-                                                 network -> Service,
-                                                            endpoints,
-                                                            Ingress
+```mermaid
+flowchart TD
+  O["<b>object</b><br/>Deployment spec, status"]
+  C["<b>controller</b><br/>ReplicaSet, pods created"]
+  S["<b>scheduler</b><br/>spec.nodeName or Pending"]
+  K["<b>kubelet</b><br/>probes, Ready"]
+  R["<b>runtime</b><br/>image pull, container start"]
+  N["<b>network</b><br/>Service, endpoints, Ingress"]
+  O --> C --> S --> K --> R
+  K --> N
 ```
 
 A failure stops the chain at one layer, so the first useful question is "how far did it get". Pending stops at the scheduler, `ErrImagePull` at the runtime, Running with READY 0/1 at the kubelet probe, Ready with no traffic at the network. For traffic problems the learnk8s flowchart orders the checks bottom-up: start with the Pods and move up the stack with Service and Ingress.

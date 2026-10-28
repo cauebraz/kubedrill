@@ -1,8 +1,9 @@
 # Workspace front end
 
 The browser workspace is plain HTML, CSS and ES modules served from the
-binary; there is no build step. `vendor/` holds xterm.js (sources and
-checksums in its README).
+binary; there is no build step. `vendor/` holds xterm.js and mermaid
+(sources and checksums in its README); `js/mermaid.js` loads mermaid on
+the first page with a ```mermaid block and themes it from the tokens.
 
 | File | Role |
 |------|------|

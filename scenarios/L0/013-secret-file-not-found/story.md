@@ -32,18 +32,17 @@ path the app reads is decided later, on the node, when the pod starts.
 - kubelet: the agent on each node that builds the volumes of a pod first,
   then starts its containers, then runs the readiness probe.
 
-```
-Secret db-credentials      key -> value
-      |
-      v  volume: secretName picks the Secret, each key becomes a file
-Pod volume "db-credentials"
-      |
-      v  mount: mountPath picks the directory in the container
-/etc/secrets/db-password   the file the app opens at start
-      |
-      v
-api: connected  -> readiness probe passes -> pod Ready
-api: cannot read -> container exits -> CrashLoopBackOff
+```mermaid
+flowchart TD
+  S["<b>Secret db-credentials</b><br/>key -&gt; value"]
+  V["<b>Pod volume db-credentials</b><br/>secretName picks the Secret,<br/>each key becomes a file"]
+  F["<b>/etc/secrets/db-password</b><br/>mountPath picks the directory;<br/>the file the app opens at start"]
+  R["<b>api: connected</b><br/>readiness probe passes -&gt; pod Ready"]
+  X["<b>api: cannot read</b><br/>container exits -&gt; CrashLoopBackOff"]
+  S -->|volume| V
+  V -->|mount| F
+  F --> R
+  F --> X
 ```
 
 Three names must line up for the file to land where the app looks: the

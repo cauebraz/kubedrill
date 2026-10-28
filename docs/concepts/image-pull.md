@@ -8,17 +8,18 @@ A reference is `[registry/][namespace/]repository[:tag][@sha256:digest]`. Withou
 
 `imagePullPolicy` is set when the pod is created and not updated later: `Always` when the tag is `:latest` or omitted, `IfNotPresent` when a tag or a digest is given, `Never` only when written. With `IfNotPresent` a node that already has the image never asks the registry again, so two nodes can run different builds of one `:v2` tag. Exception: for an image pulled with a secret, `KubeletEnsureSecretPulledImages` (beta, on by default since v1.35) re-verifies the new pod's credentials before reuse.
 
-```
-kubelet                container runtime            registry
-  |  PullImage(ref,  --> resolve ref -> manifest --> HEAD/GET manifest
-  |  imagePullSecrets)   auth from secret/           (200 | 404 not found |
-  |                      node credentials             401/403 denied |
-  |                                                   dial/i/o timeout)
-  |<-- ok: Pulled, Created, Started
-  |<-- error: Event Failed "Failed to pull image ..."
-  |      state.waiting.reason = ErrImagePull
-  |      next attempt after backoff -> ImagePullBackOff
-  |      delay doubles per attempt, capped at 300s
+```mermaid
+flowchart TD
+  K["<b>kubelet</b><br/>PullImage(ref, imagePullSecrets)"]
+  R["<b>container runtime</b><br/>resolve ref -&gt; manifest<br/>auth from secret/node credentials"]
+  G["<b>registry</b><br/>HEAD/GET manifest<br/>200 | 404 not found | 401/403 denied |<br/>dial/i/o timeout"]
+  OK["<b>Events</b><br/>Pulled, Created, Started"]
+  ER["<b>Event Failed</b><br/>Failed to pull image ...<br/>state.waiting.reason = ErrImagePull"]
+  B["<b>ImagePullBackOff</b><br/>next attempt after backoff<br/>delay doubles per attempt, capped at 300s"]
+  K --> R --> G
+  G -->|ok| OK
+  G -->|error| ER
+  ER --> B
 ```
 
 `imagePullSecrets` on the pod spec (or on its ServiceAccount, copied into the pod at admission) lists Secrets of type `kubernetes.io/dockerconfigjson` (or the older `kubernetes.io/dockercfg`) in the same namespace; the kubelet hands them to the runtime for that pull. The kubelet pulls serially by default (`serializeImagePulls: true` in the kubelet configuration; with `false`, `maxParallelImagePulls` caps the concurrent pulls), so one slow pull delays the pods behind it on that node.

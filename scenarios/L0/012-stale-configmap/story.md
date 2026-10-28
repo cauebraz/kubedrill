@@ -36,16 +36,17 @@ objects in this ticket, from the top down:
 - Service `banner`: one stable name in front of the two pods. Each request
   goes to one of them.
 
-```
-ConfigMap                 key banner: the text
-      |
-      |  the pod template says how: env var, or file mounted from a volume
-      v
-Deployment banner  -----> Pod x2 (container web, nginx)
-                               |
-                               |  nginx serves /usr/share/nginx/html/index.html
-                               v
-                          Service banner  <----  visitors
+```mermaid
+flowchart TD
+  C["<b>ConfigMap</b><br/>key banner: the text"]
+  D["<b>Deployment banner</b><br/>the pod template says how: env var,<br/>or file mounted from a volume"]
+  P["<b>Pod x2</b><br/>container web, nginx<br/>serves /usr/share/nginx/html/index.html"]
+  S["<b>Service banner</b><br/>sends each request to one pod"]
+  V(["<b>visitors</b>"])
+  D --> P
+  C -->|env var or file| P
+  P --> S
+  V --> S
 ```
 
 The step that matters is the arrow from the ConfigMap into the pod. There

@@ -56,8 +56,9 @@ in your head on call. Becomes the summary shown by `kubedrill concepts`.>
 
 ## The mechanism
 
-<How it works, 150-300 words, with one ASCII diagram of the actual mechanism
-(boxes with | and -, arrows with ->). Name the exact fields and objects
+<How it works, 150-300 words, with one diagram of the actual mechanism as a
+```mermaid flowchart block: one node per object, "<b>name</b><br/>what it
+does", arrows with -->. Name the exact fields and objects
 (status.readyReplicas, EndpointSlice.endpoints[].conditions.ready).>
 
 ## What you see on call

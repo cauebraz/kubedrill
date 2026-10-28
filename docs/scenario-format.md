@@ -205,7 +205,12 @@ Sections, in order, with exactly these headings (lint checks them):
 2. `## What happened`: the incident in the reporter's terms, and why the
    reported success did not mean it worked.
 3. `## The pieces`: each object the ticket involves, top to bottom, with one
-   ASCII diagram of the chain from the request to the outcome.
+   diagram of the chain from the request to the outcome, written as a
+   ` ```mermaid ` `flowchart TD` block: one node per object, `<b>name</b>`
+   then `<br/>` and what it does, `-->` between them. The workspace renders
+   it with the theme of the page, GitHub renders it in the repository, the
+   terminal (`kubedrill story`, `kubedrill learn`) draws it as a text chain,
+   and a block that does not parse falls back to its source text.
 4. `## Following the trail`: the read-only commands in the order of the
    troubleshooting loop, what each output field means, and how to get an
    object name without typing it (TAB completion, `-l` selectors, copy).

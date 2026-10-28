@@ -6,18 +6,15 @@
 
 A Deployment rollout starts if and only if `.spec.template` changes. Each rollout creates a new ReplicaSet named `<deployment>-<pod-template-hash>` and annotated `deployment.kubernetes.io/revision=<n>`; scaling does not create a revision. The old ReplicaSets are kept at 0 replicas, up to `.spec.revisionHistoryLimit` (default 10), and they are the history: `kubectl rollout undo` copies the template of an old ReplicaSet back into the Deployment, which is itself a new revision.
 
-```
-kubectl apply / edit / Helm / controller
-        |
-        v
-Deployment .spec.template changed ----> new ReplicaSet hello-5f7d (rev 3)
-        |                               old ReplicaSet hello-7c9f (rev 2)
-        |                                 kept at 0 replicas
-        v
-metadata.managedFields[]: manager, operation, time per field set
-        |
-        v
-Events: ScalingReplicaSet, Pulled, Failed ... (kept 1h by default)
+```mermaid
+flowchart TD
+  A(["<b>kubectl apply / edit / Helm / controller</b>"])
+  D["<b>Deployment .spec.template changed</b>"]
+  RS["<b>new ReplicaSet hello-5f7d (rev 3)</b><br/>old ReplicaSet hello-7c9f (rev 2)<br/>kept at 0 replicas"]
+  M["<b>metadata.managedFields[]</b><br/>manager, operation, time per field set"]
+  E["<b>Events</b><br/>ScalingReplicaSet, Pulled, Failed ...<br/>kept 1h by default"]
+  A --> D --> RS
+  D --> M --> E
 ```
 
 Every write to an object records an entry in `metadata.managedFields` with `manager` (for example `kubectl-client-side-apply`, `kubectl-edit`, `kube-controller-manager`), `operation` (`Apply` or `Update`), `time` and the field set it owns. The entry tells you who changed a field and roughly when, even for objects without revisions such as ConfigMaps or Services. Events give the order of what followed; the API server keeps them for `--event-ttl`, default 1h, so an incident older than that has lost its Events.

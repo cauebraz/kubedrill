@@ -9,5 +9,6 @@ local changes in cluster/addons/README.md: metrics-server
 (kubernetes-sigs/metrics-server), kwok (kubernetes-sigs/kwok) and Envoy
 Gateway (envoyproxy/gateway).
 
-The browser workspace embeds xterm.js and its fit addon (MIT), listed with
-sources and checksums in internal/web/static/vendor/README.md.
+The browser workspace embeds xterm.js and its fit addon (MIT) and mermaid
+(MIT), listed with sources and checksums in
+internal/web/static/vendor/README.md.

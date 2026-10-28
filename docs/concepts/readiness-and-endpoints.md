@@ -6,16 +6,19 @@ A Service sends traffic only to pods whose `Ready` condition is true, and that c
 
 Each container has three probes. The startup probe holds the other two off until it succeeds; failing, it kills the container. The liveness probe restarts the container when it fails. The readiness probe never restarts anything: on failure the kubelet sets the container's `ready: false`, the pod condition `ContainersReady` and then `Ready` go false, and the endpoint stops receiving traffic. Probe defaults are `periodSeconds: 10`, `timeoutSeconds: 1`, `failureThreshold: 3`, `successThreshold: 1`, so the third consecutive failure comes 20 seconds after the first, and a pod goes not ready 20 to 30 seconds after the app stops answering.
 
-```
-kubelet probes container   EndpointSlice controller    kube-proxy / CNI
-  readiness ok ->          watches Pods, Services      watches slices
-  pod.status.conditions    selector match + Ready      programs rules for
-  [Ready]=True      --->   -> endpoints[].addresses -> addresses where
-                           conditions.ready=true       conditions.ready=true
-  readiness fail ->
-  Ready=False       --->   conditions.ready=false   -> drops the address
-
-Deployment controller counts Ready pods -> status.readyReplicas
+```mermaid
+flowchart TD
+  K["<b>kubelet</b><br/>probes the container"]
+  T["<b>readiness ok</b><br/>pod.status.conditions[Ready]=True"]
+  F["<b>readiness fail</b><br/>Ready=False"]
+  ET["<b>EndpointSlice controller</b><br/>watches Pods, Services<br/>selector match + Ready -&gt;<br/>endpoints[].addresses<br/>conditions.ready=true"]
+  EF["<b>EndpointSlice controller</b><br/>conditions.ready=false"]
+  PT["<b>kube-proxy / CNI</b><br/>watches slices, programs rules for<br/>addresses where conditions.ready=true"]
+  PF["<b>kube-proxy / CNI</b><br/>drops the address"]
+  D["<b>Deployment controller</b><br/>counts Ready pods -&gt; status.readyReplicas"]
+  K --> T --> ET --> PT
+  K --> F --> EF --> PF
+  T --> D
 ```
 
 The EndpointSlice controller in kube-controller-manager watches Services and Pods. For each pod matched by `spec.selector` it writes an entry in an `EndpointSlice` labeled `kubernetes.io/service-name=<svc>` with `addresses[]` and three `conditions`: `serving` mirrors the pod's `Ready` condition, `terminating` is set when the pod has a `deletionTimestamp`, and `ready` is `serving` and not `terminating`. Slices hold at most 100 endpoints by default. kube-proxy on every node (or the CNI replacing it) reads the slices and programs only the addresses with `conditions.ready=true`. `spec.publishNotReadyAddresses: true` on the Service forces `ready=true` for every endpoint; headless Services for StatefulSets use it so peers can find each other before they are ready.

@@ -37,16 +37,17 @@ objects in this ticket, from the value to the program that uses it:
   Secret once and hands the value to the process as an environment
   variable. From then on the process has its own copy in memory.
 
-```
-Secret payments-token        key token: <value>
-      |
-      | read once, when the container starts
-      v
-Pod payments-xxxx            API_TOKEN=<value in memory>
-Pod payments-yyyy            API_TOKEN=<value in memory>
-Pod payments-worker-zzzz     API_TOKEN=<value from whichever Secret
-                                        its Deployment names>
-Secret payments-token-old    key token: <the same leaked value>
+```mermaid
+flowchart TD
+  S["<b>Secret payments-token</b><br/>key token: &lt;value&gt;"]
+  A["<b>Pod payments-xxxx</b><br/>API_TOKEN=&lt;value in memory&gt;"]
+  B["<b>Pod payments-yyyy</b><br/>API_TOKEN=&lt;value in memory&gt;"]
+  W["<b>Pod payments-worker-zzzz</b><br/>API_TOKEN=&lt;value from whichever Secret<br/>its Deployment names&gt;"]
+  O["<b>Secret payments-token-old</b><br/>key token: &lt;the same leaked value&gt;"]
+  S -->|read once at start| A
+  S -->|read once at start| B
+  S --> W
+  O --> W
 ```
 
 Three copies of the value, plus Tom's: the Secret, the API pods, the worker

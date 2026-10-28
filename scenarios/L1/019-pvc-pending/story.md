@@ -37,20 +37,17 @@ this request was never satisfied.
   that uses the claim is scheduled, so it creates the volume on the node the
   pod runs on. Until then a healthy claim is Pending on purpose.
 
-```
-Deployment uploads     "1 pod, mount claim <claimName> at /data"
-      |
-      v
-Pod (Pending)          waits for a node and for its claim
-      |  claimName
-      v
-PVC uploads-data       storageClassName + accessModes + 1Gi
-      |  storageClassName
-      v
-StorageClass standard  provisioner rancher.io/local-path, WaitForFirstConsumer
-      |  creates, once a pod is scheduled
-      v
-PersistentVolume       a directory on the pod's node -> claim Bound -> pod starts
+```mermaid
+flowchart TD
+  D["<b>Deployment uploads</b><br/>1 pod, mount claim &lt;claimName&gt; at /data"]
+  P["<b>Pod (Pending)</b><br/>waits for a node and for its claim"]
+  C["<b>PVC uploads-data</b><br/>storageClassName + accessModes + 1Gi"]
+  S["<b>StorageClass standard</b><br/>provisioner rancher.io/local-path<br/>WaitForFirstConsumer"]
+  V["<b>PersistentVolume</b><br/>a directory on the pod's node<br/>-&gt; claim Bound -&gt; pod starts"]
+  D --> P
+  P -->|claimName| C
+  C -->|storageClassName| S
+  S -->|creates, once scheduled| V
 ```
 
 Any link in this chain can break: the pod can name a claim that does not

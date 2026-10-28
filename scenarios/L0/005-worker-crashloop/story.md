@@ -37,20 +37,18 @@ is described by one object and fed by three others:
   with `subPath` picks one key and places it at one path inside the
   container.
 
-```
-Deployment worker            "keep 2 pods from this template"
-      |
-      v
-ReplicaSet -> Pod x2         the kubelet on the node:
-      |                        1. pulls the image (already present)
-      |                        2. builds the environment from worker-env + worker-token
-      |                        3. mounts run.sh and worker.conf from worker-files
-      |                        4. starts: sh /opt/worker/run.sh <args>
-      v
-the program                  reads the flag, QUEUE_URL, QUEUE_TOKEN, worker.conf
-      |                        all present -> "worker started", polls the queue
-      v                        one missing -> prints "worker: ..." and exits
-CrashLoopBackOff             the kubelet waits 10s, 20s, 40s ... and starts it again
+```mermaid
+flowchart TD
+  D["<b>Deployment worker</b><br/>keep 2 pods from this template"]
+  R["<b>ReplicaSet</b><br/>creates the pods"]
+  P["<b>Pod x2</b><br/>1. kubelet pulls the image (already present)<br/>2. builds env from worker-env + worker-token<br/>3. mounts run.sh, worker.conf from worker-files<br/>4. starts: sh /opt/worker/run.sh &lt;args&gt;"]
+  G["<b>the program</b><br/>reads the flag, QUEUE_URL,<br/>QUEUE_TOKEN, worker.conf"]
+  W["<b>worker started</b><br/>polls the queue"]
+  X["<b>exits</b><br/>prints 'worker: ...'"]
+  L["<b>CrashLoopBackOff</b><br/>the kubelet waits 10s, 20s, 40s ...<br/>and starts it again"]
+  D --> R --> P --> G
+  G -->|all present| W
+  G -->|one missing| X --> L
 ```
 
 Each input has a name on two sides: the name the program expects and the

@@ -39,22 +39,14 @@ this ticket, from the top down:
   readiness probe, a small HTTP request the node makes to check the
   container answers.
 
-```
-Deployment storefront   "keep 3 pods from this template"
-      |
-      v
-ReplicaSet              creates the pods
-      |
-      v
-Pod x3                  1. scheduled on a node
-      |                 2. node pulls the image from the registry
-      |                 3. container starts, files mounted from the ConfigMap
-      |                 4. readiness probe passes -> pod is Ready
-      v
-Service storefront      sends traffic only to Ready pods
-      |
-      v
-customers               no Ready pod -> connection refused -> 503
+```mermaid
+flowchart TD
+  D["<b>Deployment storefront</b><br/>keep 3 pods from this template"]
+  R["<b>ReplicaSet</b><br/>creates the pods"]
+  P["<b>Pod x3</b><br/>1. scheduled on a node<br/>2. node pulls the image from the registry<br/>3. container starts, ConfigMap files mounted<br/>4. readiness probe passes: pod is Ready"]
+  S["<b>Service storefront</b><br/>sends traffic only to Ready pods"]
+  C(["<b>customers</b><br/>no Ready pod: connection refused, 503"])
+  D --> R --> P --> S --> C
 ```
 
 The ticket says `0/3` ready. So none of the 3 pods reached step 4. Something

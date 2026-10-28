@@ -43,24 +43,14 @@ in this ticket, from the top down:
   without a ceiling. The pod shows the filled-in value; the Deployment
   does not.
 
-```
-Deployment report        "keep 1 pod from this template"
-      |
-      v
-ReplicaSet               creates the pod
-      |
-      v
-Pod                      containers: report (and maybe a helper next to it)
-      |                  each container gets a memory limit from
-      |                    - the Deployment's template, or
-      |                    - the namespace LimitRange default when the
-      |                      template set none
-      v
-Kernel on the node       container grows past its limit -> killed, exit 137
-      |                  Kubernetes writes: Last State OOMKilled
-      v
-kubelet                  restarts it with a growing pause -> CrashLoopBackOff
-                         the pod is never Ready long enough -> AVAILABLE 0
+```mermaid
+flowchart TD
+  D["<b>Deployment report</b><br/>keep 1 pod from this template"]
+  R["<b>ReplicaSet</b><br/>creates the pod"]
+  P["<b>Pod</b><br/>containers: report (and maybe a helper)<br/>each container gets a memory limit from<br/>the Deployment's template, or the namespace<br/>LimitRange default when the template set none"]
+  K["<b>Kernel on the node</b><br/>container grows past its limit:<br/>killed, exit 137<br/>Kubernetes writes: Last State OOMKilled"]
+  L["<b>kubelet</b><br/>restarts it with a growing pause:<br/>CrashLoopBackOff<br/>the pod is never Ready long enough:<br/>AVAILABLE 0"]
+  D --> R --> P --> K --> L
 ```
 
 The ticket says the service needs about 50 MB. The question the cluster can

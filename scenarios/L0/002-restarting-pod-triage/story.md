@@ -47,23 +47,14 @@ in this ticket, from the top down:
   reviews pod; `triage=yes` is the one you add. Dashboards and `kubectl
   -l` select objects by label.
 
-```
-alert "a pod restarted > 5 times"      which of the 40?
-          |
-          v
-kubectl get pods --sort-by=restarts     one pod stands out
-          |
-          v
-Deployment reviews   "keep 1 pod from this template"
-          |              template: command, probes, memory limit, mounts
-          v
-Pod reviews-xxxx     container web
-          |            1. starts, reads /etc/reviews/reviews.conf
-          |            2. builds an 8 MiB cache
-          |            3. serves on port 8080
-          |            4. the kubelet probes it, the kernel watches its memory
-          v
-kubelet              container stopped -> start it again, RESTARTS + 1
+```mermaid
+flowchart TD
+  A(["<b>alert</b><br/>a pod restarted more than 5 times<br/>which of the 40?"])
+  K["<b>kubectl get pods --sort-by=restarts</b><br/>one pod stands out"]
+  D["<b>Deployment reviews</b><br/>keep 1 pod from this template<br/>template: command, probes, memory limit, mounts"]
+  P["<b>Pod reviews-xxxx, container web</b><br/>1. starts, reads /etc/reviews/reviews.conf<br/>2. builds an 8 MiB cache<br/>3. serves on port 8080<br/>4. kubelet probes it, kernel watches memory"]
+  L["<b>kubelet</b><br/>container stopped: start it again<br/>RESTARTS + 1"]
+  A --> K --> D --> P --> L
 ```
 
 Step 1 can fail (the file is not where the program looks), step 4 can

@@ -34,19 +34,16 @@ makes the node protect them first when memory runs short.
   last when a node runs out of memory; `Burstable` and `BestEffort` go
   first.
 
-```
-Deployment            "keep 2 pods from this template"
-      |
-      v
-ReplicaSet            asks the API server for a pod
-      |
-      v
-ResourceQuota shop    admission: does every container declare
-      |               cpu and memory, and does the sum still fit?
-      |   no  -> pod refused, FailedCreate Event on the ReplicaSet
-      v   yes
-Pod                   created, scheduled, started, Ready
-                      requests == limits -> qosClass Guaranteed
+```mermaid
+flowchart TD
+  D["<b>Deployment</b><br/>keep 2 pods from this template"]
+  R["<b>ReplicaSet</b><br/>asks the API server for a pod"]
+  Q["<b>ResourceQuota shop</b><br/>admission: does every container declare<br/>cpu and memory, and does the sum still fit?"]
+  X["<b>pod refused</b><br/>FailedCreate Event on the ReplicaSet"]
+  P["<b>Pod</b><br/>created, scheduled, started, Ready<br/>requests == limits -&gt; qosClass Guaranteed"]
+  D --> R --> Q
+  Q -->|no| X
+  Q -->|yes| P
 ```
 
 ## Following the trail

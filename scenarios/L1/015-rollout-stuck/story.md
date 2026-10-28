@@ -39,16 +39,18 @@ it. The objects in this ticket, from the top down:
   `progressDeadlineSeconds`, the Deployment marks its `Progressing` condition
   False with reason `ProgressDeadlineExceeded`. It reports; it does not undo.
 
-```
-Deployment checkout (4 replicas)
-  |-- revision 1 -> ReplicaSet (2.4.0) -> old pods, Ready -----+
-  |                                                            |
-  `-- revision 2 -> ReplicaSet (2.5.0) -> new pods, never Ready|
-                                                               v
-                                   Service checkout -> Ready pods only
-                                          |
-                                          v
-                                       customers
+```mermaid
+flowchart TD
+  D["<b>Deployment checkout</b><br/>4 replicas"]
+  R1["<b>ReplicaSet 2.4.0</b><br/>revision 1"]
+  R2["<b>ReplicaSet 2.5.0</b><br/>revision 2"]
+  P1["<b>old pods</b><br/>Ready"]
+  P2["<b>new pods</b><br/>never Ready"]
+  S["<b>Service checkout</b><br/>Ready pods only"]
+  C(["<b>customers</b>"])
+  D -->|revision 1| R1 --> P1
+  D -->|revision 2| R2 --> P2
+  P1 --> S --> C
 ```
 
 The new pods must become Ready before the rollout replaces more old ones.
