@@ -138,6 +138,7 @@
         {
           "assignments": [
             {
+              "clean": false,
               "concepts": [
                 "pod-lifecycle",
                 "image-pull"
@@ -183,6 +184,7 @@
               "title": "Storefront is down after the cluster migration"
             },
             {
+              "clean": true,
               "concepts": [
                 "pod-lifecycle"
               ],
@@ -245,6 +247,7 @@
         {
           "assignments": [
             {
+              "clean": true,
               "concepts": [
                 "pod-lifecycle"
               ],
@@ -289,6 +292,7 @@
               "title": "Worker is in CrashLoopBackOff since the deploy"
             },
             {
+              "clean": true,
               "concepts": [
                 "readiness-and-endpoints"
               ],
@@ -372,6 +376,7 @@
         {
           "assignments": [
             {
+              "clean": true,
               "concepts": [
                 "rollouts"
               ],
@@ -435,6 +440,7 @@
         {
           "assignments": [
             {
+              "clean": false,
               "concepts": [
                 "configmaps"
               ],

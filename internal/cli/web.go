@@ -305,6 +305,7 @@ func (b *webBackend) Catalog(ctx context.Context) (web.Catalog, error) {
 					Requires:   nonNil(sc.Meta.Requires),
 					Simulation: sc.HasSimulation(),
 					Status:     statusOf(ms, st.current != nil && st.current.ScenarioID == sc.Meta.ID),
+					Clean:      progress.StandingOf(episodesOf(st.eps, sc.Meta.ID), scenarioInfo(sc)).Clean,
 					Mastery:    masteryView(sc, st.eps),
 				})
 			}

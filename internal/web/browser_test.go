@@ -374,6 +374,12 @@ func TestBrowser(t *testing.T) {
 		if got := b.eval("[...document.querySelectorAll('.exam-head .bdg')].map((e) => e.getAttribute('class')).join(',')"); got != "bdg in-progress,bdg earned,bdg locked" {
 			t.Errorf("exam track badges: got %q", got)
 		}
+		if got := b.eval("[...document.querySelectorAll('.exam')].map((e) => e.querySelectorAll('.domain.is-covered, .domain.is-mastered').length + ':' + e.querySelector('.exam-pct').textContent).join(',')"); !strings.HasPrefix(got, "1:") || strings.HasPrefix(got, "1:0%") {
+			t.Errorf("CKA coverage agrees with its in-progress badge: got %q, want one covered domain and a non-zero share", got)
+		}
+		if got := b.eval("String(document.querySelectorAll('.weight-seg').length)"); got != "6" {
+			t.Errorf("weight bar segments: got %s, want one per domain (6)", got)
+		}
 		b.shot("03-exams")
 	})
 
@@ -588,6 +594,13 @@ func TestBrowser(t *testing.T) {
 		}
 		b.shot("20-share-390px")
 		b.key("Escape", 0)
+		b.call("Emulation.setDeviceMetricsOverride", map[string]any{"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": true})
+		b.go_("#/exams")
+		b.wait("exams at 390px", "document.querySelectorAll('.domain').length === 6")
+		if over := b.eval("String(document.documentElement.scrollWidth > window.innerWidth + 1)"); over != "false" {
+			t.Errorf("exams at 390px scrolls horizontally (scrollWidth %s)", b.eval("String(document.documentElement.scrollWidth)"))
+		}
+		b.fullShot("03-exams-390px", 390, true)
 		b.call("Emulation.clearDeviceMetricsOverride", nil)
 	})
 

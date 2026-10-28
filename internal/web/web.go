@@ -161,6 +161,7 @@ type AssignmentCard struct {
 	Requires   []string      `json:"requires"`
 	Simulation bool          `json:"simulation"`
 	Status     string        `json:"status"`
+	Clean      bool          `json:"clean"`
 	Mastery    Mastery       `json:"mastery"`
 	Progress   StageProgress `json:"progress"`
 }

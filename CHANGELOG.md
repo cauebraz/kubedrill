@@ -48,6 +48,10 @@ All notable changes to kubedrill. The format follows
 
 ### Changed
 
+- The Exams page uses one rule, the badge rule: a domain is covered when
+  one of its assignments was solved clean. It shows the share of the exam
+  weight practiced clean, a bar of the domains by weight, and one row per
+  domain instead of a grid of cards.
 - A probe or script check that expects success and exits non-zero runs
   once more after 3 seconds, so a Service whose endpoint became ready just
   before grading is not failed while kube-proxy syncs.

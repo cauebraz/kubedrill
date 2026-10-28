@@ -142,7 +142,7 @@ Screens:
 | Welcome | The first visit of a journal: the five steps of the troubleshooting loop, each on a worked ticket with one pick and the reason the step exists, then the way into the workspace. Every other route redirects here until it is finished or skipped (`POST /api/onboarded`, stored in `web-progress.json`), then opens the route that was asked for; `--preview` skips it, and Home links it again as "How kubedrill works" |
 | Home | A Continue card (the live run with its namespace and elapsed time, or the assignment `kubedrill list` recommends with its reason, or "all caught up"), the plans in progress, and links to the catalog, the exams and the GitHub repository. A profile line counts completed assignments, badges earned or mastered out of every badge (a link to Badges), reviews due and planned assignments; a card shows the next badge in progress |
 | Catalog | Every level and plan, each plan with its module badge and caption, with search (title, id, plan, concept) and filters for level, status (not started, in progress, live, complete, mastered; complete means the Do it yourself run passed), exam domain (only domains with an assignment, with their count) and concept (by title). The filters live in the URL. A level with nothing written yet collapses to one line with its planned count. An assignment whose `requires` are not solved shows a lock and stays open |
-| Exams | Each exam with its track badge, and each domain with its weight, the assignments that train it and how many are complete (Do it yourself passed) |
+| Exams | Each exam with its track badge, the share of the exam weight in covered domains and a bar of the domains by weight; each domain with its weight, its state (covered, not covered yet, no assignment yet) and the assignments that train it, each marked solved clean, mastered or not yet. Covered uses the badge rule: one assignment of the domain solved clean |
 | Badges | Every module badge (hexagon, grouped by level), level badge (shield) and exam track badge (rosette) with its state, its caption and three dots for the variants solved clean, the legend, and a Share button on each earned or mastered badge (see [Badges](#badges)) |
 | Assignment | The stages below, with the concept pages as chips (each opens in a drawer), the mastery meter with the clean solves and the distinct variants among them, for example `2 of 3 clean solves, 2 of 3 variants solved clean`, and the badge of its module |
 
@@ -1242,7 +1242,7 @@ After the questions:
 ## Exam mode
 
 The exam rehearsal is a stage of every assignment in `kubedrill web`
-(`#/a/<id>/exam`, also linked as `rehearse` from the Exams page). Starting it
+(`#/a/<id>/exam`, also linked as `Rehearse` from the Exams page). Starting it
 (`POST /api/start` with stage `exam`) runs a random variant, seed 0, in a
 time box: the deadline is the start plus the scenario minutes.
 

@@ -245,6 +245,16 @@ func (f *Fake) badges(c *web.Catalog) {
 		}
 		return r.standing, true
 	}
+	for i := range c.Levels {
+		for j := range c.Levels[i].Modules {
+			for k := range c.Levels[i].Modules[j].Assignments {
+				a := &c.Levels[i].Modules[j].Assignments[k]
+				if s, ok := standing(a.ID); ok {
+					a.Clean = s.Clean
+				}
+			}
+		}
+	}
 	view := func(b progress.Badge, code string) web.Badge {
 		return web.Badge{State: string(b.State), Lit: b.Lit, Clean: b.Clean, Total: b.Total, Pips: b.Pips, Variants: b.Variants, Caption: b.Caption, Code: code, EarnedAt: b.EarnedAt}
 	}
