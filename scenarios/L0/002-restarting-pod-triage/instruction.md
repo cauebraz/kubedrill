@@ -2,7 +2,7 @@
 
 ## Ticket
 
-> **From:** Priya (shop on-call)\
+> **From:** Dana (shop on-call)\
 > **Priority:** medium
 >
 > The restart alert for namespace `{{ .Namespace }}` has been firing since
@@ -39,7 +39,7 @@ dashboards and selectors filter by it.
 
 - exactly one pod in the namespace carries the label triage=yes
 - the pod labeled triage=yes is a pod of the service that was restarting
-- the service that was restarting runs one pod with 0 restarts
+- the service that was restarting runs one pod with 0 restarts that has stayed up at least 45 seconds
 - the service that was restarting has its pod Running and Ready
 - every deployment in the namespace has all its replicas available (14 deployments, 40 pods)
 

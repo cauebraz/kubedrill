@@ -60,12 +60,13 @@ async function draw(m, host) {
     host.textContent = host.dataset.source;
     host.classList.add("failed");
     document.getElementById(id)?.remove();
+    document.getElementById("d" + id)?.remove();
   }
 }
 
 // renderMermaid replaces every mermaid code block under root.
 export async function renderMermaid(root) {
-  const blocks = [...root.querySelectorAll("pre > code.language-mermaid")];
+  const blocks = [...root.querySelectorAll("pre > code.language-mermaid")].filter((c) => !c.closest(".mermaid-diagram"));
   if (!blocks.length) { return; }
   const m = await load();
   configure(m);
@@ -87,9 +88,12 @@ async function redrawAll() {
 
 new MutationObserver(() => { redrawAll(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 new MutationObserver((records) => {
+  const roots = new Set();
   for (const r of records) {
+    if (r.target.closest?.(".mermaid-diagram, .xterm")) { continue; }
     for (const n of r.addedNodes) {
-      if (n.nodeType === 1 && (n.matches?.("pre") || n.querySelector?.("code.language-mermaid"))) { renderMermaid(n.parentElement || n); return; }
+      if (n.nodeType === 1 && (n.matches?.("pre") || n.querySelector?.("code.language-mermaid"))) { roots.add(n.parentElement || n); }
     }
   }
+  for (const root of roots) { renderMermaid(root); }
 }).observe(document.body, { childList: true, subtree: true });

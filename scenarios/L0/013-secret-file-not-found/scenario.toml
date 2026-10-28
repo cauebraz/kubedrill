@@ -1,6 +1,6 @@
 [scenario]
 id = "013-secret-file-not-found"
-title = "db-password is mounted but the api says file not found"
+title = "billing api never starts after db-password moved into a Secret"
 level = "L0"
 module = "L0.4"
 type = "break-fix"

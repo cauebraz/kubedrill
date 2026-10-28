@@ -2,7 +2,7 @@
 
 ## Ticket
 
-> **From:** Priya (ops)\
+> **From:** Marco (ops)\
 > **Priority:** normal
 >
 > Security is auditing which container images run in each namespace this

@@ -2,7 +2,7 @@
 
 ## Ticket
 
-> **From:** Marco (session team)\
+> **From:** Yuki (session team)\
 > **Priority:** medium
 >
 > We are moving login sessions off the shared cache onto our own redis in

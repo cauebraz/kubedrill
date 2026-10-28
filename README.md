@@ -27,6 +27,10 @@ install.
 git clone https://github.com/cauebraz/kubedrill.git && cd kubedrill && ./start.sh
 ```
 
+Or download a release archive: it holds the repository at that tag and a
+prebuilt `bin/kubedrill`; extract it and run `./bin/kubedrill` from that
+directory (Docker still required).
+
 That is the only command to remember. `./start.sh` builds `kubedrill`,
 checks your tools, creates a local cluster (Kubernetes v1.37.0, one control
 plane, two workers) and opens the workspace in your browser at
@@ -133,8 +137,10 @@ New scenarios are welcome, especially ones you lived through. Start with
 
 ## License
 
-[Apache-2.0](LICENSE) for everything in this repository, scenarios included;
-attributions in [NOTICE](NOTICE). The upstream manifests vendored in
-`cluster/addons/` are Apache-2.0 as well ([details](cluster/addons/README.md)).
+[Apache-2.0](LICENSE) for the code and the scenarios; attributions in
+[NOTICE](NOTICE). The upstream manifests vendored in `cluster/addons/` are
+Apache-2.0 as well ([details](cluster/addons/README.md)); the browser
+libraries in `internal/web/static/vendor/` (xterm.js, mermaid) keep their MIT
+licenses ([details](internal/web/static/vendor/README.md)).
 Contributions are accepted under the same license with a DCO sign-off
 (the `-s` flag when committing, see [CONTRIBUTING.md](CONTRIBUTING.md)).

@@ -88,10 +88,12 @@ func (p *progressStore) all() map[string]StageProgress {
 	return f.Assignments
 }
 
-// onboarded reports whether the welcome flow was completed or skipped.
+// onboarded reports whether the welcome flow was completed or skipped. An
+// unreadable progress file counts as done, so it never locks the learner
+// on the welcome page; the page reports the file when it saves progress.
 func (p *progressStore) onboarded() bool {
-	f, _ := p.load()
-	return !f.Onboarded.IsZero()
+	f, err := p.load()
+	return err != nil || !f.Onboarded.IsZero()
 }
 
 // onboard records the welcome flow as done.

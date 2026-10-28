@@ -1,5 +1,5 @@
 customer:
-  name: Priya
+  name: Noor
   role: Media team lead
   company: ACME Retail
 
@@ -209,10 +209,13 @@ guide:
     command: kubectl delete pvc uploads-data
   - title: Create the claim with the class this cluster has
     body: >-
-      Same name, storageClassName standard, ReadWriteOnce, 1Gi. The Pending
-      pod asks for the claim by name and picks up the new one on its own.
+      Change only the field that is wrong: yq sets storageClassName to
+      standard in the saved copy, drops the status and the server-written
+      metadata, and keeps the name, the labels, the access mode and the size.
+      The Pending pod asks for the claim by name and picks up the new one on
+      its own.
     command: >-
-      printf '%s\n' 'apiVersion: v1' 'kind: PersistentVolumeClaim' 'metadata: {name: uploads-data}' 'spec: {storageClassName: standard, accessModes: [ReadWriteOnce], resources: {requests: {storage: 1Gi}}}' | kubectl apply -f -
+      yq '.spec.storageClassName = "standard" | del(.status) | .metadata = {"name": .metadata.name, "labels": .metadata.labels}' uploads-data.yaml | kubectl apply -f -
     check: pvc-bound
   - title: Watch the pod start
     body: >-

@@ -12,6 +12,21 @@ checks:
       name: api
     exists: true
 
+  - id: readiness-probe-kept
+    description: deployment api keeps a readiness probe on container api
+    why: >-
+      The readiness probe is what keeps a pod that cannot answer out of the
+      Service; without it every new pod gets traffic the moment its process
+      starts, and the next broken release reaches the frontend unfiltered.
+    depends_on: [deploy-exists]
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: api
+    path: "{.spec.template.spec.containers[?(@.name=='api')].readinessProbe}"
+    not_empty: true
+
   - id: ready-replicas
     description: deployment api has 2 ready replicas
     why: >-

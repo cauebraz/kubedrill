@@ -48,7 +48,7 @@ Conventions shared by every command:
 | [`web`](#web) | Doctor, `up`, then the workspace on `127.0.0.1` | yes (creates it) |
 | [`pack`](#pack) | Add, list or remove scenario packs from other repositories | no |
 | **Learner loop** | | |
-| [`start`](#start) | Start a scenario in a fresh namespace and open the workstation | yes (checked first) |
+| [`start`](#start) | Start a scenario in a fresh namespace and print its ticket | yes (checked first) |
 | [`ticket`](#ticket) | Print the ticket again | no |
 | [`namespace`](#namespace) | Print the namespace of the active episode | no |
 | [`check`](#check) | Grade once | yes |
@@ -70,7 +70,7 @@ Conventions shared by every command:
 | [`concepts`](#concepts) | Every concept page | no |
 | [`replay`](#replay) | Play a recording of an episode | no (docker) |
 | **Cluster and nodes** | | |
-| [`kubedrill`](#kubedrill-without-a-command) | Doctor, `up`, then the scenario list | yes (creates it) |
+| [`kubedrill`](#kubedrill-without-a-command) | Doctor, `up`, then the browser workspace (`kubedrill web`) | yes (creates it) |
 | [`doctor`](#doctor) | Check docker, kubectl and kind | no |
 | [`up`](#up) | Create the cluster and install addons | yes (creates it) |
 | [`down`](#down) | Delete the cluster | yes |
@@ -133,7 +133,7 @@ Screens:
 
 | Screen | What it shows |
 |--------|---------------|
-| Welcome | The first visit of a journal: the five steps of the troubleshooting loop, each on a worked ticket with one pick and the reason the step exists, then the way into the workspace. Every other route redirects here until it is finished or skipped (`POST /api/onboarded`, stored in `web-progress.json`); `--preview` skips it, and Home links it again as "How kubedrill works" |
+| Welcome | The first visit of a journal: the five steps of the troubleshooting loop, each on a worked ticket with one pick and the reason the step exists, then the way into the workspace. Every other route redirects here until it is finished or skipped (`POST /api/onboarded`, stored in `web-progress.json`), then opens the route that was asked for; `--preview` skips it, and Home links it again as "How kubedrill works" |
 | Home | A Continue card (the live run with its namespace and elapsed time, or the assignment `kubedrill list` recommends with its reason, or "all caught up"), the plans in progress, and links to the catalog, the exams and the GitHub repository. A profile line counts completed assignments, badges, reviews due and planned assignments |
 | Catalog | Every level and plan, with search (title, id, plan, concept) and filters for level, status (not started, active, solved, mastered, DIY passed), exam domain and concept. The filters live in the URL. A level with nothing written yet collapses to one line with its planned count. An assignment whose `requires` are not solved shows a lock and stays open |
 | Exams | Each exam domain with its weight, the assignments that train it and how many are solved |
@@ -939,14 +939,20 @@ A pack is a directory or git repository with a `pack.yaml` and a
    commit; the default is the default branch head) into a staging
    directory under `<journal>/packs/` and removes `.git`; the commit is
    recorded.
-2. Loads `pack.yaml` and every scenario, and lints them as `kubedrill
-   lint` would (format, sandbox rules, every scenario listed in a module
-   and every listed scenario present). A scenario id already in the
-   catalog is refused, and so is `allow_privileged = true` without
-   `--allow-privileged`.
-3. Prints the scenarios and every `*.sh` of the pack: those scripts run on
-   this machine when a scenario is set up, solved or checked. Read them.
-4. Asks `Enable pack <name>? [y/N]` (`--yes` skips), then moves the pack to
+2. Refuses a clone that holds anything but directories and regular files
+   (a symlink could point outside the pinned commit), and a pack whose name
+   is already enabled.
+3. Loads `pack.yaml` and every scenario, and lints them as `kubedrill
+   lint` would (format, sandbox rules, concepts and exam domains that
+   exist, every scenario listed in a module and every listed scenario
+   present). Refused: a scenario id already in the catalog or planned in
+   `curriculum.yaml`, a scenario number already used (`kubedrill start
+   NNN` would be ambiguous), a module id already in the ladder, and
+   `allow_privileged = true` without `--allow-privileged`.
+4. Prints the scenarios, every `*.sh` of the pack and every check with an
+   inline `script:`: all of them run on this machine when a scenario is
+   set up, solved or checked. Read them.
+5. Asks `Enable pack <name>? [y/N]` (`--yes` skips), then moves the pack to
    `<journal>/packs/<name>` with a `.kubedrill-pack.json` (source, ref,
    commit, added_at). On no, or on any problem, the staging directory is
    removed.
@@ -954,7 +960,11 @@ A pack is a directory or git repository with a `pack.yaml` and a
 An enabled pack's modules join the ladder under the level each one names,
 tagged with the pack name in `kubedrill path` and the workspace catalog; its
 scenarios appear in `kubedrill list`, `start`, `smoke` and the exam
-coverage like the repository's own. `pack list` prints name, title,
+coverage like the repository's own, except `kubedrill smoke` without
+arguments, which runs only the repository's scenarios (name a pack
+scenario to smoke it). If a pack stops loading (a newer kubedrill, an id
+the repository later takes), every command warns and leaves the packs out
+until `pack remove`. `pack list` prints name, title,
 scenario count and the pin; `pack remove` deletes the files and keeps the
 episodes in the journal. Packs live in the journal directory, so the
 workstation container sees them at `/data/packs`.
@@ -1296,6 +1306,13 @@ The `KUBECONFIG` they receive:
 
 Tickets, hints, solutions and concept pages are markdown.
 
+A ` ```mermaid ` `flowchart` block is drawn as plain text in the terminal:
+a vertical chain (`|` and `v`, the arrow label beside the bar) when the
+diagram is a single path, otherwise each node followed by an `Arrows:`
+list (`A -> B (label)`, `<->` for a two-way arrow). A block that does not
+parse prints as its source. The browser workspace renders the same block
+as a diagram.
+
 Style:
 
 - On a terminal with color they are rendered with a style derived from
@@ -1362,7 +1379,7 @@ Width:
 | `KUBEDRILL_BIN` | Set by the CLI for `setup/hook.sh` and the `smoke` run of `solution/solve.sh`: the path of the running binary |
 | `KUBEDRILL_EPISODE` | Set by the CLI for the same scripts: the id of the episode being set up or solved |
 | `KUBEDRILL_AUDIT_LOG` | Path of the API audit log telemetry reads instead of `cluster.AuditLogPath()`; the workstation sets `/audit/audit.log` |
-| `KUBEDRILL_WORKSTATION` | Set to `1` inside the workstation container. `start` never opens a nested shell, `shell` refuses to run, `status` prints `present (inside the workstation)`, and `KUBECONFIG` is used as is (no pinned copy is rewritten) |
+| `KUBEDRILL_WORKSTATION` | Set to `1` inside the workstation container. `start` prints the ticket without the `kubedrill web` line, `web` refuses to run, `status` prints `present (inside the workstation)`, and `KUBECONFIG` is used as is (no pinned copy is rewritten) |
 | `KUBEDRILL_NO_TERM_QUERY` | Set to `1` inside the workstation; markdown keeps its fixed style and nothing queries the terminal background (the CLI never does) |
 | `KUBEDRILL_CLUSTER` | Set inside the workstation to the kind cluster name (`kubedrill`); the prompt shows it |
 | `KUBEDRILL_EXAM` | Set to `1` inside the exam workstation: no live checks, the exam `PATH`, the allowed docs listed |

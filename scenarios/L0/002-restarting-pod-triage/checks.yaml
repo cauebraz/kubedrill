@@ -27,19 +27,34 @@ checks:
     exit_code: 0
 
   - id: restarts-zero
-    description: the service that was restarting runs one pod with 0 restarts
+    description: the service that was restarting runs one pod with 0 restarts that has stayed up at least 45 seconds
     why: >-
       A restart count that grows means the kubelet keeps replacing the
-      container; one pod of this service with 0 restarts since the change
-      is the proof that the cause is gone, not only the symptom.
+      container; one pod of this service with 0 restarts after 45 seconds,
+      longer than a failing liveness probe takes to kill it, is the proof
+      that the cause is gone, not only the symptom.
     weight: 2
-    resource:
-      apiVersion: v1
-      kind: Pod
-      namespace: "{{ .Namespace }}"
-      selector: app=reviews
-    path: "{.items[*].status.containerStatuses[*].restartCount}"
-    equals: "0"
+    script: |
+      pods=$(kubectl -n {{ .Namespace }} get pods -l app=reviews -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.containerStatuses[0].restartCount}{" "}{.status.containerStatuses[0].state.running.startedAt}{"\n"}{end}')
+      printf '%s\n' "$pods" | awk -v now="$(date -u +%s)" '
+      function epoch(t,  y, m, d, era, yoe, mm, doe) {
+        y = substr(t, 1, 4) + 0; m = substr(t, 6, 2) + 0; d = substr(t, 9, 2) + 0
+        if (m <= 2) y--
+        era = int(y / 400); yoe = y - era * 400
+        mm = (m > 2) ? m - 3 : m + 9
+        doe = yoe * 365 + int(yoe / 4) - int(yoe / 100) + int((153 * mm + 2) / 5) + d - 1
+        return (era * 146097 + doe - 719468) * 86400 + substr(t, 12, 2) * 3600 + substr(t, 15, 2) * 60 + substr(t, 18, 2)
+      }
+      NF { n++; name = $1; restarts = $2; started = $3 }
+      END {
+        if (n != 1) { printf "%d reviews pods, expected 1\n", n; exit 1 }
+        if (restarts != "0") { printf "%s: %s restarts, expected 0\n", name, restarts; exit 1 }
+        if (started == "") { printf "%s: container web is not running\n", name; exit 1 }
+        up = now - epoch(started)
+        printf "%s: 0 restarts, up %ds\n", name, up
+        if (up < 45) { print "expected at least 45s up with 0 restarts"; exit 1 }
+      }'
+    exit_code: 0
 
   - id: pod-ready
     description: the service that was restarting has its pod Running and Ready

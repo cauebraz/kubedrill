@@ -386,6 +386,10 @@ func (a *app) getCatalog() (Catalog, error) {
 		return nil, err
 	}
 	c, err := a.f.Catalog(root, packs)
+	if err != nil && len(packs) > 0 {
+		fmt.Fprintf(a.stderr, "warning: scenario packs left out (kubedrill pack list, kubedrill pack remove <name>): %v\n", err)
+		c, err = a.f.Catalog(root, nil)
+	}
 	if err != nil {
 		return nil, err
 	}

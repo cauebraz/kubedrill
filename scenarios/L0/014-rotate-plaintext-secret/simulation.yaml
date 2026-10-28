@@ -1,6 +1,6 @@
 customer:
-  name: Priya
-  role: Payments team lead
+  name: Lucia
+  role: Billing team lead, owns the payments service
   company: ACME Retail
 
 mentor:
@@ -50,15 +50,15 @@ meeting:
         - say: What is the new token, and which workloads use the old one?
           reply: >-
             The new token is in the ticket, 21 characters. The payments API
-            and the payments-worker both read it as API_TOKEN from a Secret.
-            And Tom saved a copy of the old Secret, payments-token-old, just
+            and the payments-worker both get it from a Secret, as API_TOKEN
+            or as a file, depending on who wrote the manifest. And Tom saved a copy of the old Secret, payments-token-old, just
             in case.
           feedback: >-
             Now you have the value and the list of places: the Secret, the
             pods of two Deployments, and a copy. Each one is a place the old
             token can survive.
           best: true
-          fact: The new token is in the ticket; payments and payments-worker read API_TOKEN from a Secret; a copy named payments-token-old exists.
+          fact: The new token is in the ticket; payments and payments-worker get it from a Secret, as API_TOKEN or as a file; a copy named payments-token-old exists.
         - say: Can you paste the new token into the manifest in the repo so I can apply it?
           reply: >-
             That is exactly how the old one leaked. Security asked us not to
@@ -72,7 +72,7 @@ meeting:
           feedback: >-
             More replicas with the old token are more copies to replace.
             Ask what the value is and who uses it.
-    - prompt: Priya mentions that last time was painful. What do you want to know?
+    - prompt: Lucia mentions that last time was painful. What do you want to know?
       choices:
         - say: What happened the last time you changed a Secret?
           reply: >-
@@ -138,7 +138,7 @@ diagram:
       note: API_TOKEN copied into the environment at start
     - id: wpod
       label: Pod payments-worker
-      note: same, from whichever Secret its Deployment names
+      note: the token as API_TOKEN or as a file, from whichever Secret its Deployment names
       column: 1
     - id: provider
       label: Payment provider
@@ -149,7 +149,7 @@ diagram:
       label: secretKeyRef
     - from: secret
       to: worker
-      label: secretKeyRef (or the copy)
+      label: env or volume (or the copy)
     - from: copy
       to: worker
       label: in some episodes
@@ -164,7 +164,7 @@ diagram:
       label: API_TOKEN
     - from: wpod
       to: provider
-      label: API_TOKEN
+      label: token
 
 quiz:
   - question: You rewrote Secret payments-token with the new value. What does printenv API_TOKEN print inside a pod that was already running?
@@ -240,9 +240,10 @@ guide:
   - title: Read which Secret each Deployment names
     body: >-
       secretKeyRef.name is the Secret a container's env var comes from. In
-      this run both Deployments read payments-token. In another episode the
-      worker may read payments-token-old, and then the patch step has to
-      come before the copy is deleted.
+      this run both Deployments read payments-token, so rotating that one
+      Secret covers both. A Deployment can also name the copy, or take the
+      token from a Secret volume instead of an env var; read the template
+      before you assume.
     command: kubectl get deployment payments payments-worker -o jsonpath='{range .items[*]}{.metadata.name}{" reads "}{.spec.template.spec.containers[0].env[0].valueFrom.secretKeyRef.name}{"\n"}{end}'
   - title: Write the new token to a file, without a newline
     body: >-
@@ -263,13 +264,6 @@ guide:
       Security's audit lists rotated Secrets by this label.
     command: kubectl label secret payments-token rotated={{ .Vars.rotated }} --overwrite
     check: secret-labeled
-  - title: Point the worker at payments-token
-    body: >-
-      In this run the worker already reads payments-token and the patch
-      reports no change. When it reads payments-token-old, this is the step
-      that moves it before the copy goes away; kubectl edit does the same by
-      hand.
-    command: kubectl patch deployment payments-worker -p '{"spec":{"template":{"spec":{"containers":[{"name":"worker","env":[{"name":"API_TOKEN","valueFrom":{"secretKeyRef":{"name":"payments-token","key":"token"}}}]}]}}}}'
   - title: Replace the pods
     body: >-
       The Secret is new, the pods still hold the old value in memory. A

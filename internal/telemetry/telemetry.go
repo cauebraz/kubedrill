@@ -49,6 +49,9 @@ type AuditEvent struct {
 	// annotations) of the object or of its pod template, as kubectl
 	// annotate, label and rollout restart do. Without a body it is false.
 	MetadataOnly bool
+	// Restart is set when the body is a rollout restart: the
+	// kubectl.kubernetes.io/restartedAt annotation of the pod template.
+	Restart bool
 }
 
 // ShellCommand is one line of the workstation shell log.
@@ -175,6 +178,7 @@ func readAudit(path string, since, until time.Time, namespace string, fixTargets
 		}
 		if (l.Verb == "patch" || l.Verb == "update") && ref.Subresource == "" {
 			e.MetadataOnly = metadataOnly(l.RequestObject)
+			e.Restart = e.MetadataOnly && bytes.Contains(l.RequestObject, []byte("kubectl.kubernetes.io/restartedAt"))
 		}
 		out = append(out, e)
 	}

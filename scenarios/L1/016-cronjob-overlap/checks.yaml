@@ -1,23 +1,39 @@
 checks:
-  - id: forbid-overlap
-    description: cronjob invoice skips a run while the previous one is active (concurrencyPolicy Forbid)
+  - id: invoice-scheduled
+    description: cronjob invoice still runs the export every minute
     why: >-
-      Allow starts a second Job next to a running one and Replace deletes the
-      running one mid-write; only Forbid guarantees that one export owns the
-      file from start to end.
+      A fix that suspends invoice or moves its schedule stops the overlap by
+      stopping the export; finance then closes the day without an invoice
+      file at all.
     critical: true
-    spoiler: true
-    weight: 2
     resource:
       apiVersion: batch/v1
       kind: CronJob
       namespace: "{{ .Namespace }}"
       name: invoice
-    path: "{.spec.concurrencyPolicy}"
-    equals: Forbid
+    path: "{.spec.schedule} suspend={.spec.suspend}"
+    matches: '^(\*/1|\*) \* \* \* \*\s+suspend=\s*(false)?$'
+
+  - id: exclusive-export
+    description: invoice exports never run at the same time, even when one run is slow
+    why: >-
+      Two writers on invoices.csv interleave their rows. Only one schedule may
+      start the export, and it has to skip a tick while its last run is
+      active: Allow starts a second writer and Replace kills the first one
+      mid-write.
+    depends_on: [invoice-scheduled]
+    critical: true
+    spoiler: true
+    weight: 2
+    script: >-
+      kubectl -n "$TASK_NS" get cronjobs -l app.kubernetes.io/name=invoice
+      -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.suspend}{" "}{.spec.concurrencyPolicy}{"\n"}{end}'
+      | awk '$2 != "true" {printf "%s%s/%s", s, $1, $3; s=" "} END {print ""}'
+    exit_code: 0
+    equals: invoice/Forbid
 
   - id: one-active-job
-    description: at most one invoice Job is active
+    description: at most one invoice export Job is active
     why: >-
       Every active Job runs its own export against the same file; two at once
       interleave their writes, and the next finance close reads a corrupted
@@ -28,16 +44,3 @@ checks:
       | awk '$2 > 0 {n++} END {print n+0}'
     exit_code: 0
     lte: "1"
-
-  - id: single-scheduler
-    description: cronjob invoice is the only unsuspended CronJob that runs the invoice export
-    why: >-
-      A second CronJob on the same schedule starts its own Job every time, and
-      the concurrencyPolicy of one CronJob never sees the Jobs of another.
-    script: >-
-      kubectl -n "$TASK_NS" get cronjobs -l app.kubernetes.io/name=invoice
-      -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.suspend}{"\n"}{end}'
-      | awk '$2 != "true" {printf "%s%s", s, $1; s=" "} END {print ""}'
-    exit_code: 0
-    equals: invoice
-    spoiler: true

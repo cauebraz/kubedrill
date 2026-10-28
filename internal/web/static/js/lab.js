@@ -213,9 +213,17 @@ function workspace(stage, a, stageId, act) {
   }
 
   let popover = null;
+  let closePopover = () => {};
   function showCheck(c, anchor) {
-    if (popover) { popover.remove(); popover = null; }
-    const close = () => { if (popover) { popover.remove(); popover = null; } };
+    closePopover();
+    let release = () => {};
+    const off = (e) => { if (popover && !popover.contains(e.target) && !anchor.contains(e.target)) { closePopover(); } };
+    closePopover = () => {
+      if (popover) { popover.remove(); popover = null; }
+      release();
+      document.removeEventListener("click", off);
+      closePopover = () => {};
+    };
     popover = el("div", { class: "popover", role: "dialog", "aria-label": c.description },
       el("div", { class: "pop-head" }, el("span", { class: "pill " + (c.status === "pass" ? "good" : c.status === "skipped" ? "" : "bad"), text: c.status }), el("b", { text: c.description })),
       c.why ? el("p", { class: "small", text: c.why }) : null,
@@ -226,10 +234,10 @@ function workspace(stage, a, stageId, act) {
     const r = anchor.getBoundingClientRect();
     popover.style.left = Math.max(12, Math.min(r.left, window.innerWidth - popover.offsetWidth - 12)) + "px";
     popover.style.top = (r.top - popover.offsetHeight - 8) + "px";
-    const release = pushOverlay(close);
-    setTimeout(() => document.addEventListener("click", function off(e) { if (popover && !popover.contains(e.target)) { close(); release(); document.removeEventListener("click", off); } }), 0);
+    release = pushOverlay(() => closePopover());
+    setTimeout(() => { if (popover) { document.addEventListener("click", off); } }, 0);
   }
-  onLeave(() => { if (popover) { popover.remove(); } });
+  onLeave(() => closePopover());
 
   function drawChecks(s) {
     if (isExam) {

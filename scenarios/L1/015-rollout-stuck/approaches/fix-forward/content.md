@@ -6,8 +6,10 @@ so the Deployment starts a new rollout and the stuck ReplicaSet is replaced.
 
 Choose it when the cause is certain and small, the release carries changes
 the team needs, and the old capacity holds while the new pods start. With
-`maxUnavailable: 0` the old pods keep serving the whole time; with 25% the
-rollout runs one pod short until it completes.
+`maxUnavailable: 0` the old pods keep serving the whole time; with 25%, as
+here, the rollout runs one pod short until it completes. It is the route
+that works when a rollback cannot, because the 2.5.0 deploy removed
+configuration the old release reads.
 
 The trade-off is risk under pressure: a second guess that is also wrong
 starts a third revision and another wait for the progress deadline. Make

@@ -1,7 +1,7 @@
 printf '%s' '{{ .Vars.new_token }}' > token.txt
 kubectl -n {{ .Namespace }} create secret generic payments-token --from-file=token=token.txt --dry-run=client -o yaml | kubectl -n {{ .Namespace }} apply -f -
 kubectl -n {{ .Namespace }} label secret payments-token rotated={{ .Vars.rotated }} --overwrite
-kubectl -n {{ .Namespace }} patch deployment payments-worker -p '{"spec":{"template":{"spec":{"containers":[{"name":"worker","env":[{"name":"API_TOKEN","valueFrom":{"secretKeyRef":{"name":"payments-token","key":"token"}}}]}]}}}}'
+kubectl -n {{ .Namespace }} patch deployment payments-worker -p '{{ if eq .Vars.worker_source "file" }}{"spec":{"template":{"spec":{"volumes":[{"name":"token","secret":{"secretName":"payments-token"}}]}}}}{{ else }}{"spec":{"template":{"spec":{"containers":[{"name":"worker","env":[{"name":"API_TOKEN","valueFrom":{"secretKeyRef":{"name":"payments-token","key":"token"}}}]}]}}}}{{ end }}'
 kubectl -n {{ .Namespace }} rollout restart deployment/payments deployment/payments-worker
 kubectl -n {{ .Namespace }} delete secret payments-token-old
 rm token.txt

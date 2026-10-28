@@ -191,7 +191,7 @@ func Simulation() *scenario.Simulation {
 	}
 }
 
-const ticket = "# Storefront is down after the cluster migration\n\n## Ticket\n\n> **From:** Dana\n>\n> The status page shows `0/3` ready.\n\n## Done when\n\n- deployment storefront has 3 ready replicas\n- deployment storefront runs the nginx:1.27-alpine image\n\n<script>alert(1)</script>\n"
+const ticket = "# Storefront is down after the cluster migration\n\n## Ticket\n\n> **From:** Dana\n>\n> The status page shows `0/3` ready.\n\n## Done when\n\n- deployment storefront has 3 ready replicas\n- deployment storefront runs the image every other environment runs\n\n<script>alert(1)</script>\n"
 
 const story = "# The storefront that never started\n\n## What happened\n\nThe team moved the storefront to a new cluster.\n"
 
@@ -226,7 +226,7 @@ func (f *Fake) checks(fixed bool) []web.Check {
 	}
 	return []web.Check{
 		{ID: "deploy-exists", Description: "deployment storefront exists", Why: "The Deployment is the object the team owns.", Status: "pass"},
-		{ID: "image-correct", Description: "deployment storefront runs the nginx:1.27-alpine image", Why: "The image reference decides whether the node can pull it.", Status: status, Expected: "nginx:1.27-alpine"},
+		{ID: "image-correct", Description: "deployment storefront runs the image every other environment runs", Why: "The image reference decides whether the node can pull it.", Status: status, Expected: "nginx:1.27-alpine"},
 		{ID: "ready-replicas", Description: "deployment storefront has 3 ready replicas", Why: "Ready pods are what the Service routes to.", Status: status, Expected: "3", Actual: map[bool]string{true: "3", false: "no value at {.status.readyReplicas}"}[fixed]},
 	}
 }

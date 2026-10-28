@@ -8,20 +8,20 @@ minutes = 15
 namespace = "checkout"
 exam = ["CKA:workloads", "CKAD:deployment"]
 concepts = ["what-changed", "readiness-and-endpoints", "resources-and-qos", "image-pull"]
-fix_targets = ["apps/deployments/checkout"]
+fix_targets = ["apps/deployments/checkout", "core/configmaps/checkout-config"]
 images = ["nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10"]
 
 [[variant]]
 name = "probe-404"
-vars = { probe_path = "/healthz", cpu = "10m", image = "nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10", max_surge = "25%", max_unavailable = "25%" }
+vars = { probe_path = "/healthz", cpu = "10m", image = "nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10", keep_old_key = "true" }
 root_cause = "Revision 2 changed the readinessProbe path of container web to /healthz, which nginx answers with 404, so the new pods never turn Ready and the rollout stops at its progress deadline."
 
 [[variant]]
 name = "cpu-64"
-vars = { probe_path = "/", cpu = "64", image = "nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10", max_surge = "25%", max_unavailable = "25%" }
-root_cause = "Revision 2 requests cpu 64 (64 whole cores, where revision 1 asked for 10m) for container web, and no node has 64 allocatable CPUs, so the new pods stay Pending with FailedScheduling and the rollout stops at its progress deadline."
+vars = { probe_path = "/", cpu = "64", image = "nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10", keep_old_key = "false" }
+root_cause = "Revision 2 requests cpu 64 for container web, more than any node has, so its pods stay Pending; the 2.5.0 deploy also removed key payments_url from ConfigMap checkout-config, which revision 1 reads, so a rollback cannot start new pods either."
 
 [[variant]]
 name = "typo-tag"
-vars = { probe_path = "/", cpu = "10m", image = "nginx:1.27-alpnie", max_surge = "1", max_unavailable = "0" }
-root_cause = "Revision 2 sets the image of container web to nginx:1.27-alpnie, a tag that does not exist on Docker Hub, so the new pod stays in ErrImagePull and the rollout stops at its progress deadline."
+vars = { probe_path = "/", cpu = "10m", image = "nginx:1.27-alpnie", keep_old_key = "false" }
+root_cause = "Revision 2 sets the image of container web to the missing tag nginx:1.27-alpnie, so its pods stay in ErrImagePull; the 2.5.0 deploy also removed key payments_url from ConfigMap checkout-config, which revision 1 reads, so a rollback cannot start new pods either."

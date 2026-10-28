@@ -2,7 +2,7 @@
 
 ## Ticket
 
-> **From:** Priya (billing team)\
+> **From:** Lucia (billing team)\
 > **Priority:** high
 >
 > We moved the billing `api` to the new cluster with the same manifests we
@@ -38,6 +38,7 @@ mounts it runs with. Read what it is waiting for before changing anything.
 
 - deployment db has 1 ready replica
 - deployment api has 2 ready replicas
+- every api pod runs the migrate init container to completion
 - service api has at least one ready endpoint
 - service api answers 200 to an in-cluster request
 
@@ -45,4 +46,5 @@ mounts it runs with. Read what it is waiting for before changing anything.
 
 - Keep the Deployment, Service and ConfigMap names
 - Keep Service `db` on port 5432: other teams connect to it
+- Keep the `migrate` step: the app needs the schema it applies
 - Do not delete the namespace

@@ -2,7 +2,7 @@
 
 ## What happened
 
-Priya's team runs `api`, a web service. One copy of it is enough on a quiet
+Sam's team runs `api`, a web service. One copy of it is enough on a quiet
 day, but not under heavy traffic. So the team added an autoscaler: a rule
 that says "when the copies work harder than half of what they asked for,
 start more of them, up to 4". In yesterday's load test the service got

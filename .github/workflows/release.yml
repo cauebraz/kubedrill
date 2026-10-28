@@ -15,9 +15,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      - name: Test before publishing
+        run: |
+          go vet ./...
+          go test ./... -count=1
+          go build -o bin/kubedrill ./cmd/kubedrill
+          ./bin/kubedrill lint
       - name: Build
         run: |
           set -euo pipefail
@@ -25,8 +32,9 @@ jobs:
           for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
             os="${target%/*}"; arch="${target#*/}"
             out="dist/kubedrill_${GITHUB_REF_NAME}_${os}_${arch}"
-            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "$out/kubedrill" ./cmd/kubedrill
-            cp LICENSE NOTICE README.md "$out/"
+            mkdir -p "$out"
+            git archive "$GITHUB_REF_NAME" | tar -x -C "$out"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "$out/bin/kubedrill" ./cmd/kubedrill
             tar -C dist -czf "$out.tar.gz" "$(basename "$out")"
             rm -r "$out"
           done

@@ -9,7 +9,7 @@ case "${VARIANT:-}" in
     ;;
   limitrange-default)
     kubectl -n "$TASK_NS" patch limitrange namespace-defaults --type=json \
-      -p '[{"op":"replace","path":"/spec/limits/0/default/memory","value":"128Mi"},{"op":"replace","path":"/spec/limits/0/defaultRequest/memory","value":"64Mi"}]'
+      -p '[{"op":"replace","path":"/spec/limits/0/max/memory","value":"128Mi"},{"op":"replace","path":"/spec/limits/0/default/memory","value":"128Mi"},{"op":"replace","path":"/spec/limits/0/defaultRequest/memory","value":"64Mi"}]'
     kubectl -n "$TASK_NS" rollout restart deployment/report
     ;;
   *)

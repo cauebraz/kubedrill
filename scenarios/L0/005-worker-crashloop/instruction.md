@@ -2,7 +2,7 @@
 
 ## Ticket
 
-> **From:** Priya (billing team)\
+> **From:** Lucia (billing team)\
 > **Priority:** high
 >
 > We deployed the billing `worker` this afternoon. The deploy only touched

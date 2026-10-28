@@ -31,7 +31,10 @@ the limits is what has to fit.
 Edit the pod template of each Deployment, `storefront`, `catalog` and
 `cart`: give every container listed in the `must specify` Event the same
 CPU value for request and limit, and the same memory value for request and
-limit. Divide the quota by the number of containers across all replicas
-and stay under it; the replica counts and the quota stay as they are. A
-LimitRange whose `default` equals its `defaultRequest` is the other route:
-it fills the missing values at admission.
+limit. Divide the quota by the number of containers across all replicas,
+sidecars included, and stay under the result for CPU and for memory; a
+value above it admits some pods and refuses the rest with `exceeded quota`.
+The replica counts and the quota stay as they are. The other route is a
+LimitRange named `shop-defaults` whose `default` equals its
+`defaultRequest`: it fills the missing values at admission, and the same
+division applies to its values.

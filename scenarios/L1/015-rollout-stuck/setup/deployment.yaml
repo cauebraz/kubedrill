@@ -15,8 +15,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: {{ .Vars.max_surge }}
-      maxUnavailable: {{ .Vars.max_unavailable }}
+      maxSurge: 25%
+      maxUnavailable: 25%
   selector:
     matchLabels:
       app.kubernetes.io/name: checkout
@@ -34,6 +34,12 @@ spec:
           ports:
             - name: http
               containerPort: 80
+          env:
+            - name: PAYMENTS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: checkout-config
+                  key: payments_url
           readinessProbe:
             httpGet:
               path: /

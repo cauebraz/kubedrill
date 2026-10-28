@@ -2,7 +2,7 @@
 
 ## Ticket
 
-> **From:** Priya (cart team)\
+> **From:** Dana (storefront team)\
 > **Priority:** high
 >
 > We shipped cart release 2.3 this morning by re-applying the whole `cart/`

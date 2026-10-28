@@ -11,4 +11,10 @@ Gateway (envoyproxy/gateway).
 
 The browser workspace embeds xterm.js and its fit addon (MIT) and mermaid
 (MIT), listed with sources and checksums in
-internal/web/static/vendor/README.md.
+internal/web/static/vendor/README.md. The mermaid bundle includes
+third-party code under its own licenses, named in the license comments of
+mermaid.min.js: DOMPurify (Apache-2.0 or MPL-2.0), lodash-es (MIT) and
+other MIT-licensed libraries. The mermaid bundle includes
+third-party code under its own licenses, named in the license comments of
+mermaid.min.js: DOMPurify (Apache-2.0 or MPL-2.0), lodash-es (MIT) and
+other MIT-licensed libraries.

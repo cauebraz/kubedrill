@@ -1,5 +1,6 @@
-Patch the live CronJobs: `concurrencyPolicy: Forbid` on `invoice` and
-`suspend: true` on every other CronJob that runs the export. Each patch
+Patch the live CronJobs: `concurrencyPolicy: Forbid` on `invoice` when it
+is not set yet, and `suspend: true` on every other CronJob that runs the
+export. Each patch
 touches one field, takes effect at the next tick and is reverted with the
 same command and the old value. Suspending instead of removing the legacy
 CronJob keeps its finished Jobs and its definition for the team that owns

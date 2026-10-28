@@ -33,21 +33,47 @@ func copyScenario(t *testing.T, src, dst string) {
 func packSource(t *testing.T) string {
 	t.Helper()
 	src := t.TempDir()
-	dst := filepath.Join(src, "scenarios", "L0", "001-storefront-down")
+	dst := filepath.Join(src, "scenarios", "L0", "901-storefront-pack")
 	copyScenario(t, filepath.Join("..", "..", "scenarios", "L0", "001-storefront-down"), dst)
 	meta := filepath.Join(dst, "scenario.toml")
 	b, err := os.ReadFile(meta)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(meta, []byte(strings.Replace(string(b), `module = "L0.1"`, `module = "L0.incidents"`, 1)), 0o644); err != nil {
+	toml := strings.NewReplacer(
+		`id = "001-storefront-down"`, `id = "901-storefront-pack"`,
+		`module = "L0.1"`, `module = "L0.incidents"`,
+		`exam = ["CKA:troubleshooting"]`, `exam = ["CKA:workloads"]`,
+		`concepts = ["pod-lifecycle", "image-pull", "readiness-and-endpoints"]`, `concepts = ["pods"]`,
+	).Replace(string(b))
+	if err := os.WriteFile(meta, []byte(toml), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	manifest := "name: incidents\ntitle: Incidents\nmodules:\n  - level: L0\n    id: L0.incidents\n    title: Incidents\n    summary: From the rota\n    scenarios:\n      - id: 001-storefront-down\n        ticket: Storefront is down\n        type: break-fix\n        feasibility: kind\n"
+	manifest := "name: incidents\ntitle: Incidents\nmodules:\n  - level: L0\n    id: L0.incidents\n    title: Incidents\n    summary: From the rota\n    scenarios:\n      - id: 901-storefront-pack\n        ticket: Storefront is down\n        type: break-fix\n        feasibility: kind\n"
 	if err := os.WriteFile(filepath.Join(src, "pack.yaml"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return src
+}
+
+func TestPackAddRefusesCollisions(t *testing.T) {
+	f := newFixture(t)
+	src := packSource(t)
+	if code, out, errOut := f.run(t, "", "pack", "add", src, "--yes"); code != 0 {
+		t.Fatalf("pack add: %d %q %q", code, out, errOut)
+	}
+	manifest := filepath.Join(src, "pack.yaml")
+	b, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, []byte(strings.Replace(string(b), "name: incidents", "name: incidents-two", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := f.run(t, "", "pack", "add", src, "--yes")
+	if code == 0 || !strings.Contains(errOut, "module L0.incidents: the id is already in the ladder") || !strings.Contains(errOut, "already in the catalog") {
+		t.Errorf("second pack with the same module and scenario: %d %q %q", code, out, errOut)
+	}
 }
 
 func TestPackAddListRemove(t *testing.T) {
@@ -71,7 +97,7 @@ func TestPackAddListRemove(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("pack add: %d %q %q", code, out, errOut)
 	}
-	for _, want := range []string{"pack incidents (Incidents) from " + src, "1 scenario(s):", "001-storefront-down", "scripts that run on this machine", "solution/solve.sh", "pack incidents enabled in"} {
+	for _, want := range []string{"pack incidents (Incidents) from " + src, "1 scenario(s):", "901-storefront-pack", "scripts that run on this machine", "solution/solve.sh", "pack incidents enabled in"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("pack add output lacks %q:\n%s", want, out)
 		}
@@ -88,7 +114,7 @@ func TestPackAddListRemove(t *testing.T) {
 	}
 
 	code, out, errOut = f.run(t, "", "pack", "add", src, "--yes")
-	if code == 0 || !strings.Contains(errOut, "exists; kubedrill pack remove incidents first") {
+	if code == 0 || !strings.Contains(errOut, "pack incidents is already enabled; kubedrill pack remove incidents first") {
 		t.Errorf("pack add twice: %d %q %q", code, out, errOut)
 	}
 

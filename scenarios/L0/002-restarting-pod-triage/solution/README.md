@@ -90,8 +90,13 @@ kubectl -n {{ .Namespace }} patch deployment reviews --type json -p '[{"op": "re
 
 Run only the line that matches your observation. `kubectl edit deployment
 reviews` and changing the same field in the editor is the same change, and
-so is correcting the manifest in the repository and applying it. Then put
-the label on the pod the rollout created:
+so is correcting the manifest in the repository and applying it. For
+memory-limit-too-low, lowering `CACHE_MB` in ConfigMap `reviews-config`
+(for example to 1) also fits the cache under `10Mi`; the pod reads the file
+on its next start, so follow it with `kubectl rollout restart
+deployment/reviews` to get a pod with 0 restarts. It trades a smaller
+cache for the limit every other service has. Then put the label on the pod
+the rollout created:
 
 ```sh
 kubectl -n {{ .Namespace }} rollout status deployment/reviews --timeout=120s
@@ -114,7 +119,8 @@ kubectl -n {{ .Namespace }} get deployments
 
 The reviews pod shows `1/1 Running` with `0` restarts, and stays at `0`
 after a minute (the liveness kill took 35 seconds to show, so wait at
-least that long). `get pods -l triage=yes` lists exactly that pod. `get
+least that long; the restart check passes only once the container has run
+45 seconds without a restart). `get pods -l triage=yes` lists exactly that pod. `get
 deployments` shows `READY` equal to the replica count on all 14 rows,
 40 pods in total.
 

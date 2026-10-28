@@ -25,6 +25,11 @@ survive after the rotation. Each leaves a trace:
   `API_TOKEN` from `payments-token-old` instead of `payments-token`, so a
   restart alone keeps it on the leaked value and deleting the copy first
   leaves its next pod in `CreateContainerConfigError`.
+- A Deployment that reads the token as a file: `payments-worker` may mount
+  `payments-token-old` as a Secret volume at `/etc/payments`, so it has no
+  `API_TOKEN` at all, rotating `payments-token` never reaches it, and
+  deleting the copy first leaves its next pod in `ContainerCreating` with a
+  `FailedMount` event.
 - The copy: `payments-token-old` holds the same bytes under another name.
 
 ## Observation that splits them
@@ -34,21 +39,30 @@ kubectl -n {{ .Namespace }} get secrets,deployments
 kubectl -n {{ .Namespace }} get secret payments-token -o jsonpath='{.data.token}' | base64 -d
 kubectl -n {{ .Namespace }} exec deploy/payments -- printenv API_TOKEN
 kubectl -n {{ .Namespace }} get deployment payments payments-worker -o jsonpath='{range .items[*]}{.metadata.name}{" reads "}{.spec.template.spec.containers[0].env[0].valueFrom.secretKeyRef.name}{"\n"}{end}'
+kubectl -n {{ .Namespace }} describe deployment payments-worker
 ```
 
 The first command lists two Secrets (`payments-token`, `payments-token-old`)
 and two Deployments. The second prints `{{ .Vars.old_token }}`: the Secret
 holds the leaked value. The third prints the same value from inside a pod.
-The fourth tells the variants apart:
+The fourth and fifth tell the variants apart:
 
 - worker-on-new-secret: `payments-worker reads payments-token`. Both
   Deployments read the Secret you rotate; each only needs its pods
   replaced.
-- worker-on-old-copy and worker-on-old-copy-audit-label:
-  `payments-worker reads payments-token-old`. The worker reads Tom's copy,
-  so its `secretKeyRef` has to move to `payments-token` before the copy is
-  deleted, or its next pod stops at `CreateContainerConfigError` with
-  `secret "payments-token-old" not found`.
+- worker-on-old-copy: `payments-worker reads payments-token-old`. The
+  worker reads Tom's copy, so its `secretKeyRef` has to move to
+  `payments-token` before the copy is deleted, or its next pod stops at
+  `CreateContainerConfigError` with `secret "payments-token-old" not
+  found`.
+- worker-mounts-old-copy: `payments-worker reads ` with nothing after it:
+  the worker has no env var. `describe` shows `Mounts: /etc/payments from
+  token (ro)` and, under `Volumes:`, `Type: Secret` with `SecretName:
+  payments-token-old`; `kubectl -n {{ .Namespace }} exec
+  deploy/payments-worker -- cat /etc/payments/token` prints the leaked
+  value. The volume's `secretName` has to move to `payments-token` before
+  the copy is deleted, or the next worker pod waits in `ContainerCreating`
+  with `FailedMount ... secret "payments-token-old" not found`.
 
 `kubectl -n {{ .Namespace }} get secret payments-token --show-labels`
 shows no `rotated` label yet.
@@ -63,7 +77,9 @@ file is deleted at the end; the manifest never touches disk.
 printf '%s' '{{ .Vars.new_token }}' > token.txt
 kubectl -n {{ .Namespace }} create secret generic payments-token --from-file=token=token.txt --dry-run=client -o yaml | kubectl -n {{ .Namespace }} apply -f -
 kubectl -n {{ .Namespace }} label secret payments-token rotated={{ .Vars.rotated }} --overwrite
-kubectl -n {{ .Namespace }} patch deployment payments-worker -p '{"spec":{"template":{"spec":{"containers":[{"name":"worker","env":[{"name":"API_TOKEN","valueFrom":{"secretKeyRef":{"name":"payments-token","key":"token"}}}]}]}}}}'
+{{ if eq .Vars.worker_source "file" }}kubectl -n {{ .Namespace }} patch deployment payments-worker -p '{"spec":{"template":{"spec":{"volumes":[{"name":"token","secret":{"secretName":"payments-token"}}]}}}}'
+{{ else }}kubectl -n {{ .Namespace }} patch deployment payments-worker -p '{"spec":{"template":{"spec":{"containers":[{"name":"worker","env":[{"name":"API_TOKEN","valueFrom":{"secretKeyRef":{"name":"payments-token","key":"token"}}}]}]}}}}'
+{{ end -}}
 kubectl -n {{ .Namespace }} rollout restart deployment/payments deployment/payments-worker
 kubectl -n {{ .Namespace }} delete secret payments-token-old
 rm token.txt
@@ -73,7 +89,8 @@ rm token.txt
 that `--from-file` keeps and the provider rejects. The first `apply` warns
 that the `last-applied-configuration` annotation is missing, because the
 Secret was not created with `kubectl apply`; kubectl adds it and moves on.
-The `patch` sets the worker's `secretKeyRef` to `payments-token`; in the
+The `patch` sets the worker's `secretKeyRef` to `payments-token` (in
+worker-mounts-old-copy, the `secretName` of its volume `token`); in the
 worker-on-new-secret variant it reports `(no change)`, and `kubectl edit
 deployment payments-worker` does the same job by hand. `rollout restart`
 changes an annotation in each pod template, which is the only way a
@@ -94,7 +111,7 @@ kubectl -n {{ .Namespace }} rollout status deployment/payments
 kubectl -n {{ .Namespace }} rollout status deployment/payments-worker
 kubectl -n {{ .Namespace }} get secret payments-token -o jsonpath='{.data.token}' | base64 -d
 kubectl -n {{ .Namespace }} exec deploy/payments -- printenv API_TOKEN
-kubectl -n {{ .Namespace }} exec deploy/payments-worker -- printenv API_TOKEN
+kubectl -n {{ .Namespace }} exec deploy/payments-worker -- {{ if eq .Vars.worker_source "file" }}cat /etc/payments/token{{ else }}printenv API_TOKEN{{ end }}
 kubectl -n {{ .Namespace }} get secrets --show-labels
 ```
 

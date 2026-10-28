@@ -2,7 +2,7 @@
 
 ## Ticket
 
-> **From:** Priya (catalog team)\
+> **From:** Ravi (catalog team)\
 > **Priority:** high
 >
 > We are consolidating services, so this morning I moved the catalog into
@@ -13,8 +13,6 @@
 > pod, `wget -qO- http://catalog/` answers `Connection refused` right away.
 > The old namespace served the same page for two years. Can platform check
 > what I copied wrong?
-
-New to Kubernetes? `kubedrill story` tells this ticket from zero.
 
 ## Before you start
 
@@ -29,7 +27,7 @@ Compare them with the pods before changing anything.
 
 - Namespace: `{{ .Namespace }}`
 - Resources: the storefront (Deployment `storefront`, Service `storefront`,
-  ConfigMap `storefront-html`), the catalog objects Priya applied this
+  ConfigMap `storefront-html`), the catalog objects Ravi applied this
   morning (a Deployment with 2 replicas, container `web`, Service `catalog`
   on port 80, ConfigMap `catalog-html` with the catalog page) and nothing
   else
@@ -41,10 +39,10 @@ Compare them with the pods before changing anything.
 
 ## Done when
 
+- service catalog serves the ACME Catalog 3.2.0 page
+- service catalog has at least one ready endpoint
 - deployment catalog exists
 - deployment catalog has 2 ready replicas
-- service catalog has at least one ready endpoint
-- service catalog serves the ACME Catalog 3.2.0 page
 - no deployment other than catalog and storefront remains in the namespace
 
 ## Constraints

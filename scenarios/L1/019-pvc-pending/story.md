@@ -2,7 +2,7 @@
 
 ## What happened
 
-Priya's team runs `uploads`, a small service that stores the images
+Noor's team runs `uploads`, a small service that stores the images
 customers attach to their listings. The files must survive a restart, so the
 service keeps them on a disk that Kubernetes provides, not inside the
 container. Yesterday the team copied the manifests to a new cluster and

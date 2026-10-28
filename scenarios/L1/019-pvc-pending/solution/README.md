@@ -92,7 +92,17 @@ spec:
 YAML
 ```
 
-The first line keeps a copy of the old claim for the record. Changing
+The first line keeps a copy of the old claim for the record. When only one
+field is wrong, recreate the claim from that copy with just that field
+changed. For missing-class:
+
+```sh
+yq '.spec.storageClassName = "standard" | del(.status) | .metadata = {"name": .metadata.name, "labels": .metadata.labels}' uploads-data.yaml | kubectl -n {{ .Namespace }} apply -f -
+```
+
+The same command leaves rwx-access Pending, because the copy still asks for
+`ReadWriteMany`; there, set `.spec.accessModes = ["ReadWriteOnce"]`
+instead. Changing
 `ReadWriteOnce` to `ReadWriteOncePod` also works on local-path. For
 missing-class, creating a StorageClass `fast-ssd` with the local-path
 provisioner also binds the claim, but it adds a cluster-wide object to hide a

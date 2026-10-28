@@ -2,7 +2,7 @@
 
 ## What happened
 
-Priya's team runs the payments service. To talk to the payment provider it
+Lucia's team runs the payments service. To talk to the payment provider it
 sends a token, a long string that works like a password. The token lives in
 the cluster in an object called a Secret. Yesterday someone opened a pull
 request that included the whole Secret, token and all, so everyone with
@@ -13,7 +13,7 @@ and remove every copy of the old one. The old token stops working at 18:00.
 Nothing is broken right now. The pods are running and the status is green.
 That is what makes this ticket different from an outage: the job is to
 change a value in three places and prove that each place has it, before the
-old value stops working. The trap Priya remembers from last time is that a
+old value stops working. The trap Lucia remembers from last time is that a
 changed Secret does not reach a running program on its own.
 
 ## The pieces
@@ -30,9 +30,11 @@ objects in this ticket, from the value to the program that uses it:
 - Deployment `payments`: the wish "keep 2 copies of the API running". Its
   pod template says: container `api` gets an environment variable
   `API_TOKEN` whose value comes from Secret `payments-token`, key `token`.
-- Deployment `payments-worker`: one copy of a background worker with the
-  same kind of environment variable. Which Secret it points at is something
-  to read, not to assume.
+- Deployment `payments-worker`: one copy of a background worker that needs
+  the same token. It gets it from a Secret too, either as an environment
+  variable or as a file the kubelet writes into the container (a Secret
+  volume). Which Secret it points at, and by which route, is something to
+  read, not to assume.
 - Pods: the running copies. When a container starts, the kubelet reads the
   Secret once and hands the value to the process as an environment
   variable. From then on the process has its own copy in memory.
@@ -42,7 +44,7 @@ flowchart TD
   S["<b>Secret payments-token</b><br/>key token: &lt;value&gt;"]
   A["<b>Pod payments-xxxx</b><br/>API_TOKEN=&lt;value in memory&gt;"]
   B["<b>Pod payments-yyyy</b><br/>API_TOKEN=&lt;value in memory&gt;"]
-  W["<b>Pod payments-worker-zzzz</b><br/>API_TOKEN=&lt;value from whichever Secret<br/>its Deployment names&gt;"]
+  W["<b>Pod payments-worker-zzzz</b><br/>the token as API_TOKEN or as a file,<br/>from whichever Secret its Deployment names"]
   O["<b>Secret payments-token-old</b><br/>key token: &lt;the same leaked value&gt;"]
   S -->|read once at start| A
   S -->|read once at start| B
@@ -84,7 +86,14 @@ kubectl exec deploy/payments -- printenv API_TOKEN
 kubectl exec deploy/payments-worker -- printenv API_TOKEN
 ```
 
-Same value in both. Then the question that tells this episode apart from
+Same value in both, or, when the second prints nothing, the worker does
+not use an environment variable at all; its token is a file:
+
+```sh
+kubectl exec deploy/payments-worker -- cat /etc/payments/token
+```
+
+Then the question that tells this episode apart from
 the next one: which Secret does each Deployment read? The field is
 `secretKeyRef.name` under the container's `env`; a `jsonpath` that walks to
 it prints one line per Deployment:
@@ -94,11 +103,13 @@ kubectl get deployment payments payments-worker -o jsonpath='{range .items[*]}{.
 ```
 
 Either both read `payments-token`, or the worker reads
-`payments-token-old`. In the second case the worker is tied to the copy you
-are about to delete, and that changes the order of the fix. The same fact is
-visible in `kubectl describe deployment payments-worker`, under
-`Environment`, as `API_TOKEN: <set to the key 'token' in secret
-'payments-token-old'>`.
+`payments-token-old`, or the worker's line ends after `reads` because it
+has no env var. `kubectl describe deployment payments-worker` shows all
+three: under `Environment`, as `API_TOKEN: <set to the key 'token' in
+secret 'payments-token'>` (or `'payments-token-old'`), or under `Volumes:`,
+as a volume of type `Secret` with `SecretName: payments-token-old` mounted
+at `/etc/payments`. A worker tied to the copy you are about to delete
+changes the order of the fix.
 
 Last, the label the audit looks for:
 
@@ -128,15 +139,18 @@ Four steps, in this order.
    rm token.txt
    ```
 
-2. Point the worker at the right Secret, when it reads the copy. Change
-   `name: payments-token-old` to `name: payments-token` under its
-   `secretKeyRef`, with `kubectl edit deployment payments-worker` or the
-   `patch` command of the solution. When it already reads `payments-token`,
-   there is nothing to change here.
+2. Point the worker at the right Secret, when it reads the copy. For an
+   env var, change `name: payments-token-old` to `name: payments-token`
+   under its `secretKeyRef`; for a Secret volume, change `secretName:
+   payments-token-old` to `secretName: payments-token` under `volumes`.
+   `kubectl edit deployment payments-worker` does either by hand. When it
+   already reads `payments-token`, there is nothing to change here.
 
 3. Replace the pods. The Secret now holds the new value, but the pods still
    have the old one in memory, because the environment was built when they
-   started. A Deployment replaces its pods only when its pod template
+   started. (A Secret volume is refreshed in place by the kubelet within
+   about a minute, but the restart makes the change immediate and
+   uniform.) A Deployment replaces its pods only when its pod template
    changes; `rollout restart` changes a timestamp annotation in the
    template, which is enough. New pods start, read the Secret again, and get
    the new value; the old pods are stopped.
@@ -155,10 +169,12 @@ Four steps, in this order.
 Why the tempting shortcuts fail:
 
 - Changing the Secret and stopping there: `printenv` in the pods still
-  prints the old value. That is the "hours on the old value" Priya
+  prints the old value. That is the "hours on the old value" Lucia
   remembers.
 - Deleting the copy first, when the worker reads it: the worker's next pod
-  cannot build its environment and stops at `CreateContainerConfigError`.
+  cannot build its environment and stops at `CreateContainerConfigError`,
+  or, when it mounts the copy as a volume, waits in `ContainerCreating`
+  with a `FailedMount` event.
 - Writing the file with `echo`: the Secret holds the token plus a newline,
   `base64 -d` prints the value and then a blank line, and every call to the
   provider fails with an invalid token.
@@ -171,10 +187,13 @@ kubectl rollout status deployment/payments-worker
 kubectl get secret payments-token -o jsonpath='{.data.token}' | base64 -d
 kubectl exec deploy/payments -- printenv API_TOKEN
 kubectl exec deploy/payments-worker -- printenv API_TOKEN
+kubectl exec deploy/payments-worker -- cat /etc/payments/token
 kubectl get secrets --show-labels
 ```
 
-Both rollouts end with `successfully rolled out`. The same new token prints
+The worker answers one of the two commands, the one matching how it gets
+the token; the other prints nothing or `No such file or directory`. Both
+rollouts end with `successfully rolled out`. The same new token prints
 three times, from the Secret and from a new pod of each Deployment. The
 Secret list shows `payments-token` with `rotated={{ .Vars.rotated }}` and
 no `payments-token-old`. The checks below the terminal turn green, and

@@ -31,7 +31,8 @@ how much data it loads, and the process needs its runtime on top of that
 once it stays up), so compare that need with the `Limits` line. A limit
 that appears in the pod but not in the Deployment was filled in at
 admission by the LimitRange default of the namespace
-(`kubectl -n {{ .Namespace }} get limitrange -o yaml`).
+(`kubectl -n {{ .Namespace }} get limitrange -o yaml`); a `max` in the same
+LimitRange refuses any pod whose container asks for more.
 
 ## Hint 4: what to change
 
@@ -39,8 +40,9 @@ Raise the memory limit of the container that was killed to more than it
 uses, and set its request to match what it needs. The place depends on
 where the limit came from: the container's `resources` in the Deployment's
 pod template when the Deployment wrote it, or, when a LimitRange default
-filled it in, either explicit `resources` in the Deployment or a higher
-default in the LimitRange followed by a restart of the rollout, because a
+filled it in, the LimitRange itself: its `max` refuses a higher limit
+written in the Deployment, so raise the `max` (and the defaults, or give
+the Deployment explicit numbers) and restart the rollout, because a
 LimitRange only applies to pods created after the change. Deleting the pod
 gives you a new pod with the same limit, and shrinking the dataset is not
 what the team asked for.

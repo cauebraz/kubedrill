@@ -20,9 +20,9 @@ ENDPOINTS columns of the EndpointSlice. Then compare `TargetPort` in
 `kubectl -n {{ .Namespace }} describe svc cart` with the `containerPort` of
 a cart pod:
 `kubectl -n {{ .Namespace }} get pods -l app=cart -o jsonpath='{.items[0].spec.containers[0].ports}'`.
-`kubectl -n {{ .Namespace }} port-forward deploy/cart 8080:80` in one pane
-and `curl -sS localhost:8080/` in another shows whether a pod serves the
-page when the Service is left out.
+`kubectl -n {{ .Namespace }} port-forward deploy/cart 8080:80 &` in the
+background, then `curl -sS localhost:8080/` and `kill %1`, shows whether a
+pod serves the page when the Service is left out.
 
 ## Hint 3: what it means
 

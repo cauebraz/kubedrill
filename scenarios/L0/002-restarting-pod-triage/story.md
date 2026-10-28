@@ -2,11 +2,11 @@
 
 ## What happened
 
-Priya is on call for the shop. Since 07:40 an alert keeps paging her:
+Dana is on call for the shop, and since 07:40 the same alert keeps firing:
 "a pod restarted more than 5 times in the last hour" in the namespace of
 the shop. Customers are fine, nothing is down. But the alert does not say
 which pod, and the shop runs about 40 of them across 14 small services.
-Priya wants two things: find the pod and tag it, so the on-call dashboard
+Dana wants two things: find the pod and tag it, so the on-call dashboard
 shows it and a teammate can pick up the deeper analysis, and make it stop
 restarting.
 

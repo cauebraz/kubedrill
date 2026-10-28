@@ -1,4 +1,4 @@
-# Solution - 013 db-password is mounted but the api says file not found
+# Solution - 013 billing api never starts after db-password moved into a Secret
 
 ## Symptom
 
@@ -37,11 +37,13 @@ kubectl -n {{ .Namespace }} exec <pod-name> -- ls /etc/secrets
 kubectl -n {{ .Namespace }} get secret db-credentials -o jsonpath='{.data}'
 ```
 
-Take `<pod-name>` from the NAME column of `get pods`. The app logs `api:
-cannot read /etc/secrets/db-password` and exits after 45 seconds, which
-turns into `Error` and `CrashLoopBackOff`; the `exec` works while the
-container is up. The probe is ruled out in every variant because the logs
-never print `api: connected`. Per variant (measured on kind v1.37):
+Take `<pod-name>` from the NAME column of `get pods`. In mount-path-typo
+and key-name the app logs `api: cannot read /etc/secrets/db-password` and
+exits after 45 seconds, which turns into `Error` and `CrashLoopBackOff`;
+the `exec` works while the container is up, and the probe is ruled out
+because the logs never print `api: connected`. In wrong-secret-name the
+container never starts, so `logs` and `exec` are refused and the Events of
+`describe` carry the cause. Per variant (measured on kind v1.37):
 
 - mount-path-typo: STATUS `Running` with `0/1` READY, then
   `CrashLoopBackOff`. `describe` shows `Mounts: /etc/secret from

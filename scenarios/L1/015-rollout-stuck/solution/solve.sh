@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${TASK_NS:?TASK_NS is required}" "${KUBECONFIG:?KUBECONFIG is required}"
+: "${TASK_NS:?TASK_NS is required}" "${KUBECONFIG:?KUBECONFIG is required}" "${VARIANT:?VARIANT is required}"
 
-kubectl -n "$TASK_NS" rollout undo deployment/checkout --to-revision=1
+case "$VARIANT" in
+  probe-404) kubectl -n "$TASK_NS" rollout undo deployment/checkout --to-revision=1 ;;
+  cpu-64) kubectl -n "$TASK_NS" set resources deployment/checkout -c web --requests=cpu=10m ;;
+  typo-tag) kubectl -n "$TASK_NS" set image deployment/checkout web=nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10 ;;
+  *) echo "unknown variant $VARIANT" >&2; exit 1 ;;
+esac
 kubectl -n "$TASK_NS" rollout status deployment/checkout --timeout=180s
 
 i=0

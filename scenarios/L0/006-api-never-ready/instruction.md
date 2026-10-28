@@ -2,7 +2,7 @@
 
 ## Ticket
 
-> **From:** Priya (api team)\
+> **From:** Sam (api team)\
 > **Priority:** high
 >
 > We deployed `api` to the new namespace this morning with the health checks
@@ -37,6 +37,7 @@ anything.
 ## Done when
 
 - deployment api exists
+- deployment api keeps a readiness probe on container api
 - deployment api has 2 ready replicas
 - service api has at least one ready endpoint
 - service api answers a request with the ACME API 3.2.0 body

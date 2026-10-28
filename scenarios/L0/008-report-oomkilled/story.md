@@ -2,7 +2,7 @@
 
 ## What happened
 
-Priya's team runs a small service called `report`. When it starts, it reads
+Lucia's team runs a small service called `report`. When it starts, it reads
 the month's dataset into memory, and then it answers requests for the
 month-end report from that memory. It ran for months on a virtual machine
 with nobody watching it. Yesterday the team moved it to the shared
@@ -38,10 +38,12 @@ in this ticket, from the top down:
   (out of memory killed). The kubelet then restarts the container, waiting
   longer each time (10s, 20s, 40s ...), which shows as `CrashLoopBackOff`.
 - LimitRange: an optional object in a namespace that fills in a default
-  request and limit for every new container that did not set its own.
-  Platform teams add one to their namespace template so that no pod runs
-  without a ceiling. The pod shows the filled-in value; the Deployment
-  does not.
+  request and limit for every new container that did not set its own, and
+  can set a `max` that no container may exceed. Platform teams add one to
+  their namespace template so that no pod runs without a ceiling. The pod
+  shows the filled-in value; the Deployment does not. A pod that asks for
+  more than `max` is refused before it exists, and the ReplicaSet records
+  `FailedCreate` in the events.
 
 ```mermaid
 flowchart TD
@@ -117,8 +119,9 @@ kubectl get limitrange
 kubectl describe limitrange
 ```
 
-The table shows `Default Request` and `Default Limit` per resource. Every
-container created in this namespace without its own numbers gets these.
+The table shows `Max`, `Default Request` and `Default Limit` per
+resource. Every container created in this namespace without its own
+numbers gets the defaults, and no container may ask for more than `Max`.
 
 Last, the real need. The laptop number was a guess; the cluster can measure
 the container, but only while it runs. Once the fix is in and the pod stays
@@ -147,9 +150,10 @@ came from:
   For a helper container next to the report, name that container with `-c`
   instead; the report container is fine and keeps its numbers.
 
-- The LimitRange filled it in: either give the Deployment explicit numbers
-  with the same command (explicit values win over the default), or raise
-  the default in the LimitRange and then restart the rollout, because a
+- The LimitRange filled it in: change the LimitRange. Explicit numbers in
+  the Deployment win over a default, but not over a `max`; a pod asking
+  for more than `max` is refused, and `get events` shows `FailedCreate`.
+  Raise `max` and the defaults, then restart the rollout, because a
   LimitRange only touches pods created after the change:
 
   ```sh

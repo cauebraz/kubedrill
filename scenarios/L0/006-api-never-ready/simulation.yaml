@@ -1,5 +1,5 @@
 customer:
-  name: Priya
+  name: Sam
   role: API team lead
   company: ACME Retail
 
@@ -258,10 +258,11 @@ guide:
     command: kubectl get endpointslices -l kubernetes.io/service-name=api -o jsonpath='{range .items[*].endpoints[*]}{.addresses[0]} ready={.conditions.ready}{"\n"}{end}'
   - title: Change the probe in the Deployment
     body: >-
-      Change one thing: the readiness probe of container api, so it asks for
-      the path nginx serves on the port it listens on. The Deployment creates
-      a new ReplicaSet and replaces the pods with ones that pass the probe.
-    command: kubectl patch deployment api --type=json -p='[{"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe","value":{"httpGet":{"path":"/","port":"http"},"initialDelaySeconds":2,"periodSeconds":5}}]'
+      Change one thing: the path of the readiness probe of container api,
+      to the path nginx serves. The port is already the one nginx listens
+      on, so the rest of the probe stays as it is. The Deployment creates a
+      new ReplicaSet and replaces the pods with ones that pass the probe.
+    command: kubectl patch deployment api --type=json -p='[{"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/httpGet/path","value":"/"}]'
   - title: Watch the rollout finish
     body: >-
       rollout status waits until the new pods are Ready. This is the

@@ -23,11 +23,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Every commit carries a Signed-off-by line
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           missing=0
-          for c in $(git rev-list "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"); do
+          for c in $(git rev-list --no-merges "$(git merge-base "$BASE" "$HEAD")..$HEAD"); do
             if ! git log -1 --format=%B "$c" | grep -q '^Signed-off-by: '; then
               echo "::error::commit $c has no Signed-off-by line (sign the commit with -s)"
               missing=1
@@ -49,6 +53,7 @@ jobs:
         run: find scenarios -name '*.sh' -exec shellcheck -x start.sh workstation/entrypoint.sh workstation/bashrc {} +
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
+      - run: go vet -tags browser ./internal/web
       - run: go test ./... -race -count=1
       - run: go build -o bin/kubedrill ./cmd/kubedrill
       - run: go mod tidy -diff

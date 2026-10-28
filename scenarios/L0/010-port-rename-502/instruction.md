@@ -2,7 +2,7 @@
 
 ## Ticket
 
-> **From:** Priya (docs team)\
+> **From:** Alex (docs team)\
 > **Priority:** high
 >
 > We shipped release 3.2.0 of the docs portal (`web`) yesterday evening. The

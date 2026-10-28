@@ -88,11 +88,12 @@ kubectl -n {{ .Namespace }} patch deployment api --type=json -p '[{"op":"replace
 ```
 
 Editing the manifest and applying it again is the route that survives the
-next deploy in a GitOps setup. The checks read ready replicas, the
-Service's EndpointSlices and the response through the Service, so any
-change that lets the loop end passes, including removing the init container,
-which restores service but skips the migration guard. The Service `db` and
-the ConfigMap need no change: they match what every other environment has.
+next deploy in a GitOps setup. The checks read ready replicas, that every
+api pod ran `migrate` to completion, the Service's EndpointSlices and the
+response through the Service, so any change that lets the loop end passes
+except removing the init container, which restores service but skips the
+migrations the app needs. The Service `db` and the ConfigMap need no
+change: they match what every other environment has.
 
 ## Verify
 

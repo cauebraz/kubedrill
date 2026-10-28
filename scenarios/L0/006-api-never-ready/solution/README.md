@@ -71,21 +71,27 @@ one node.
 ## Change
 
 Change one thing: the readiness probe in the pod template of Deployment
-`api`, container `api`, so it asks for the path this build serves on the
-port it listens on.
+`api`, container `api`, the field the observation named, so the probe asks
+for the path this build serves on the port it listens on:
 
 ```sh
+kubectl -n {{ .Namespace }} patch deployment api --type=json -p='[{"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/httpGet/path","value":"/"}]'
+kubectl -n {{ .Namespace }} patch deployment api --type=json -p='[{"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/httpGet/port","value":"http"}]'
 kubectl -n {{ .Namespace }} patch deployment api --type=json -p='[{"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe","value":{"httpGet":{"path":"/","port":"http"},"initialDelaySeconds":2,"periodSeconds":5}}]'
 ```
 
-This one patch fixes every variant, because it replaces the whole probe.
-Smaller edits pass too: `kubectl edit deployment api` and change only the
-wrong field (the path to `/`, the port to `80` or `http`). For wrong-path
+Run only the line that matches your observation: the path for wrong-path,
+the port for wrong-port, and the whole probe for missing-ready-file, whose
+`exec` probe has no path or port to correct (a JSON patch `replace` on a
+path that does not exist is rejected). The last line fixes every variant,
+because it replaces the whole probe. `kubectl edit deployment api` and
+changing the same field in the editor is the same change. For wrong-path
 a second route keeps the probe and makes the server answer it: add a
 `healthz` key to ConfigMap `api-html`; the kubelet syncs the volume within
 about a minute and nginx serves `/healthz` with 200. Removing the probe
 also makes the pods Ready, but it removes the signal that would catch the
-next real outage, so the ticket's constraints forbid it.
+next real outage, so the ticket's constraints forbid it and a check reads
+that the probe is still there.
 
 ## Verify
 

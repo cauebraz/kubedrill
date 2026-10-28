@@ -36,7 +36,7 @@ makes the node protect them first when memory runs short.
 
 ```mermaid
 flowchart TD
-  D["<b>Deployment</b><br/>keep 2 pods from this template"]
+  D["<b>Deployment</b><br/>keep N pods from this template"]
   R["<b>ReplicaSet</b><br/>asks the API server for a pod"]
   Q["<b>ResourceQuota shop</b><br/>admission: does every container declare<br/>cpu and memory, and does the sum still fit?"]
   X["<b>pod refused</b><br/>FailedCreate Event on the ReplicaSet"]
@@ -89,12 +89,17 @@ memory. One command per Deployment sets every container of its template:
 kubectl set resources deployment/storefront --requests=cpu=250m,memory=256Mi --limits=cpu=250m,memory=256Mi
 ```
 
+Pick the values before you run it. The numbers above are an example for a
+budget of 2 CPU and 2Gi over 5 containers: that leaves 400m and about
+409Mi per container, and 250m and 256Mi fit with room to spare. A budget
+of 1 CPU over the same 5 containers leaves 200m each, and 250m admits four
+pods and refuses the fifth. Divide your own `Hard` by your own container
+count, and pick a value below the result for CPU and for memory.
+
 Repeat it for `catalog` and `cart`. Each Deployment gets a new template,
 creates a new ReplicaSet, and that ReplicaSet asks for pods that now
-declare their sizes. The quota adds them up; at 250m and 256Mi per
-container, 5 single-container pods take 1250m and 1280Mi, and 7 containers
-take 1750m and 1792Mi, which fits every budget this ticket uses. Because
-requests equal limits, every pod is `Guaranteed`.
+declare their sizes. The quota adds them up and admits every pod while the
+sum fits. Because requests equal limits, every pod is `Guaranteed`.
 
 Why other moves do not work:
 
@@ -109,7 +114,8 @@ Why other moves do not work:
 
 Another route is a LimitRange, an object that fills in missing requests
 and limits at admission. With `default` equal to `defaultRequest`, every
-container that declares nothing comes out Guaranteed.
+container that declares nothing comes out Guaranteed. Its values follow
+the same division.
 
 ## Check your work
 

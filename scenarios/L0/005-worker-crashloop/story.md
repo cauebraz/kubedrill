@@ -2,7 +2,7 @@
 
 ## What happened
 
-Priya's team runs a worker: a program that takes invoices from a queue and
+Lucia's team runs a worker: a program that takes invoices from a queue and
 processes them, one after another, all day. It has no web page; it just runs.
 This afternoon the team deployed it again. They did not change the program
 itself, only the Kubernetes files that describe how to run it and the config

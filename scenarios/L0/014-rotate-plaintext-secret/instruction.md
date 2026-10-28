@@ -2,7 +2,7 @@
 
 ## Ticket
 
-> **From:** Priya (payments team)\
+> **From:** Lucia (billing team)\
 > **Priority:** high
 >
 > Yesterday a pull request in our repo included the full YAML of Secret
@@ -38,7 +38,8 @@ what the cluster stores.
 - Resources: Secret `payments-token` (key `token`), Secret
   `payments-token-old` (Tom's copy), Deployment `payments` (2 replicas,
   container `api`), Deployment `payments-worker` (1 replica, container
-  `worker`); both containers read `API_TOKEN` from a Secret
+  `worker`); both containers get the token from a Secret, as the env var
+  `API_TOKEN` or as the file `/etc/payments/token`
 - You have cluster-admin on the local kind cluster
 - The new token is the string in the ticket, 21 characters, no trailing
   newline
@@ -50,13 +51,13 @@ what the cluster stores.
 - secret payments-token carries the label rotated={{ .Vars.rotated }}
 - deployment payments has 2 ready replicas
 - every running payments pod sees the new token in API_TOKEN
-- every running payments-worker pod sees the new token in API_TOKEN
+- every running payments-worker pod sees the new token
 - secret payments-token-old does not exist
 
 ## Constraints
 
-- Keep the names `payments-token`, `payments`, `payments-worker` and the
-  env var name `API_TOKEN`
+- Keep the names `payments-token`, `payments`, `payments-worker`, the env
+  var name `API_TOKEN` and the file path `/etc/payments/token`
 - Do not delete the namespace
 - Do not paste the token into a manifest you keep; write it to a file you
   delete afterwards

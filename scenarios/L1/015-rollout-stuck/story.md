@@ -2,12 +2,12 @@
 
 ## What happened
 
-Priya's team runs checkout, the part of the shop that takes orders. It runs
-as 4 identical copies so that one slow or failing copy does not stop
-orders. An hour ago the team shipped a new release, 2.5.0. Kubernetes does
-not swap all 4 copies at once: it replaces them a few at a time, so
-customers are never left without a working copy. That gradual replacement
-is called a rollout.
+Dana's storefront team runs checkout, the part of the shop that takes
+orders. It runs as 4 identical copies so that one slow or failing copy does
+not stop orders. An hour ago the team shipped a new release, 2.5.0.
+Kubernetes does not swap all 4 copies at once: it replaces them a few at a
+time, so customers are never left without a working copy. That gradual
+replacement is called a rollout.
 
 This rollout started and never finished. The pipeline waited, gave up with
 `exceeded its progress deadline`, and the dashboard still shows the new
@@ -35,6 +35,9 @@ it. The objects in this ticket, from the top down:
 - Readiness probe: a small HTTP request the node sends to a copy; the copy
   counts as Ready only when it answers with success.
 - Service `checkout`: one stable address in front of the Ready copies.
+- ConfigMap `checkout-config`: settings the copies read when they start.
+  The 2.5.0 deploy added a key with a new name; a copy whose blueprint
+  names a key that is not there cannot start at all.
 - Progress deadline: if the rollout makes no progress for
   `progressDeadlineSeconds`, the Deployment marks its `Progressing` condition
   False with reason `ProgressDeadlineExceeded`. It reports; it does not undo.
@@ -105,8 +108,13 @@ kubectl rollout history deployment/checkout --revision=1
 kubectl rollout history deployment/checkout --revision=2
 ```
 
-Apart from the version label, one field differs, and it is the one the Event
-named.
+Apart from the version label and the ConfigMap key the payments setting
+comes from, one field differs, and it is the one the Event named. See which
+keys the ConfigMap holds today:
+
+```sh
+kubectl get configmap checkout-config -o yaml
+```
 
 ## The fix and why it works
 
@@ -118,14 +126,20 @@ kubectl rollout undo deployment/checkout --to-revision=1
 
 Why this works: undo copies the blueprint of revision 1 back into the
 Deployment. Its ReplicaSet still exists, so the Deployment scales it back to
-4 and the broken one to 0. The old pods are already Ready, the rollout
+4 and the broken one to 0. When the old blueprint still works, the rollout
 completes in seconds, and `Progressing` turns back to
 `NewReplicaSetAvailable`.
 
-The other valid route is to fix forward: change only the field revision 2
-broke (the probe path, the CPU request or the image tag) and let a new
-rollout run. It keeps release 2.5.0, but it needs you to be sure of the
-cause.
+Watch `rollout status` after the undo. A rollback only helps if the old
+blueprint still works in today's cluster. If the 2.5.0 deploy removed the
+ConfigMap key revision 1 reads, the copy the rollback starts stays in
+`CreateContainerConfigError` with `couldn't find key payments_url`, and the
+rollout is stuck again, now on the old release.
+
+The route that works in both cases is to fix forward: change only the
+field revision 2 broke (the probe path, the CPU request or the image tag)
+and let a new rollout run. It keeps release 2.5.0 and the new ConfigMap
+key, but it needs you to be sure of the cause.
 
 Why other moves do not work:
 
@@ -153,5 +167,6 @@ copies the Service sends orders to. The checks below the terminal turn
 green, and `kubedrill check` grades once from the shell.
 
 The habit to keep from this ticket: when something breaks right after a
-deploy, look at what the deploy changed, and restore the last good revision
-before you dig into why.
+deploy, look at what the deploy changed, restore the last good revision
+before you dig into why, and verify the rollback the same way you verify
+any other change.

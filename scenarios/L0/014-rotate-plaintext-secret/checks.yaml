@@ -115,11 +115,11 @@ checks:
     exit_code: 0
 
   - id: worker-env-new
-    description: every running payments-worker pod sees the new token in API_TOKEN
+    description: every running payments-worker pod sees the new token
     why: >-
-      The worker retries failed payouts with the token it started with; a
-      worker pod left on the leaked value, or on a Secret that no longer
-      exists, fails every retry after the provider revokes the old token.
+      The worker retries failed payouts with the token it holds; a worker
+      pod left on the leaked value, or on a Secret that no longer exists,
+      fails every retry after the provider revokes the old token.
     depends_on: [secret-token-new]
     weight: 2
     script: |
@@ -133,7 +133,11 @@ checks:
         [ "$phase" = Running ] || continue
         [ -z "$deleted" ] || continue
         live=$((live + 1))
-        got=$(kubectl -n "$TASK_NS" exec "$name" -c worker -- printenv API_TOKEN 2>/dev/null || true)
+        if [ "${VAR_WORKER_SOURCE:-env}" = file ]; then
+          got=$(kubectl -n "$TASK_NS" exec "$name" -c worker -- cat /etc/payments/token 2>/dev/null || true)
+        else
+          got=$(kubectl -n "$TASK_NS" exec "$name" -c worker -- printenv API_TOKEN 2>/dev/null || true)
+        fi
         if [ "$got" != "$want" ]; then
           stale=$((stale + 1))
           names="$names $name"
@@ -146,7 +150,7 @@ checks:
         exit 1
       fi
       if [ "$stale" -gt 0 ]; then
-        echo "$stale of $live running pods still see another value in API_TOKEN:$names"
+        echo "$stale of $live running pods still see another token:$names"
         exit 1
       fi
       echo "$live of $live running pods see the new token"

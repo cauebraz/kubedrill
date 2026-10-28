@@ -166,10 +166,12 @@ quiz:
         explain: >-
           A pod stuck pulling its image never starts a container, so it cannot
           crash. The status names the step that stalled.
-      - text: An image problem, because the pods exist.
+      - text: Every pod-level cause; the Service must be misconfigured, because the internal URL refuses connections.
         explain: >-
-          The pods exist because the Deployment created them; the image
-          problem is exactly what stops them from going further.
+          A Service with no Ready pod behind it refuses every connection,
+          whatever its selector and ports say. ImagePullBackOff explains why
+          no pod is Ready, so the refusal is a consequence of the pods, not a
+          second fault in the Service.
   - question: Where does the fix for a wrong image reference belong?
     choices:
       - text: In the Deployment's pod template, container web.

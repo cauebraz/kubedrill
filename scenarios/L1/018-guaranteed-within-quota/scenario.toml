@@ -8,7 +8,7 @@ minutes = 15
 namespace = "shop"
 exam = ["CKAD:environment", "CKA:workloads"]
 concepts = ["resources-and-qos", "pod-lifecycle", "troubleshooting-loop"]
-fix_targets = ["apps/deployments/storefront", "apps/deployments/catalog", "apps/deployments/cart"]
+fix_targets = ["apps/deployments/storefront", "apps/deployments/catalog", "apps/deployments/cart", "core/limitranges/shop-defaults"]
 images = ["nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10"]
 
 [[variant]]
@@ -17,11 +17,11 @@ vars = { cpu = "2", memory = "2Gi", sidecar = "no" }
 root_cause = "ResourceQuota shop limits requests and limits of cpu and memory, and no container of storefront, catalog or cart sets resources, so admission rejects every pod; 5 pods need requests equal to limits that sum to at most 2 CPU and 2Gi."
 
 [[variant]]
-name = "quota-1500m-cpu"
-vars = { cpu = "1500m", memory = "1536Mi", sidecar = "no" }
-root_cause = "ResourceQuota shop limits requests and limits of cpu and memory, and no container sets resources, so admission rejects every pod; 5 pods need requests equal to limits that sum to at most 1500m CPU and 1536Mi."
+name = "quota-1-cpu"
+vars = { cpu = "1", memory = "1Gi", sidecar = "no" }
+root_cause = "ResourceQuota shop rejects every pod without resources; 5 containers must fit 1 CPU and 1Gi, at most 200m and 204Mi each, so 250m and 256Mi per container admit 4 pods and refuse the fifth."
 
 [[variant]]
 name = "catalog-sidecar"
-vars = { cpu = "2", memory = "2Gi", sidecar = "yes" }
-root_cause = "ResourceQuota shop rejects every pod without resources, and catalog runs a second container, heartbeat; all 7 containers, the sidecar included, need requests equal to limits that sum to at most 2 CPU and 2Gi."
+vars = { cpu = "1500m", memory = "1536Mi", sidecar = "yes" }
+root_cause = "ResourceQuota shop rejects every pod without resources, and catalog runs a second container, heartbeat; all 7 containers must fit 1500m CPU and 1536Mi, at most 214m and 219Mi each, sidecar included."

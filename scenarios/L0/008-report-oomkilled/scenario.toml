@@ -14,12 +14,12 @@ images = ["registry.k8s.io/e2e-test-images/agnhost:2.53@sha256:99c6b4bb4a1e1df3f
 [[variant]]
 name = "low-limit"
 vars = { report_request = "32Mi", report_limit = "32Mi", limitrange = "false", sidecar = "false" }
-root_cause = "The Deployment sets limits.memory 32Mi on container report, but the report holds its 48Mi dataset plus the runtime in memory (about 62Mi), so the kernel kills the container with OOMKilled on every start."
+root_cause = "The Deployment sets limits.memory 32Mi on container report, but the report holds its 48Mi dataset plus the runtime in memory (about 58Mi), so the kernel kills the container with OOMKilled on every start."
 
 [[variant]]
 name = "limitrange-default"
 vars = { report_request = "", report_limit = "", limitrange = "true", sidecar = "false" }
-root_cause = "The Deployment sets no resources, so the LimitRange namespace-defaults fills limits.memory 32Mi into every new pod at admission; the report needs about 62Mi, so the kernel kills it with OOMKilled on every start."
+root_cause = "The LimitRange namespace-defaults fills limits.memory 32Mi into the report container, which sets none, and caps every container at max 32Mi; the report needs about 58Mi, so it is OOMKilled on every start and a higher limit in the Deployment is refused at admission."
 
 [[variant]]
 name = "sidecar-limit"

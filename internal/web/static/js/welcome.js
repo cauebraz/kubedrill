@@ -103,7 +103,7 @@ export function showWelcome(app, ctx, onDone) {
 
   function dots() {
     const n = i >= 1 && i <= STEPS.length ? i : 0;
-    return el("ol", { class: "dots", "aria-label": n ? "Step " + n + " of " + STEPS.length : "Five steps" },
+    return el("ol", { class: "dots", "aria-hidden": "true" },
       STEPS.map((_, k) => el("li", { class: k + 1 < i ? "done" : k + 1 === i ? "on" : "", "aria-current": k + 1 === i ? "step" : null })));
   }
   function top() {
@@ -148,8 +148,8 @@ export function showWelcome(app, ctx, onDone) {
         cont.focus({ preventScroll: true });
         feedback.scrollIntoView({ block: "nearest" });
       } else {
-        buttons[ci].disabled = true;
-        buttons[ci].classList.add("wrong");
+        buttons[ci].setAttribute("aria-disabled", "true");
+        buttons[ci].classList.add("wrong", "tried");
         clear(feedback, el("div", { class: "feedback retry" }, el("div", null, el("b", { text: "Not this one" }), c.feedback)));
       }
     }

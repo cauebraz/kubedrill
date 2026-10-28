@@ -77,12 +77,17 @@ type Runner func(ctx context.Context, dir string, args ...string) (string, error
 
 // FetchOptions steer Fetch: Ref pins a clone to a tag, branch or commit;
 // AllowPrivileged accepts scenarios whose setup escapes the pod sandbox;
-// ExistingIDs are scenario ids already in the catalog, which the pack may
-// not reuse; Git replaces the git on PATH.
+// ExistingIDs are scenario ids already in the catalog or planned in the
+// ladder, ModuleIDs the module ids already in the ladder, both of which the
+// pack may not reuse; ExamDomains and Concepts are what its scenarios may
+// name (nil skips that check); Git replaces the git on PATH.
 type FetchOptions struct {
 	Ref             string
 	AllowPrivileged bool
 	ExistingIDs     []string
+	ModuleIDs       []string
+	ExamDomains     []string
+	Concepts        []string
 	Git             Runner
 }
 
@@ -237,7 +242,11 @@ func (st *Staged) fetch(ctx context.Context, source string, o FetchOptions) erro
 		if o.Ref != "" {
 			return errors.New("--ref applies to a git source, not a directory")
 		}
-		if err := copyTree(source, st.dir); err != nil {
+		real, err := filepath.EvalSymlinks(source)
+		if err != nil {
+			return err
+		}
+		if err := copyTree(real, st.dir); err != nil {
 			return err
 		}
 	} else {
@@ -261,10 +270,16 @@ func (st *Staged) fetch(ctx context.Context, source string, o FetchOptions) erro
 		if err := os.RemoveAll(filepath.Join(st.dir, ".git")); err != nil {
 			return err
 		}
+		if err := regularOnly(st.dir); err != nil {
+			return err
+		}
 	}
 	m, err := LoadManifest(st.dir)
 	if err != nil {
 		return err
+	}
+	if _, err := os.Stat(filepath.Join(Dir(st.dataDir), m.Name)); err == nil {
+		return fmt.Errorf("pack %s is already enabled; kubedrill pack remove %s first", m.Name, m.Name)
 	}
 	st.Manifest = m
 	cat, err := scenario.NewCatalog(st.dir)
@@ -281,14 +296,29 @@ func (st *Staged) fetch(ctx context.Context, source string, o FetchOptions) erro
 		}
 	}
 	var errs []error
-	errs = append(errs, scenario.LintPack(st.dir, scenario.Refs{Modules: modules, Planned: planned})...)
+	errs = append(errs, scenario.LintPack(st.dir, scenario.Refs{Modules: modules, Planned: planned, ExamDomains: o.ExamDomains, Concepts: o.Concepts})...)
+	taken := map[string]bool{}
+	for _, id := range o.ModuleIDs {
+		taken[id] = true
+	}
+	for _, mod := range m.Modules {
+		if taken[mod.ID] {
+			errs = append(errs, fmt.Errorf("module %s: the id is already in the ladder (curriculum.yaml or another pack)", mod.ID))
+		}
+	}
 	existing := map[string]bool{}
+	number := map[string]string{}
 	for _, id := range o.ExistingIDs {
 		existing[id] = true
+		if n, _, ok := strings.Cut(id, "-"); ok {
+			number[n] = id
+		}
 	}
 	for _, s := range st.Scenarios {
 		if existing[s.Meta.ID] {
-			errs = append(errs, fmt.Errorf("scenario %s: the id is already in the catalog", s.Meta.ID))
+			errs = append(errs, fmt.Errorf("scenario %s: the id is already in the catalog or planned in the ladder", s.Meta.ID))
+		} else if n, _, _ := strings.Cut(s.Meta.ID, "-"); number[n] != "" {
+			errs = append(errs, fmt.Errorf("scenario %s: the number %s is already used by %s, so kubedrill start %s would be ambiguous; renumber the pack scenario", s.Meta.ID, n, number[n], n))
 		}
 		if s.Meta.AllowPrivileged && !o.AllowPrivileged {
 			errs = append(errs, fmt.Errorf("scenario %s: scenario.toml sets allow_privileged = true (its setup can escape the pod sandbox); rerun with --allow-privileged after reading it", s.Meta.ID))
@@ -297,8 +327,39 @@ func (st *Staged) fetch(ctx context.Context, source string, o FetchOptions) erro
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
-	st.Scripts, err = scripts(st.dir)
-	return err
+	if st.Scripts, err = scripts(st.dir); err != nil {
+		return err
+	}
+	for _, s := range st.Scenarios {
+		rel, _ := filepath.Rel(st.dir, filepath.Join(s.Dir, "checks.yaml"))
+		for _, c := range s.Checks {
+			if c.Script != "" {
+				st.Scripts = append(st.Scripts, rel+": check "+c.ID+" (inline script)")
+			}
+		}
+	}
+	return nil
+}
+
+// regularOnly refuses a tree that holds anything but directories and
+// regular files: a symlink in a cloned pack could point outside the pinned
+// commit, so what was reviewed would not be what runs.
+func regularOnly(root string) error {
+	var errs []error
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && !d.Type().IsRegular() {
+			rel, _ := filepath.Rel(root, path)
+			errs = append(errs, fmt.Errorf("%s: not a regular file (symlinks and devices are refused in a pack)", rel))
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return errors.Join(errs...)
 }
 
 // scripts lists every shell script of the pack, relative to its root: what

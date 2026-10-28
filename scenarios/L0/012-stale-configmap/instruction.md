@@ -2,7 +2,7 @@
 
 ## Ticket
 
-> **From:** Priya (marketing site team)\
+> **From:** Eva (marketing team)\
 > **Priority:** medium
 >
 > The promo banner at `http://banner.{{ .Namespace }}.svc` still says
@@ -23,7 +23,7 @@ refreshed by the kubelet within about a minute; a `subPath` mount of one key
 is never refreshed. The API holds what `kubectl get configmap -o yaml`
 prints; the container holds what `kubectl exec <pod> -- env` and
 `kubectl exec <pod> -- cat <file>` print. Compare the two before you change
-anything. New to Kubernetes? `kubedrill story` tells this ticket from zero.
+anything.
 
 ## Environment
 

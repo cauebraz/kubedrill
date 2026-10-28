@@ -2,7 +2,7 @@
 
 ## Ticket
 
-> **From:** Priya (checkout team)\
+> **From:** Dana (storefront team)\
 > **Priority:** high
 >
 > We shipped checkout release 2.5.0 an hour ago. The pipeline's
@@ -27,7 +27,8 @@ revision you can list with `kubectl rollout history`.
 
 - Namespace: `{{ .Namespace }}`
 - Resources: Deployment `checkout` (4 replicas, container `web`, the official
-  nginx `1.27-alpine` image), Service `checkout` (port 80)
+  nginx `1.27-alpine` image), Service `checkout` (port 80), ConfigMap
+  `checkout-config` (settings both releases read)
 - Revision 1 of the Deployment is release 2.4.0, revision 2 is release 2.5.0
 - You have cluster-admin on the local kind cluster
 

@@ -13,4 +13,6 @@ spec:
         memory: 32Mi
       defaultRequest:
         memory: 32Mi
+      max:
+        memory: 32Mi
 {{- end }}

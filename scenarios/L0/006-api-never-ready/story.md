@@ -2,7 +2,7 @@
 
 ## What happened
 
-Priya's team runs the api, the service the checkout page calls. This
+Sam's team runs the api, the service the checkout page calls. This
 morning they deployed it to a new namespace with the health checks the
 platform checklist asks for. The pods started and stayed `Running`, the
 restart count stayed at 0, and still the frontend got `connection refused`

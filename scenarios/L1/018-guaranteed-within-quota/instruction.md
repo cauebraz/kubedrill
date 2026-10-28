@@ -2,7 +2,7 @@
 
 ## Ticket
 
-> **From:** Priya (platform team, capacity)\
+> **From:** Marco (platform team, capacity)\
 > **Priority:** medium
 >
 > Finance gave the `shop` namespace a fixed budget this quarter, so we put a

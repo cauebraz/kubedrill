@@ -27,7 +27,8 @@ func (a *app) smokeCommand() *cobra.Command {
 			"(the scenario namespace plus a random suffix), so the learner's journal and\n" +
 			"episode are untouched; smoke still refuses a scenario the learner has an active\n" +
 			"episode of (unless --force), since setup hooks may touch cluster-wide state,\n" +
-			"and deletes every namespace it created at the end.",
+			"and deletes every namespace it created at the end. Without refs it runs the\n" +
+			"repository's scenarios; a pack scenario runs only when named.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.runSmoke(cmd.Context(), args, force, verbose)
 		},
@@ -104,8 +105,9 @@ func (a *app) smokeCleanup(ctx context.Context, conn *lazyConn, j Journal, names
 	}
 }
 
-// smokeTargets resolves refs to scenarios, or every scenario in id order
-// when there are none.
+// smokeTargets resolves refs to scenarios, or every scenario of the
+// repository in id order when there are none; a pack scenario runs only
+// when named, since its scripts are third-party code.
 func (a *app) smokeTargets(refs []string) ([]*scenario.Scenario, error) {
 	cat, err := a.getCatalog()
 	if err != nil {
@@ -113,7 +115,11 @@ func (a *app) smokeTargets(refs []string) ([]*scenario.Scenario, error) {
 	}
 	var targets []*scenario.Scenario
 	if len(refs) == 0 {
-		targets = sortedScenarios(cat)
+		for _, s := range sortedScenarios(cat) {
+			if s.Pack == "" {
+				targets = append(targets, s)
+			}
+		}
 	}
 	for _, ref := range refs {
 		sc, err := cat.Find(ref)

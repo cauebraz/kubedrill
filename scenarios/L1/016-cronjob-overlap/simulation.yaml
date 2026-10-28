@@ -1,5 +1,5 @@
 customer:
-  name: Priya
+  name: Lucia
   role: Billing team lead
   company: ACME Retail
 
@@ -179,32 +179,35 @@ guide:
     command: kubectl get cronjobs,jobs,pods -l app.kubernetes.io/name=invoice
   - title: Watch two ticks
     body: >-
-      New lines appear as Jobs start and finish. At the second tick, check
-      whether the previous Job is still Running next to the new one. Stop
-      the watch with Ctrl-C after two new Jobs.
+      New lines appear as Jobs start and finish. At each tick, read the
+      prefix of every new Job name: it names the CronJob that created it.
+      Stop the watch with Ctrl-C after two ticks.
     command: kubectl get jobs --watch
   - title: Read the CronJob settings
     body: >-
-      The POLICY column is concurrencyPolicy. Allow lets a new tick start a
-      Job next to a running one, which is what the watch showed.
+      The POLICY column is concurrencyPolicy. invoice already has Forbid,
+      so it never starts a run next to its own. invoice-legacy shows SUSPEND
+      false and the same SCHEDULE: a second scheduler whose Jobs the policy
+      of invoice never sees.
     command: kubectl get cronjobs -o custom-columns=NAME:.metadata.name,POLICY:.spec.concurrencyPolicy,SUSPEND:.spec.suspend,SCHEDULE:.spec.schedule
-  - title: Make invoice skip a tick while a run is active
+  - title: Stop the second scheduler
     body: >-
-      Change one field of the CronJob, not the Jobs: they are recreated every
-      minute from its template.
+      Change one field of the leftover CronJob, not the Jobs: they are
+      recreated every minute from its template. Suspending keeps its
+      definition and history for whoever owns it.
     command: >-
-      kubectl patch cronjob invoice --type=merge -p '{"spec":{"concurrencyPolicy":"Forbid"}}'
-    check: forbid-overlap
+      kubectl patch cronjob invoice-legacy --type=merge -p '{"spec":{"suspend":true}}'
+    check: exclusive-export
   - title: Remove the surplus running Job
     body: >-
-      The new policy does not stop a Job that is already running. List the
-      Jobs and, if two are Running, delete the older one by name.
+      Suspending does not stop a Job that is already running. List the
+      Jobs and, if two are Running, delete the invoice-legacy one by name.
     command: kubectl get jobs -l app.kubernetes.io/name=invoice
     check: one-active-job
   - title: Confirm only invoice schedules the export
     body: >-
-      Only invoice should show SUSPEND False. Watch the next ticks: at most
-      one Job is Running at a time. Then press Validate to grade the
-      assignment.
+      Only invoice should show SUSPEND False, on its every-minute schedule.
+      Watch the next ticks: at most one Job is Running at a time. Then
+      press Validate to grade the assignment.
     command: kubectl get cronjobs -l app.kubernetes.io/name=invoice
-    check: single-scheduler
+    check: invoice-scheduled

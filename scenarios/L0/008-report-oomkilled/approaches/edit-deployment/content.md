@@ -4,7 +4,9 @@ the container that was killed under `spec.template.spec.containers`, set
 32Mi for `log-shipper`) and `resources.limits.memory` above the peak (128Mi
 and 64Mi), save, and quit. When the container has no `resources` block at
 all, which is the case when a LimitRange default filled the limit in, add
-the whole block. Saving applies the change; `rollout status` waits for the
+the whole block; a LimitRange `max` below the new limit refuses the pod at
+admission (`FailedCreate` in the events), so raise it first. Saving applies
+the change; `rollout status` waits for the
 new pod to be Ready for `minReadySeconds`.
 
 Choose it when you want to see the whole template while you change it: the

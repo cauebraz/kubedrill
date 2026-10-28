@@ -47,10 +47,13 @@ requests and limits. `describe deploy catalog` adds the condition
 
 Then count containers to size them. The variants differ here:
 
-- quota-2-cpu: 5 pods, 5 containers, budget 2 CPU and 2Gi.
-- quota-1500m-cpu: 5 pods, 5 containers, budget 1500m and 1536Mi; 500m
-  per pod admits 3 pods and refuses the other 2.
-- catalog-sidecar: 5 pods, 7 containers, budget 2 CPU and 2Gi.
+- quota-2-cpu: 5 pods, 5 containers, budget 2 CPU and 2Gi: at most 400m
+  and 409Mi per container.
+- quota-1-cpu: 5 pods, 5 containers, budget 1 CPU and 1Gi: at most 200m
+  and 204Mi per container; 250m admits 4 pods and refuses the fifth.
+- catalog-sidecar: 5 pods, 7 containers, budget 1500m and 1536Mi: at most
+  214m and 219Mi per container; 250m fits at most 6 of the 7 containers,
+  so at least one pod is refused.
 
 `kubectl -n {{ .Namespace }} get deploy -o 'custom-columns=NAME:.metadata.name,CONTAINERS:.spec.template.spec.containers[*].name'`
 lists them.
@@ -67,12 +70,20 @@ kubectl -n {{ .Namespace }} set resources deployment/catalog --requests=cpu=250m
 kubectl -n {{ .Namespace }} set resources deployment/cart --requests=cpu=250m,memory=256Mi --limits=cpu=250m,memory=256Mi
 ```
 
-At 250m and 256Mi per container, 5 containers take 1250m and 1280Mi and 7
-take 1750m and 1792Mi, under every budget of this scenario. The idle
-nginx uses about 5m and 15Mi, so smaller values pass as well.
+These values fit quota-2-cpu only: 5 containers take 1250m and 1280Mi of
+2 CPU and 2Gi. In quota-1-cpu (1 CPU and 1Gi over 5 containers) and in
+catalog-sidecar (1500m and 1536Mi over 7 containers) they cross `Hard`,
+and the last pods are refused with `exceeded quota`. There, use 100m and
+128Mi, which fit every budget of this scenario: 5 containers take 500m and
+640Mi, 7 take 700m and 896Mi. The idle nginx uses about 5m and 15Mi, so
+both sizes leave headroom.
 
-The second route is a LimitRange with `default` equal to `defaultRequest`
-for CPU and memory: admission fills both into any container that sets
+```sh
+kubectl -n {{ .Namespace }} set resources deployment/storefront deployment/catalog deployment/cart --requests=cpu=100m,memory=128Mi --limits=cpu=100m,memory=128Mi
+```
+
+The second route is a LimitRange `shop-defaults` with `default` equal to
+`defaultRequest` for CPU and memory, sized by the same division: admission fills both into any container that sets
 none, so the pods come out Guaranteed without editing the Deployments.
 The ReplicaSets retry with a growing backoff, so the pods can take a
 minute to appear; `kubectl rollout restart` creates new ReplicaSets that
@@ -90,7 +101,7 @@ kubectl -n {{ .Namespace }} describe resourcequota shop
 
 Each rollout ends with `successfully rolled out`, every pod shows
 `Guaranteed` and `Running`, and the quota shows `Used` below `Hard`, for
-example `limits.cpu 1250m 2` (measured on kind v1.37).
+example `limits.cpu 1250m 2` in quota-2-cpu (measured on kind v1.37).
 
 ## In the real world
 

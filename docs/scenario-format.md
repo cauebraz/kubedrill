@@ -83,6 +83,7 @@ root_cause = "The Deployment image tag 1.27-alpnie does not exist in docker.io/l
 | `exam` | no | Entries shaped `CKA:domain`, `CKAD:domain` or `CKS:domain` |
 | `profile` | no | A kind profile under `cluster/profiles/` when `base.yaml` is not enough |
 | `allow_privileged` | no | Default `false`. `true` lifts the sandbox rule of [setup/](#setup-and-hooksh) and needs maintainer review |
+| `restart_is_fix` | no | Default `false`. `true` counts a `kubectl rollout restart` of a fix target as a fix in the debrief verdict, for scenarios where pods read their configuration only at start (env vars, `subPath` mounts); otherwise a restart is a metadata-only change and the verdict says symptom-only |
 | `images` | no | Images the fix needs that no setup manifest or probe names with a digest, each `name:tag@sha256:<64 hex>`, for example the image the fixed Deployment runs |
 
 Notes:

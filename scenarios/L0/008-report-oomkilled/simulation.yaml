@@ -1,6 +1,6 @@
 customer:
-  name: Priya
-  role: Finance tooling developer
+  name: Lucia
+  role: Billing team developer
   company: ACME Retail
 
 mentor:
@@ -78,14 +78,14 @@ meeting:
         - say: How much memory did the service use on the old VM, and what limited it?
           reply: >-
             The VM had 2 GB and ran nothing else. Nothing limited the
-            process. Its dashboard showed it around 60 MB once the dataset was
+            process. Its dashboard showed it around 58 MB once the dataset was
             loaded, a bit more than the laptop number.
           feedback: >-
-            Now you have the reference: about 60 MB of real use with no
+            Now you have the reference: about 58 MB of real use with no
             ceiling. Any container ceiling below that number gets the
             container killed on every start.
           best: true
-          fact: On the VM nothing limited it and it held about 60 MB once the dataset was loaded.
+          fact: On the VM nothing limited it and it held about 58 MB once the dataset was loaded.
         - say: Which version of the language runtime does the image use?
           reply: >-
             The same one as on the VM. We did not rebuild the image.
@@ -125,7 +125,7 @@ diagram:
       note: keeps 1 pod from its template, resources included
     - id: limitrange
       label: LimitRange (optional)
-      note: fills in a default limit when the template sets none
+      note: fills in a default limit when the template sets none, can cap the maximum
     - id: rs
       label: ReplicaSet
       note: creates the pod

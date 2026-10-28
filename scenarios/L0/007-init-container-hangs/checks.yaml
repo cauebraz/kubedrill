@@ -29,6 +29,22 @@ checks:
     path: "{.status.readyReplicas}"
     equals: "2"
 
+  - id: migrate-completes
+    description: every api pod runs the migrate init container to completion
+    why: >-
+      The app expects the schema the migrations apply; an api pod that
+      starts without a completed migrate step answers health checks and
+      fails on the first real query.
+    depends_on: [api-ready]
+    script: |
+      init=$(kubectl -n {{ .Namespace }} get deployment api -o jsonpath='{.spec.template.spec.initContainers[*].name}')
+      echo "deployment api init containers: ${init:-none}"
+      case " $init " in *" migrate "*) ;; *) exit 1 ;; esac
+      kubectl -n {{ .Namespace }} get pods -l app.kubernetes.io/name=api -o jsonpath='{range .items[*]}{.metadata.name}{" deleting="}{.metadata.deletionTimestamp}{" migrate="}{.status.initContainerStatuses[?(@.name=="migrate")].state.terminated.reason}{"\n"}{end}' | awk '
+      NF && $2 == "deleting=" { n++; r = substr($3, 9); if (r != "Completed") { printf "%s: migrate %s, expected Completed\n", $1, (r == "" ? "not completed" : r); bad = 1 } else { printf "%s: migrate Completed\n", $1 } }
+      END { if (n == 0) { print "no running api pod"; exit 1 } exit bad }'
+    exit_code: 0
+
   - id: api-endpoints
     description: service api has at least one ready endpoint
     why: >-

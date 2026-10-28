@@ -497,7 +497,12 @@ func (f *fixture) factories() Factories {
 			if f.currErr != nil {
 				return nil, f.currErr
 			}
-			return f.curr, nil
+			c := *f.curr
+			c.Levels = append([]curriculum.Level(nil), f.curr.Levels...)
+			for i := range c.Levels {
+				c.Levels[i].Modules = append([]curriculum.Module(nil), c.Levels[i].Modules...)
+			}
+			return &c, nil
 		},
 		Lint: func(_ string, refs scenario.Refs) []error {
 			f.lintMods = refs.Modules

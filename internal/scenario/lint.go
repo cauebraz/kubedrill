@@ -57,6 +57,14 @@ type Refs struct {
 type lintRefs struct {
 	modules, concepts, exams map[string]bool
 	planned                  map[string]string
+	source                   string
+}
+
+func (lr lintRefs) file() string {
+	if lr.source == "" {
+		return "curriculum.yaml"
+	}
+	return lr.source
 }
 
 func setOf(ids []string) map[string]bool {
@@ -165,7 +173,7 @@ func LintPack(root string, refs Refs) []error {
 			out = append(out, fmt.Errorf("%s: %s", rel, e.Error()))
 		}
 	}
-	lr := lintRefs{modules: setOf(refs.Modules), exams: setOf(refs.ExamDomains), planned: refs.Planned}
+	lr := lintRefs{modules: setOf(refs.Modules), concepts: setOf(refs.Concepts), exams: setOf(refs.ExamDomains), planned: refs.Planned, source: "pack.yaml"}
 	dirs, err := scenarioDirs(root)
 	if err != nil {
 		return []error{fmt.Errorf("%s: %w", dirScenarios, err)}
@@ -190,7 +198,7 @@ func LintPack(root string, refs Refs) []error {
 	sort.Strings(ids)
 	for _, id := range ids {
 		if _, ok := seen[id]; !ok {
-			out = append(out, fmt.Errorf("pack.yaml: module %s lists scenario %q, which has no directory under %s", lr.planned[id], id, dirScenarios))
+			out = append(out, fmt.Errorf("%s: module %s lists scenario %q, which has no directory under %s", lr.file(), lr.planned[id], id, dirScenarios))
 		}
 	}
 	return out
@@ -202,7 +210,7 @@ func lintScenario(s *Scenario, real bool, lr lintRefs) error {
 		errs = append(errs, fmt.Errorf("%s: level %s requires at least two [[variant]] entries, got %d", fileMeta, s.Meta.Level, len(s.Variants)))
 	}
 	if real && len(lr.modules) > 0 && !lr.modules[s.Meta.Module] {
-		errs = append(errs, fmt.Errorf("%s: module %q is not in curriculum.yaml", fileMeta, s.Meta.Module))
+		errs = append(errs, fmt.Errorf("%s: module %q is not in %s", fileMeta, s.Meta.Module, lr.file()))
 	}
 	if real && lr.concepts != nil {
 		for _, id := range s.Meta.Concepts {
@@ -221,9 +229,13 @@ func lintScenario(s *Scenario, real bool, lr lintRefs) error {
 	if real && lr.planned != nil {
 		switch module, ok := lr.planned[s.Meta.ID]; {
 		case !ok:
-			errs = append(errs, fmt.Errorf("%s: curriculum.yaml lists no scenario %q; add id: %s to a planned scenario of module %s", fileMeta, s.Meta.ID, s.Meta.ID, s.Meta.Module))
+			where := "a planned scenario"
+			if lr.source != "" {
+				where = "the scenarios"
+			}
+			errs = append(errs, fmt.Errorf("%s: %s lists no scenario %q; add id: %s to %s of module %s", fileMeta, lr.file(), s.Meta.ID, s.Meta.ID, where, s.Meta.Module))
 		case module != s.Meta.Module:
-			errs = append(errs, fmt.Errorf("%s: scenario.module is %q but curriculum.yaml lists %s under module %s", fileMeta, s.Meta.Module, s.Meta.ID, module))
+			errs = append(errs, fmt.Errorf("%s: scenario.module is %q but %s lists %s under module %s", fileMeta, s.Meta.Module, lr.file(), s.Meta.ID, module))
 		}
 	}
 	if real {

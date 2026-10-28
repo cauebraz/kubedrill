@@ -67,8 +67,8 @@ Every scenario walkthrough uses these steps as its headings.
 ## Start an episode
 
 ```sh
-kubedrill              # the recommended scenario, after a [Y/n] prompt
-kubedrill start <id>   # a scenario you pick
+./start.sh             # the browser workspace, with the recommended assignment on Home
+kubedrill start <id>   # a scenario you pick, from a terminal
 ```
 
 `start` creates a new namespace for this episode, for example

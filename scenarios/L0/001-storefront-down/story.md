@@ -101,8 +101,9 @@ registry    repository      tag
 ```
 
 When the registry is left out, Docker Hub (`docker.io`) is used. Compare each
-part of the image in the event with the ticket's `## Environment` section:
-"the official nginx `1.27-alpine` image from Docker Hub".
+part of the image in the event with the image every other environment runs.
+The ticket does not print it; Dana's team names it when you ask: "the
+official nginx `1.27-alpine` image from Docker Hub".
 
 Last, confirm where the wrong reference lives:
 

@@ -13,35 +13,6 @@ checks:
     path: "{.status.readyReplicas}"
     gte: "1"
 
-  - id: hpa-targets-api
-    description: hpa api targets deployment api
-    why: >-
-      scaleTargetRef is the only link between an HPA and the workload it
-      resizes; pointing it anywhere else leaves api at a fixed replica count
-      under any load.
-    resource:
-      apiVersion: autoscaling/v2
-      kind: HorizontalPodAutoscaler
-      namespace: "{{ .Namespace }}"
-      name: api
-    path: "{.spec.scaleTargetRef.name}"
-    equals: api
-    spoiler: true
-
-  - id: hpa-scales-on-cpu
-    description: hpa api scales on cpu utilization
-    why: >-
-      The team sized api on CPU; an HPA that follows another resource adds
-      pods at the wrong moment, or never, while CPU saturates.
-    resource:
-      apiVersion: autoscaling/v2
-      kind: HorizontalPodAutoscaler
-      namespace: "{{ .Namespace }}"
-      name: api
-    path: "{.spec.metrics[*].resource.name}"
-    contains: cpu
-    spoiler: true
-
   - id: scaling-active
     description: hpa api has condition ScalingActive True
     why: >-
@@ -72,3 +43,19 @@ checks:
       name: api
     path: "{.status.currentMetrics[*].resource.current.averageValue}"
     not_empty: true
+
+  - id: hpa-keeps-intent
+    description: hpa api still resizes deployment api on 50% average cpu, between 1 and 4 pods
+    why: >-
+      The team sized api on CPU with a 1 to 4 pod range; an HPA that resizes
+      another workload, follows another resource or drops the range reports
+      a value and still leaves api unscaled when CPU saturates.
+    depends_on: [scaling-active]
+    resource:
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      namespace: "{{ .Namespace }}"
+      name: api
+    path: "{.spec.scaleTargetRef.kind}/{.spec.scaleTargetRef.name} min={.spec.minReplicas} max={.spec.maxReplicas} metrics={.spec.metrics[*].resource.name} target={.spec.metrics[*].resource.target.averageUtilization}"
+    matches: '^Deployment\s*/\s*api\s+min=\s*1\s+max=\s*4\s+metrics=\s*cpu\s+target=\s*50$'
+    spoiler: true

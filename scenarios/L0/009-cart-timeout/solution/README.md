@@ -69,7 +69,9 @@ Service and the EndpointSlice line then split the last two causes:
 ```sh
 kubectl -n {{ .Namespace }} get pods -l app={{ .Vars.selector_app }}{{ if .Vars.selector_tier }},tier={{ .Vars.selector_tier }}{{ end }}
 kubectl -n {{ .Namespace }} describe svc cart
-kubectl -n {{ .Namespace }} port-forward deploy/cart 8080:80
+kubectl -n {{ .Namespace }} port-forward deploy/cart 8080:80 &
+sleep 1; curl -sS localhost:8080/
+kill %1
 ```
 
 The first command runs the Service's selector against the pods by hand:
@@ -77,8 +79,9 @@ The first command runs the Service's selector against the pods by hand:
 diagnosis, two pods means the selector is fine and the port is next.
 `describe svc cart` prints `TargetPort` and the `Endpoints` with their
 port. The port-forward opens `localhost:8080` on the workstation straight
-to a cart pod, skipping the Service: `curl -sS localhost:8080/` in a second
-pane prints `<title>Welcome to nginx!</title>` in every variant, which
+to a cart pod, skipping the Service, in the background: `curl -sS
+localhost:8080/` prints `<title>Welcome to nginx!</title>` in every variant
+and `kill %1` ends the port-forward, which
 proves the pods serve and leaves the Service as the only broken layer.
 
 ## Change
@@ -94,15 +97,35 @@ kubectl -n {{ .Namespace }} patch svc cart --type=json -p '[{"op":"replace","pat
 Or `kubectl -n {{ .Namespace }} edit svc cart` and set `targetPort: 80`,
 or better `targetPort: http`, the name of the container port, so the
 number lives in one place. The selector needs no change.
-{{- else -}}
+{{- else if eq .Variant "stale-tier-selector" -}}
 Change one thing: `spec.selector` of Service `cart`, so that every key and
-value in it is a label the cart pods carry.
+value in it is a label the cart pods carry. Here `app=cart` is right and
+`tier=api` matches only the old pods; drop the `tier` key, so the selector
+keeps the stable label only.
 
 ```sh
-kubectl -n {{ .Namespace }} set selector svc cart app=cart
+kubectl -n {{ .Namespace }} patch svc cart --type=merge -p '{"spec":{"selector":{"tier":null}}}'
 ```
 
-`set selector` replaces the whole map. The same result comes from
+`kubectl -n {{ .Namespace }} set selector svc cart app=cart` replaces the
+whole map and gives the same result. The same result comes from
+`kubectl -n {{ .Namespace }} edit svc cart`, or from correcting the
+selector in `cart/service.yaml` on the release branch and applying it,
+which is the route that survives the next deploy. Relabeling the pods
+through the Deployment template works for an extra selector key but rolls
+the pods for a bug that lives in the Service.
+{{- else -}}
+Change one thing: `spec.selector` of Service `cart`, so that every key and
+value in it is a label the cart pods carry. Here the `app` value is the
+one that differs, so change that key and leave the rest of the map alone.
+
+```sh
+kubectl -n {{ .Namespace }} patch svc cart --type=merge -p '{"spec":{"selector":{"app":"cart"}}}'
+```
+
+A merge patch changes only the keys it names. `kubectl -n {{ .Namespace }}
+set selector svc cart app=cart` replaces the whole map instead and gives
+the same result here. The same result comes from
 `kubectl -n {{ .Namespace }} edit svc cart`, or from correcting the
 selector in `cart/service.yaml` on the release branch and applying it,
 which is the route that survives the next deploy. Relabeling the pods

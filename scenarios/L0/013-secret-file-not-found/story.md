@@ -2,7 +2,7 @@
 
 ## What happened
 
-Priya's team runs the billing `api`, a small program that needs a database
+Lucia's team runs the billing `api`, a small program that needs a database
 password before it can do anything. Until today the password sat in an
 environment variable. This afternoon the team moved it into a Secret, the
 way the app's README asks: the app reads the file

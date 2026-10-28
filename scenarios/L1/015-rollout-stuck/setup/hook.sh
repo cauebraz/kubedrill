@@ -2,14 +2,23 @@
 set -euo pipefail
 
 : "${TASK_NS:?TASK_NS is required}" "${KUBECONFIG:?KUBECONFIG is required}"
-: "${VAR_IMAGE:?VAR_IMAGE is required}" "${VAR_PROBE_PATH:?VAR_PROBE_PATH is required}" "${VAR_CPU:?VAR_CPU is required}"
+: "${VAR_IMAGE:?VAR_IMAGE is required}" "${VAR_PROBE_PATH:?VAR_PROBE_PATH is required}" "${VAR_CPU:?VAR_CPU is required}" "${VAR_KEEP_OLD_KEY:?VAR_KEEP_OLD_KEY is required}"
 
 kubectl -n "$TASK_NS" rollout status deployment/checkout --timeout=180s
+
+url="http://payments.$TASK_NS.svc.cluster.local"
+if [ "$VAR_KEEP_OLD_KEY" = "true" ]; then
+  config="{\"data\":{\"payments_endpoint\":\"$url\"}}"
+else
+  config="{\"data\":{\"payments_endpoint\":\"$url\",\"payments_url\":null}}"
+fi
+kubectl -n "$TASK_NS" patch configmap checkout-config --type=merge -p "$config" >/dev/null
 
 patch=$(cat <<JSON
 {"metadata":{"annotations":{"kubernetes.io/change-cause":"release 2.5.0"}},
  "spec":{"template":{"metadata":{"labels":{"app.kubernetes.io/version":"2.5.0"}},
   "spec":{"containers":[{"name":"web","image":"$VAR_IMAGE",
+   "env":[{"name":"PAYMENTS_URL","valueFrom":{"configMapKeyRef":{"name":"checkout-config","key":"payments_endpoint"}}}],
    "readinessProbe":{"httpGet":{"path":"$VAR_PROBE_PATH","port":"http"}},
    "resources":{"requests":{"cpu":"$VAR_CPU","memory":"32Mi"}}}]}}}}
 JSON

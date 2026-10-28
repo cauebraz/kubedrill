@@ -393,7 +393,11 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			http.Error(w, "missing X-Kubedrill header", http.StatusForbidden)
 			return
 		}
-		w.Header().Set("Cache-Control", "no-store")
+		if strings.HasPrefix(r.URL.Path, "/vendor/") && s.d.StaticDir == "" {
+			w.Header().Set("Cache-Control", "private, max-age=86400")
+		} else {
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		next.ServeHTTP(w, r)

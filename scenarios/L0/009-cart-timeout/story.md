@@ -2,7 +2,7 @@
 
 ## What happened
 
-Priya's team runs the cart, the part of the shop that remembers what a
+Dana's team runs the cart, the part of the shop that remembers what a
 customer wants to buy. This morning they shipped release 2.3. The release
 did not change the program; it tidied the Kubernetes manifests, the YAML
 files that describe how the cart runs. The rollout finished, the two cart
@@ -112,24 +112,30 @@ apart:
   cart` prints `TargetPort`, and the pod's own port is in
   `kubectl get pods -l app=cart -o jsonpath='{.items[0].spec.containers[0].ports}'`.
 
-Last, prove the pods serve without the Service:
+Last, prove the pods serve without the Service. `kubectl port-forward`
+opens port 8080 on the workstation straight to one cart pod; run it in the
+background and curl it from the same terminal:
 
 ```sh
-kubectl port-forward deploy/cart 8080:80
+kubectl port-forward deploy/cart 8080:80 &
+sleep 1; curl -sS localhost:8080/
+kill %1
 ```
 
-This opens port 8080 on the workstation straight to one cart pod. In a
-second pane (`Ctrl-b "` splits the tmux window), `curl -sS localhost:8080/`
-prints the nginx welcome page. The pod serves; the Service is the only
-broken layer. `Ctrl-c` ends the port-forward.
+`curl` prints the nginx welcome page. The pod serves; the Service is the
+only broken layer. `kill %1` ends the port-forward.
 
 ## The fix and why it works
 
 Change one field of the Service `cart`, the one your observation named:
 
 - Selector matched nothing: make every entry of `spec.selector` a label the
-  pods carry. `kubectl set selector svc cart app=cart` replaces the whole
-  map with `app=cart`, which both pods carry.
+  pods carry. Change the entry that differs and nothing else: a value off
+  by one character takes
+  `kubectl patch svc cart --type=merge -p '{"spec":{"selector":{"app":"cart"}}}'`,
+  and a key the new pods no longer carry is removed with `null` in place
+  of the value. `kubectl set selector svc cart app=cart` replaces the
+  whole map with `app=cart`, which both pods carry.
 - Right pods, wrong port: set `spec.ports[0].targetPort` to the port the
   container listens on, `80`, or to the port's name `http`:
   `kubectl patch svc cart --type=json -p '[{"op":"replace","path":"/spec/ports/0/targetPort","value":80}]'`.

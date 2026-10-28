@@ -26,13 +26,19 @@ container runs but answers the probe with an error, `FailedScheduling` with
 `Insufficient cpu` means no node can fit the request, and `Failed to pull
 image` means the image reference does not exist. The rollout waits for new
 pods to become available before it replaces more old ones, so it stays stuck
-until the template changes again.
+until the template changes again. A pod in `CreateContainerConfigError`
+names a ConfigMap or key its template reads that is not there: the template
+it runs is fine on its own, but the settings around it changed with the
+deploy.
 
 ## Hint 4: what to change
 
 Mitigate first: put the Deployment back on the last revision that worked
 (the `rollout` subcommand has a verb for it) and wait for
-`rollout status` to report success. Or fix forward: change only the one
-field of container `web` in Deployment `checkout` that differs between
-revision 1 and revision 2 and is not the version label. Deleting the stuck
-pods does not help; the ReplicaSet recreates them from the same template.
+`rollout status` to report success. If the rollback stalls too, read the
+Events of its new pod: revision 1 depends on a ConfigMap key the 2.5.0
+deploy may have removed from `checkout-config`. Then fix forward instead:
+change only the one field of container `web` in Deployment `checkout` that
+differs between revision 1 and revision 2 and is neither the version label
+nor the ConfigMap key. Deleting the stuck pods does not help; the
+ReplicaSet recreates them from the same template.

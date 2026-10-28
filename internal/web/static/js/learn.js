@@ -24,7 +24,7 @@ export function diagramSVG(d) {
 
   const layer = Object.fromEntries(ids.map((id) => [id, 0]));
   for (let pass = 0; pass < ids.length; pass++) {
-    for (const e of edges) { if (layer[e.to] < layer[e.from] + 1) { layer[e.to] = layer[e.from] + 1; } }
+    for (const e of edges) { if (layer[e.to] < layer[e.from] + 1) { layer[e.to] = Math.min(layer[e.from] + 1, ids.length - 1); } }
   }
   for (let pass = 0; pass < ids.length; pass++) {
     for (const id of ids) {
@@ -59,7 +59,7 @@ export function diagramSVG(d) {
     return { e, pts };
   });
   for (let li = 0; li < layers.length; li++) { layers[li] = layers[li] || []; }
-  for (const l of layers) { l.sort((x, y) => (x.column ?? 1e3) - (y.column ?? 1e3) || x.order - y.order); }
+  for (const l of layers) { l.sort((x, y) => (x.column ?? 0) - (y.column ?? 0) || x.order - y.order); }
 
   const neighbors = {};
   for (const c of chains) {
@@ -114,7 +114,8 @@ export function diagramSVG(d) {
     ins.forEach((it) => { inPorts[it.c.e.from + ">" + it.c.e.to] = n[it.key]; });
   }
 
-  const root = svg("svg", { viewBox: "0 0 " + width + " " + height, width: "100%", style: "max-width:" + width + "px; min-width:" + Math.min(width, 560) + "px; color: var(--fg-3)", role: "img", "aria-label": "Object diagram: " + d.nodes.map((n) => n.label).join(", ") },
+  const wide = Math.max(...layers.map((l) => l.filter((it) => !it.dummy).length)) > 4;
+  const root = svg("svg", { viewBox: "0 0 " + width + " " + height, width: "100%", style: "max-width:" + width + "px; min-width:" + (wide ? width : Math.min(width, 560)) + "px; color: var(--fg-3)", role: "img", "aria-label": "Object diagram: " + d.nodes.map((n) => n.label).join(", ") },
     svg("defs", null, svg("marker", { id: "arrow", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" }, svg("path", { d: "M0 0 L10 5 L0 10 z", fill: "currentColor" }))));
   const labels = [];
   for (const c of chains) {

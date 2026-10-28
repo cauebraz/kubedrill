@@ -324,6 +324,13 @@ func episodeTelemetry(stderr io.Writer, dir, auditPath string, ep journal.Episod
 	if _, err := telemetry.RotateShellLog(shellPath, shellLogRotateSize); err != nil {
 		fmt.Fprintf(stderr, "warning: %v\n", err)
 	}
+	if rd != nil && rd.Scenario != nil && rd.Scenario.Meta.RestartIsFix {
+		for i := range events {
+			if events[i].Restart {
+				events[i].MetadataOnly = false
+			}
+		}
+	}
 	t := telemetry.Summarize(events, available, shell, fixTargets)
 	t.Recordings = recordings(dir, ns, since, until)
 	return t

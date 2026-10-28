@@ -2,7 +2,7 @@
 
 ## Ticket
 
-> **From:** Priya (media team)\
+> **From:** Noor (media team)\
 > **Priority:** high
 >
 > We moved the `uploads` service to the new cluster yesterday with the

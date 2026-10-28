@@ -5,8 +5,9 @@ blocks until the new pod has been Ready for `minReadySeconds`, so the second
 line is the verification, not decoration. Name the killed container with
 `-c`: `report` when its own limit was too low, `log-shipper` when the helper
 next to it was the one being killed. When the limit came from a LimitRange
-default, this route still works, because an explicit value in the template
-wins over the default.
+default, an explicit value in the template wins over the default, but not
+over the LimitRange `max`: a limit above it is refused at admission
+(`FailedCreate` in the events), so raise `max` first.
 
 Choose it during an incident: one command, one field, and `kubectl rollout
 undo` reverts it. The numbers come from the observation, not from a guess:

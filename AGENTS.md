@@ -40,8 +40,8 @@ internal/concepts/        loads and validates docs/concepts/*.md (title, intro, 
 internal/pack/            scenario packs from other repositories: pack.yaml, fetch (directory copy or git clone pinned to a commit) into <journal>/packs, lint before enable, list and remove; the catalog and the ladder merge them
 internal/workstation/     the workstation container: image tag, linux binary (host go, or the golang image of workstation/builder.env) and kubeconfig-internal (both in the cluster state dir, mounted read-only), docker run, exam mode, replay, node shell (docker exec on the host, kubectl debug node in the kubedrill-debug namespace inside the workstation)
 internal/cli/             cobra commands, Factories/Options, session assembly and command handlers; web.go is the Backend of the browser workspace
-internal/web/             kubedrill web: HTTP server on 127.0.0.1 (token cookie, loopback Host, X-Kubedrill header), JSON API with snapshots in testdata/, NDJSON launch progress, stage progress and the welcome flag (web-progress.json in the journal), websocket terminal in a host pseudo-terminal (stdlib, darwin and linux); static/ is the page (index.html, app.js, js/ ES modules, app.css design tokens, favicon.svg the mark, vendored xterm.js; static/README.md is the design system); webtest/ is the in-memory Backend, devserver/ serves it, browser_test.go (tag browser) drives headless Chrome
-internal/render/          terminal text: width resolution, wrap and truncate, markdown, styles, check result lines, Printer, progress line
+internal/web/             kubedrill web: HTTP server on 127.0.0.1 (token cookie, loopback Host, X-Kubedrill header), JSON API with snapshots in testdata/, NDJSON launch progress, stage progress and the welcome flag (web-progress.json in the journal), websocket terminal in a host pseudo-terminal (stdlib, darwin and linux); static/ is the page (index.html, app.js, js/ ES modules, app.css design tokens, favicon.svg the mark, js/welcome.js the welcome flow, js/mermaid.js the diagram renderer, vendor/ with xterm.js and mermaid (MIT); static/README.md is the design system); webtest/ is the in-memory Backend, devserver/ serves it, browser_test.go (tag browser) drives headless Chrome
+internal/render/          terminal text: width resolution, wrap and truncate, markdown (mermaid flowcharts drawn as text chains), styles, check result lines, Printer, progress line
 scenarios/<level>/<id>/   one directory per scenario, id = NNN-kebab-slug
 cluster/profiles/         kind configurations as Go templates over the audit paths (base.yaml is the default)
 cluster/addons/<name>/    addon.yaml plus vendored upstream manifests: metrics-server (base), gateway, kwok; README.md lists sources and local changes
@@ -51,11 +51,13 @@ curriculum.yaml           the ladder
 docs/                     learner and contributor documentation
 docs/concepts/            concept pages, one file per id, referenced by scenario.toml concepts
 private/                  git-ignored local notes (research, reviews); never linked from tracked files, never pushed
-LICENSE, NOTICE           Apache-2.0 for the whole repository; NOTICE names the vendored manifests and libraries
+LICENSE, NOTICE           Apache-2.0 for code and scenarios; the vendored browser libraries stay MIT; NOTICE names the vendored manifests and libraries
+start.sh, justfile        the one command for learners (builds, then kubedrill web) and the recipes (check, smoke, ui-test, web-dev, vuln)
+scenarios/_template/      the scaffold kubedrill new copies
 CODE_OF_CONDUCT.md        Contributor Covenant 2.1
 SECURITY.md               private vulnerability reporting, scope, what runs on the host
 CHANGELOG.md              Keep a Changelog, written by hand from the Conventional Commits
-.github/                  ci.yml (check, smoke, DCO sign-off on pull requests), release.yml (tagged builds with checksums), workstation.yml, dependabot.yml, ISSUE_TEMPLATE/, PULL_REQUEST_TEMPLATE.md, CODEOWNERS (maintainer review for shared code and scenarios; binds with a ruleset requiring code-owner review, see CONTRIBUTING.md)
+.github/                  ci.yml (check, smoke, DCO sign-off on pull requests), release.yml (tagged builds with checksums), workstation.yml, dependabot.yml, ISSUE_TEMPLATE/, PULL_REQUEST_TEMPLATE.md, CODEOWNERS (maintainer review for shared code and scenarios; enforced only once the repository ruleset of CONTRIBUTING.md is set)
 ```
 
 ## Design rules

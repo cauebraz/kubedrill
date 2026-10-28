@@ -2,10 +2,10 @@
 
 ## What happened
 
-Priya from ops has to tell the security team which container images run in
+Marco from ops has to tell the security team which container images run in
 the `shop` namespace. A container image is the packaged program a container
 runs, named by a string such as `nginx:1.27-alpine`. Security compares those
-strings with a list of approved ones, so Priya wants them written down in
+strings with a list of approved ones, so Marco wants them written down in
 the cluster itself, in a small object called a ConfigMap, where an audit job
 can read them.
 

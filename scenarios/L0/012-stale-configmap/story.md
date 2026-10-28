@@ -2,13 +2,13 @@
 
 ## What happened
 
-Priya's team runs the marketing site. One part of it is the promo banner, a
+Eva's team runs the marketing site. One part of it is the promo banner, a
 line of text served by nginx, a web server, from a Kubernetes cluster. The
 text is not baked into the program: it lives in a ConfigMap, a small
 Kubernetes object that holds configuration values, so the team can change
 it without rebuilding anything.
 
-This morning Priya changed the banner from `Summer sale 2025` to `Winter
+This morning Eva changed the banner from `Summer sale 2025` to `Winter
 sale 2026`. She did it the way the runbook says, and when she asked the
 cluster for the ConfigMap afterwards, the cluster printed the new text. She
 took that as success. Twenty minutes later the page still showed the summer
@@ -25,7 +25,7 @@ Kubernetes keeps the cluster looking like the objects you gave it. The
 objects in this ticket, from the top down:
 
 - ConfigMap `{{ .Vars.edited }}`: a dictionary of keys and values. The key
-  `banner` holds the text of the banner. This is the object Priya edited.
+  `banner` holds the text of the banner. This is the object Eva edited.
 - Deployment `banner`: the wish "keep 2 copies of this pod running". Its
   `spec.template` is the blueprint of every copy, and the blueprint says how
   the container gets the banner text: as an environment variable, or as a
@@ -77,7 +77,7 @@ kubectl get pods
 ```
 
 Read the ConfigMap names: is there one, or more than one that could hold
-the banner? Read the AGE of the pods: they are older than Priya's edit. A
+the banner? Read the AGE of the pods: they are older than Eva's edit. A
 pod that started before the edit could only have read the old text at its
 start.
 
@@ -87,7 +87,7 @@ Next, read what the API holds in every ConfigMap:
 kubectl get configmaps -o yaml
 ```
 
-Find the key `banner` in each one. The ConfigMap Priya edited says `Winter
+Find the key `banner` in each one. The ConfigMap Eva edited says `Winter
 sale 2026`. If another ConfigMap exists and still says `Summer sale 2025`,
 note its name.
 
@@ -119,7 +119,7 @@ there, and it names this episode's cause:
   frozen at container start.
 - `volumeMounts` with `subPath: index.html`: the subPath route. The file is
   frozen at pod creation.
-- `volumes` with `configMap.name` different from the ConfigMap Priya
+- `volumes` with `configMap.name` different from the ConfigMap Eva
   edited: the wrong-name route. The pods read an object nobody changed.
 
 Whatever you find, the shape is the same: the API has the new value, the

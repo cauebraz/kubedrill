@@ -2,7 +2,7 @@
 
 ## Ticket
 
-> **From:** Priya (billing team)\
+> **From:** Lucia (billing team)\
 > **Priority:** high
 >
 > Last night's invoice export left `invoices.csv` with rows from two runs
@@ -33,9 +33,9 @@ anything.
 
 ## Done when
 
-- cronjob invoice skips a run while the previous one is active (concurrencyPolicy Forbid)
-- at most one invoice Job is active
-- cronjob invoice is the only unsuspended CronJob that runs the invoice export
+- cronjob invoice still runs the export every minute
+- invoice exports never run at the same time, even when one run is slow
+- at most one invoice export Job is active
 
 ## Constraints
 

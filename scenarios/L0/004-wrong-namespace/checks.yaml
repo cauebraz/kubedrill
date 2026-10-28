@@ -1,10 +1,40 @@
 checks:
+  - id: page-served
+    description: service catalog serves the ACME Catalog 3.2.0 page
+    why: >-
+      This in-cluster request through the Service is what the storefront
+      does; while it fails the catalog panel stays empty, and the body
+      proves the catalog build is the one mounted.
+    critical: true
+    probe:
+      image: curlimages/curl:8.14.1@sha256:9a1ed35addb45476afa911696297f8e115993df459278ed036182dd2cd22b67b
+      command: ["curl", "-fsS", "-m", "5", "http://catalog.{{ .Namespace }}.svc/"]
+      timeout: 30s
+    contains: "ACME Catalog 3.2.0"
+
+  - id: service-endpoints
+    description: service catalog has at least one ready endpoint
+    why: >-
+      A Service is only a selector; EndpointSlices hold the pod IPs that are
+      Ready and match it. With no ready endpoint kube-proxy rejects every
+      connection to http://catalog/ (connection refused) and the storefront's
+      catalog panel stays empty.
+    depends_on: [page-served]
+    resource:
+      apiVersion: discovery.k8s.io/v1
+      kind: EndpointSlice
+      namespace: "{{ .Namespace }}"
+      selector: kubernetes.io/service-name=catalog
+    path: "{.items[*].endpoints[?(@.conditions.ready==true)].addresses[*]}"
+    not_empty: true
+
   - id: deploy-exists
     description: deployment catalog exists
     why: >-
       The storefront, the dashboards and the on-call runbook all look for a
-      Deployment named catalog in this namespace; while it is missing nothing
-      else in this list can be graded.
+      Deployment named catalog in this namespace; a catalog that serves
+      under any other name is invisible to all of them.
+    depends_on: [page-served]
     critical: true
     resource:
       apiVersion: apps/v1
@@ -29,47 +59,16 @@ checks:
     path: "{.status.readyReplicas}"
     equals: "2"
 
-  - id: service-endpoints
-    description: service catalog has at least one ready endpoint
-    why: >-
-      A Service is only a selector; EndpointSlices hold the pod IPs that are
-      Ready and match it. With no ready endpoint kube-proxy rejects every
-      connection to http://catalog/ (connection refused) and the storefront's
-      catalog panel stays empty.
-    depends_on: [ready-replicas]
-    resource:
-      apiVersion: discovery.k8s.io/v1
-      kind: EndpointSlice
-      namespace: "{{ .Namespace }}"
-      selector: kubernetes.io/service-name=catalog
-    path: "{.items[*].endpoints[?(@.conditions.ready==true)].addresses[*]}"
-    not_empty: true
-
-  - id: page-served
-    description: service catalog serves the ACME Catalog 3.2.0 page
-    why: >-
-      A ready endpoint proves a pod matched and passed its probe, not that a
-      request through the Service reaches the port nginx listens on; this
-      in-cluster request is what the storefront does, and the body proves the
-      catalog build is the one mounted.
-    depends_on: [service-endpoints]
-    probe:
-      image: curlimages/curl:8.14.1@sha256:9a1ed35addb45476afa911696297f8e115993df459278ed036182dd2cd22b67b
-      command: ["curl", "-fsS", "-m", "5", "http://catalog.{{ .Namespace }}.svc/"]
-      timeout: 30s
-    contains: "ACME Catalog 3.2.0"
-
   - id: no-stray-deployment
     description: no deployment other than catalog and storefront remains in the namespace
     why: >-
       A Deployment left behind keeps its pods running and the next person
       reading the namespace cannot tell which catalog is real; the shop
       namespace owns exactly two Deployments, catalog and storefront.
-    depends_on: [deploy-exists]
-    resource:
-      apiVersion: apps/v1
-      kind: Deployment
-      namespace: "{{ .Namespace }}"
-      selector: app.kubernetes.io/name
-    path: "{.items[*].metadata.name}"
-    matches: "^(catalog|storefront)( (catalog|storefront))*$"
+    depends_on: [page-served]
+    script: >-
+      names=$(kubectl -n {{ .Namespace }} get deployments
+      -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | sort | tr '\n' ' ');
+      echo "deployments: $names";
+      [ "$names" = "catalog storefront " ]
+    exit_code: 0

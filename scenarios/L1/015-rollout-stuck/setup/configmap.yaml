@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: checkout-config
+  namespace: {{ .Namespace }}
+  labels:
+    app.kubernetes.io/name: checkout
+    app.kubernetes.io/part-of: shop
+data:
+  payments_url: http://payments.{{ .Namespace }}.svc.cluster.local

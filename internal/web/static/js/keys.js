@@ -49,6 +49,7 @@ document.addEventListener("keydown", (e) => {
   const k = chord(e);
   const modified = k.startsWith("mod+");
   if (!modified && isTyping(e.target)) { return; }
+  if (k === "Enter" && e.target.closest && e.target.closest("a, button, summary, select, [role=tab], [role=button], [role=radio]")) { return; }
   if (k === "?" && !modified) {
     e.preventDefault();
     showHelp();

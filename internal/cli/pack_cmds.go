@@ -45,7 +45,25 @@ func (a *app) packAddCommand() *cobra.Command {
 			for _, s := range cat.All() {
 				existing = append(existing, s.Meta.ID)
 			}
-			st, err := pack.Fetch(cmd.Context(), j.Dir(), args[0], pack.FetchOptions{Ref: ref, AllowPrivileged: allowPrivileged, ExistingIDs: existing})
+			opts := pack.FetchOptions{Ref: ref, AllowPrivileged: allowPrivileged}
+			c, err := a.loadCurriculum()
+			if err != nil {
+				return err
+			}
+			var planned map[string]string
+			opts.ModuleIDs, opts.ExamDomains, planned = curriculumRefs(c)
+			for id := range planned {
+				existing = append(existing, id)
+			}
+			opts.ExistingIDs = existing
+			root, err := a.repoRoot()
+			if err != nil {
+				return err
+			}
+			if lib, err := a.f.Concepts(root); err == nil {
+				opts.Concepts = lib.IDs()
+			}
+			st, err := pack.Fetch(cmd.Context(), j.Dir(), args[0], opts)
 			if err != nil {
 				return err
 			}

@@ -1,6 +1,6 @@
 customer:
-  name: Priya
-  role: Cart team lead
+  name: Dana
+  role: Storefront team lead, owns the cart
   company: ACME Retail
 
 mentor:
@@ -243,10 +243,11 @@ guide:
     command: kubectl get pods -l app=carts
   - title: Fix the selector
     body: >-
-      Change one thing: the selector of Service cart, to a label both pods
-      carry. set selector replaces the whole map, so nothing stale is left
-      behind. The pods do not restart; they were never wrong.
-    command: kubectl set selector svc cart app=cart
+      Change one thing: the app value in the selector of Service cart, to
+      the value both pods carry. A merge patch changes only the key it
+      names and leaves the rest of the selector as it is. The pods do not
+      restart; they were never wrong.
+    command: kubectl patch svc cart --type=merge -p '{"spec":{"selector":{"app":"cart"}}}'
     check: cart-endpoints
   - title: Confirm the EndpointSlice
     body: >-

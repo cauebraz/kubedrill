@@ -243,7 +243,7 @@ func (r *Runner) runCheck(ctx context.Context, rd *scenario.Rendered, c scenario
 		setError(res, "exists applies to a resource source only")
 		return
 	case c.Probe != nil:
-		pr, err := r.runProbe(ctx, rd.Namespace, *c.Probe)
+		pr, err := r.runProbe(ctx, rd.Namespace, *c.Probe, c.ExitCode == nil || *c.ExitCode == 0)
 		if err != nil {
 			setError(res, fmt.Sprintf("probe %s: %v", c.Probe.Image, err))
 			return
@@ -275,9 +275,9 @@ func (r *Runner) runCheck(ctx context.Context, rd *scenario.Rendered, c scenario
 // endpoint became ready just before the check can still refuse connections
 // until kube-proxy syncs, and a second run a few seconds later tells that
 // apart from a Service that is broken.
-func (r *Runner) runProbe(ctx context.Context, ns string, p scenario.Probe) (kube.ProbeResult, error) {
+func (r *Runner) runProbe(ctx context.Context, ns string, p scenario.Probe, wantSuccess bool) (kube.ProbeResult, error) {
 	pr, err := r.k.RunProbe(ctx, ns, p)
-	if err != nil || pr.ExitCode == 0 || r.settle <= 0 {
+	if err != nil || pr.ExitCode == 0 || !wantSuccess || r.settle <= 0 {
 		return pr, err
 	}
 	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < 2*r.settle {

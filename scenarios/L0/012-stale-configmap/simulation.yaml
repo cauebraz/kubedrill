@@ -1,6 +1,6 @@
 customer:
-  name: Priya
-  role: Marketing site team lead
+  name: Eva
+  role: Marketing team lead, owns the marketing site
   company: ACME Retail
 
 mentor:
@@ -197,45 +197,44 @@ guide:
   - title: List the pods
     body: >-
       The workstation shell already points at the episode namespace. Both
-      pods are Running and 1/1 Ready, and their AGE is older than the edit,
-      so they could only have read the old text when they started.
+      pods are Running and 1/1 Ready, and nothing restarted, so the pods
+      themselves are healthy. The question is what text they hold.
     command: kubectl get pods
+  - title: List the ConfigMaps
+    body: >-
+      Two names next to each other: banner-config and banner-config-v2. A
+      second object with almost the same name is the first thing to check
+      when an edit seems to vanish.
+    command: kubectl get configmaps
   - title: Read what the API holds
     body: >-
-      Read the names of the ConfigMaps and find the key banner in each one.
-      The one the team edited says Winter sale 2026. This is the value the
-      ticket trusted.
+      Find the key banner in each ConfigMap. Only banner-config-v2, the one
+      the runbook names and the team edited, says Winter sale 2026;
+      banner-config still says Summer sale 2025.
     command: kubectl get configmaps -o yaml
-  - title: Read what one container holds
-    body: >-
-      deploy/banner picks one pod of the Deployment, so no pod name is
-      needed. The line BANNER_TEXT=Summer sale 2025 means the text arrived
-      as an env var, and the container still holds the value it was given
-      at start.
-    command: kubectl exec deploy/banner -- env
   - title: Read the file nginx serves
     body: >-
-      The page is this file. Summer sale 2025 here means the page itself is
-      stale, whichever route brought the text in.
+      deploy/banner picks one pod of the Deployment, so no pod name is
+      needed. The page is this file, and it says Summer sale 2025: the
+      container holds the old text.
     command: kubectl exec deploy/banner -- cat /usr/share/nginx/html/index.html
   - title: Read the route in the pod template
     body: >-
-      Under spec.template.spec, find how the container gets the value: env
-      with configMapKeyRef (read once at start), a volumeMounts entry with
-      subPath (never refreshed), or a volume naming a different ConfigMap
-      than the edited one.
+      Under spec.template.spec.volumes, the volume banner reads configMap
+      name banner-config. The mount is a whole volume without subPath, so
+      the kubelet keeps the file in sync with that ConfigMap; it is in sync,
+      with the object nobody edited.
     command: kubectl get deployment banner -o yaml
-  - title: Replace the pods
+  - title: Point the volume at the edited ConfigMap
     body: >-
-      In this run the text comes through an env var, so the running
-      containers cannot pick it up. A rollout restart stamps the pod
-      template, and the Deployment replaces the pods with ones that read
-      the ConfigMap now, after the edit.
-    command: kubectl rollout restart deployment/banner
+      Change one thing: the ConfigMap the volume banner names, to the one
+      the team edits. The patch merges into the volume by its name and keeps
+      its items, and the Deployment rolls out new pods that mount it.
+    command: kubectl patch deployment banner -p '{"spec":{"template":{"spec":{"volumes":[{"name":"banner","configMap":{"name":"banner-config-v2"}}]}}}}'
   - title: Watch the rollout finish
     body: >-
       rollout status waits until the new pods are Ready and the old ones are
-      gone. Two fresh pods, both reading the new value, is what "on every
+      gone. Two fresh pods, both mounting banner-config-v2, is what "on every
       reload" needs.
     command: kubectl rollout status deployment/banner
     check: ready-replicas

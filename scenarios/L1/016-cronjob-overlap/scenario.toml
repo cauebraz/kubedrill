@@ -11,6 +11,11 @@ concepts = ["troubleshooting-loop", "labels-and-selectors", "what-changed"]
 fix_targets = ["batch/cronjobs/invoice", "batch/cronjobs/invoice-legacy"]
 
 [[variant]]
+name = "legacy-twin"
+vars = { policy = "Forbid", batches = "8", legacy_suspend = "false" }
+root_cause = "CronJob invoice-legacy, left over from the old setup, is not suspended and runs the same export on the same schedule; the Forbid of CronJob invoice only sees its own Jobs, so two Jobs write the file at the same minute."
+
+[[variant]]
 name = "allow-overlap"
 vars = { policy = "Allow", batches = "18", legacy_suspend = "true" }
 root_cause = "CronJob invoice has concurrencyPolicy Allow and its export runs about 90 s on a 1-minute schedule, so the controller starts a second Job while the first still writes the file."
@@ -19,8 +24,3 @@ root_cause = "CronJob invoice has concurrencyPolicy Allow and its export runs ab
 name = "replace-kills-run"
 vars = { policy = "Replace", batches = "18", legacy_suspend = "true" }
 root_cause = "CronJob invoice has concurrencyPolicy Replace, so each schedule deletes the running Job mid-export and starts a new one, leaving the file half written; Forbid would skip the run instead."
-
-[[variant]]
-name = "legacy-twin"
-vars = { policy = "Allow", batches = "8", legacy_suspend = "false" }
-root_cause = "CronJob invoice-legacy, left over from the old setup, is not suspended and runs the same export on the same schedule, so two Jobs write the file at the same minute."

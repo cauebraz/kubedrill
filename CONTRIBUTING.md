@@ -21,13 +21,13 @@ the path from idea to pull request. Every file and field is described in
   objects in the namespace. No external accounts, no cloud credentials, no
   internet beyond image pulls.
 
-## Add a scenario in 8 steps
+## Add a scenario in 10 steps
 
 1. **Scaffold.** Pick the module in `curriculum.yaml` and the next free id
    in its level, then run:
 
    ```sh
-   just new-scenario L1 011 rollout-stuck    # or: ./start.sh new L1 011-rollout-stuck
+   just new-scenario L1 021 my-slug    # or: ./start.sh new L1 021-my-slug
    ```
 
 2. **`scenario.toml`.** Fill the metadata, `concepts`, `fix_targets` and one
@@ -119,7 +119,17 @@ What runs in CI:
   change the workstation paths, on push to main and weekly. `just check-ci`
   does not run it.
 - Dependabot (`.github/dependabot.yml`) opens weekly pull requests for Go
-  modules, GitHub Actions and the workstation Dockerfile.
+  modules, GitHub Actions and the workstation Dockerfile. It cannot bump
+  these pins; check them by hand when the related version moves:
+  - `workstation/builder.env` (`GO_BUILD_IMAGE`, with `go.mod`),
+    `workstation/versions.env` and `checksums.txt`;
+  - the kind version of `helm/kind-action` in `ci.yml`, which must match
+    `sigs.k8s.io/kind` in `go.mod`, and `govulncheck@` in `ci.yml` and the
+    justfile;
+  - `kindest/node` in `cluster/profiles/base.yaml` and the addon manifests
+    (`cluster/addons/README.md` has the bump steps);
+  - the vendored browser libraries (`internal/web/static/vendor/README.md`
+    has the bump steps) and the scenario images pinned by digest.
 
 ## Scenario scripts run on your machine
 
@@ -148,7 +158,7 @@ id, title, intro and the four sections. The reviewer also checks:
   mechanism with one Mermaid `flowchart` diagram (the rules in
   [docs/scenario-format.md](docs/scenario-format.md#storymd)), 3 to 6
   commands, 4 to 8 failures, 2 to 4 links.
-- Plain ASCII (`grep -nP '[^\x00-\x7F]'` prints nothing), en-US.
+- Plain ASCII (`LC_ALL=C grep -n '[^[:print:][:space:]]' <files>` prints nothing; macOS grep has no `-P`), en-US.
 - Every number, field, flag and default is checked against the
   kubernetes.io page for v1.37 cited in `Go deeper`. A claim from another
   source cites it; a claim you could not check is left out.
@@ -198,7 +208,8 @@ the sign-off on every commit of a pull request. There is no CLA.
 `.github/CODEOWNERS` names the maintainer for `scenarios/**`,
 `cluster/addons/**`, `workstation/**`, `.github/**` and `internal/faults/**`,
 and `*` for the rest. GitHub enforces it only through repository settings a
-maintainer sets by hand:
+maintainer sets by hand; until they are set, code-owner review and the
+DCO check are advisory:
 
 - a ruleset on `main` with "Require a pull request before merging" and
   "Require review from Code Owners";

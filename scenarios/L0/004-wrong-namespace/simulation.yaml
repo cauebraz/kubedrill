@@ -1,5 +1,5 @@
 customer:
-  name: Priya
+  name: Ravi
   role: Catalog team lead
   company: ACME Retail
 
@@ -216,7 +216,7 @@ quiz:
           immediate refusal.
 
 guide:
-  - title: Reproduce what Priya saw
+  - title: Reproduce what Ravi saw
     body: >-
       The workstation shell already points at the episode namespace. Run the
       same request the storefront makes, from inside the storefront pod. Read

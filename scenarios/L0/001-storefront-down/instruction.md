@@ -27,15 +27,15 @@ wrote about it. Read the Events before changing anything.
 - Resources: Deployment `storefront` (3 replicas, container `web`), Service
   `storefront` (port 80), ConfigMap `storefront-html` (the static build)
 - You have cluster-admin on the local kind cluster
-- Every other environment runs the storefront on the official nginx
-  `1.27-alpine` image from Docker Hub, serving the files of
-  `storefront-html`
+- Every other environment runs the same storefront image and serves the
+  files of `storefront-html`; that image is the reference for this one, and
+  the storefront team can name it
 
 ## Done when
 
 - deployment storefront exists
 - deployment storefront has 3 ready replicas
-- deployment storefront runs the nginx:1.27-alpine image
+- deployment storefront runs the image every other environment runs
 - service storefront has at least one ready endpoint
 - service storefront serves the ACME Storefront 2.14.0 page
 

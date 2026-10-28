@@ -2,8 +2,9 @@ This route applies only when the limit the pod shows is one the Deployment
 never wrote: `kubectl -n {{ .Namespace }} get deployment report -o
 jsonpath='{.spec.template.spec.containers[*].resources}'` prints `{}` and
 `kubectl -n {{ .Namespace }} get limitrange` lists `namespace-defaults`.
-The patch raises the namespace's `default` (limit) and `defaultRequest`
-for containers. A LimitRange is applied at admission, so the running pod
+The patch raises the namespace's `max`, `default` (limit) and
+`defaultRequest` for containers; `max` has to move too, or it keeps
+capping every container at 32Mi. A LimitRange is applied at admission, so the running pod
 keeps its 32Mi until it is replaced; `rollout restart` creates a new pod,
 which is admitted with the new defaults.
 

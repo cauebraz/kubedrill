@@ -35,8 +35,8 @@ document.getElementById("theme-toggle").addEventListener("click", () => {
 });
 
 document.addEventListener("click", (e) => {
-  const a = e.target.closest && e.target.closest(".prose a[href^='http']");
-  if (!a || e.defaultPrevented || e.button !== 0) { return; }
+  const a = e.target.closest && e.target.closest(".prose a[href^='http'], .ticket a[href^='http'], .mentor-msg a[href^='http'], .gstep .body a[href^='http'], .side-body a[href^='http']");
+  if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) { return; }
   e.preventDefault();
   window.open(a.href, "_blank", "noopener,noreferrer");
 });
@@ -86,7 +86,8 @@ function route() {
   const hash = location.hash.replace(/^#/, "").split("?")[0] || "/";
   const parts = hash.split("/").filter(Boolean);
   if (!meta.onboarded && parts[0] !== "welcome") {
-    location.hash = "#/welcome";
+    const next = location.hash && location.hash !== "#/" ? "?next=" + encodeURIComponent(location.hash) : "";
+    location.replace("#/welcome" + next);
     return;
   }
   document.body.classList.toggle("onboarding", parts[0] === "welcome");
@@ -95,7 +96,11 @@ function route() {
   switch (parts[0]) {
     case "welcome":
       navLinks("");
-      return showWelcome(app, ctx, () => { meta.onboarded = true; location.hash = "#/"; });
+      return showWelcome(app, ctx, () => {
+        meta.onboarded = true;
+        const next = new URLSearchParams(location.hash.split("?")[1] || "").get("next");
+        location.replace(next && next.startsWith("#/") ? next : "#/");
+      });
     case "a":
       navLinks("catalog");
       if (parts[1]) { return showAssignment(app, ctx, decodeURIComponent(parts[1]), parts[2], parts[3] && decodeURIComponent(parts[3])); }

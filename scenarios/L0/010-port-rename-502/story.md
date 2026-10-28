@@ -2,7 +2,7 @@
 
 ## What happened
 
-Priya's team runs the docs portal: a small website served by nginx, a web
+Alex's team runs the docs portal: a small website served by nginx, a web
 server, under the name `web`. Customers never talk to `web` directly. They
 reach the `edge`, another nginx that the platform team runs as a front door
 for several teams; the edge forwards each request to `web` and returns the

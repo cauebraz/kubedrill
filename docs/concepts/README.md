@@ -32,7 +32,7 @@ central first.
   scenarios that list the page and the summary (the intro paragraph), so a
   learner can find the one that names a symptom.
 
-When to read them is in `docs/study-flow.md`, step 0: before the first
+When to read them is in `docs/study-flow.md` (Start an episode): before the first
 `kubectl` only if the vocabulary is new, otherwise after `kubedrill check`
 passes. `troubleshooting-loop` is the exception: it describes the method
 every walkthrough follows (`## Symptom`, `## Candidate causes`, `##

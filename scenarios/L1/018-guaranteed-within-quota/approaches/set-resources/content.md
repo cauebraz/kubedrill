@@ -1,7 +1,9 @@
 `kubectl set resources` writes `resources` into every container of the
 Deployment's pod template, sidecars included, unless `-c` names one. Each
 Deployment rolls out a new ReplicaSet whose pods declare their sizes, so
-the quota can count them and admits them at once.
+the quota can count them and admits them at once. 100m and 128Mi fit
+every budget of this ticket; divide `Hard` by the container count before
+picking larger values.
 
 Choose it when each workload should own its sizing: the values live in the
 Deployment, a reviewer sees them in the manifest, and different services

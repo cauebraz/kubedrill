@@ -12,7 +12,14 @@ kubectl -n "$TASK_NS" create secret generic payments-token --from-file=token="$w
   | kubectl -n "$TASK_NS" apply -f -
 kubectl -n "$TASK_NS" label secret payments-token "rotated=$VAR_ROTATED" --overwrite
 
-kubectl -n "$TASK_NS" patch deployment payments-worker -p '{"spec":{"template":{"spec":{"containers":[{"name":"worker","env":[{"name":"API_TOKEN","valueFrom":{"secretKeyRef":{"name":"payments-token","key":"token"}}}]}]}}}}'
+case "${VAR_WORKER_SOURCE:-env}" in
+  file)
+    kubectl -n "$TASK_NS" patch deployment payments-worker -p '{"spec":{"template":{"spec":{"volumes":[{"name":"token","secret":{"secretName":"payments-token"}}]}}}}'
+    ;;
+  *)
+    kubectl -n "$TASK_NS" patch deployment payments-worker -p '{"spec":{"template":{"spec":{"containers":[{"name":"worker","env":[{"name":"API_TOKEN","valueFrom":{"secretKeyRef":{"name":"payments-token","key":"token"}}}]}]}}}}'
+    ;;
+esac
 
 kubectl -n "$TASK_NS" rollout restart deployment/payments deployment/payments-worker
 kubectl -n "$TASK_NS" rollout status deployment/payments --timeout=120s

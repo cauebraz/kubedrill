@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -90,10 +91,8 @@ func TestFetchEnableListRemove(t *testing.T) {
 	if len(roots) != 1 || roots[0] != inst.Dir {
 		t.Errorf("Roots: got %v", roots)
 	}
-	if _, err := Fetch(context.Background(), data, src, FetchOptions{}); err != nil {
-		t.Fatalf("second Fetch: %v", err)
-	} else if _, err := st.Enable(); err == nil {
-		t.Error("Enable over an installed pack: got nil error")
+	if _, err := Fetch(context.Background(), data, src, FetchOptions{}); err == nil || !strings.Contains(err.Error(), "already enabled") {
+		t.Errorf("second Fetch: got %v, want already enabled", err)
 	}
 	if err := Remove(data, "incidents"); err != nil {
 		t.Fatalf("Remove: %v", err)
@@ -130,6 +129,63 @@ func TestFetchRefusesProblems(t *testing.T) {
 				t.Errorf("staging left behind: %v", entries)
 			}
 		})
+	}
+}
+
+func TestFetchRefusesSymlinksAndListsInlineScripts(t *testing.T) {
+	data := t.TempDir()
+	src := sourcePack(t, manifest)
+	checks := filepath.Join(src, "scenarios", "L0", "001-storefront-down", "checks.yaml")
+	b, err := os.ReadFile(checks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	extra := "\n  - id: inline\n    description: inline script check\n    why: An inline script runs on the host, so the trust prompt has to list it.\n    script: echo ok\n    exit_code: 0\n"
+	if err := os.WriteFile(checks, append(b, []byte(extra)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	instr := filepath.Join(src, "scenarios", "L0", "001-storefront-down", "instruction.md")
+	ib, err := os.ReadFile(instr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := strings.Index(string(ib), "## Done when")
+	next := strings.Index(string(ib)[done+1:], "\n## ")
+	cut := len(ib)
+	if next >= 0 {
+		cut = done + 1 + next
+	}
+	ib = []byte(string(ib[:cut]) + "- inline script check\n" + string(ib[cut:]))
+	if err := os.WriteFile(instr, ib, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Fetch(context.Background(), data, src, FetchOptions{})
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	found := false
+	for _, s := range st.Scripts {
+		found = found || strings.Contains(s, "check inline (inline script)")
+	}
+	if !found {
+		t.Errorf("scripts: got %v, want the inline check listed", st.Scripts)
+	}
+	_ = st.Discard()
+
+	if err := os.Symlink("/etc/hosts", filepath.Join(src, "scenarios", "L0", "001-storefront-down", "setup", "link.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	git := func(_ context.Context, dir string, args ...string) (string, error) {
+		switch args[0] {
+		case "clone":
+			return "", exec.Command("cp", "-R", src+"/.", args[len(args)-1]).Run()
+		case "rev-parse":
+			return "abc\n", nil
+		}
+		return "", nil
+	}
+	if _, err := Fetch(context.Background(), data, "https://example.com/x.git", FetchOptions{Git: git}); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Errorf("Fetch of a clone with a symlink: got %v, want a refusal", err)
 	}
 }
 

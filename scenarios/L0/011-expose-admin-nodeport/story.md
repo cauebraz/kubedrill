@@ -4,7 +4,7 @@
 
 The admin team built a new version of their back-office page, release
 3.2.0, and deployed it to the cluster. Deployed here means one thing only: a
-pod runs, and inside it an nginx web server serves the page. Priya from QA
+pod runs, and inside it an nginx web server serves the page. Ken from QA
 has to sign the build off from her laptop, which can reach the cluster's
 nodes but has no `kubectl`. The platform team told her the page would be
 on port 30080 of any node. She opens `http://<node-ip>:30080/` and gets
@@ -146,7 +146,7 @@ Why tempting moves do not work:
 
 - `kubectl expose` with the default port: it copies the container port
   into both port and targetPort, which is right, but it never sets
-  nodePort, so the node opens a random port and Priya still gets connection
+  nodePort, so the node opens a random port and Ken still gets connection
   refused on 30080. Patch the nodePort afterwards.
 - A selector with only `app.kubernetes.io/name: admin`: it matches every
   pod that carries that label. When a second admin pod exists in the
@@ -165,7 +165,7 @@ kubectl run qa-laptop --rm -i --restart=Never --image=curlimages/curl:8.14.1 -- 
 ```
 
 `describe` shows `Type: NodePort`, `NodePort: 30080/TCP` and one address
-under `Endpoints`. The last command plays Priya's laptop: a short-lived pod
+under `Endpoints`. The last command plays Ken's laptop: a short-lived pod
 on the cluster network asks a node for port 30080, and the answer contains
 `<h1>ACME Admin 3.2.0</h1>`. A pod named `kubedrill-qa-laptop-...` may
 appear for a few seconds while the checks run: it is the grader making the

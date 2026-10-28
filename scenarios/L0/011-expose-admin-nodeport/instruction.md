@@ -2,7 +2,7 @@
 
 ## Ticket
 
-> **From:** Priya (QA lead)\
+> **From:** Ken (QA lead)\
 > **Priority:** medium
 >
 > The admin team deployed the new back-office build (`admin`, release 3.2.0)

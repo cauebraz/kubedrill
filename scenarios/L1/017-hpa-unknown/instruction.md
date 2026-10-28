@@ -2,7 +2,7 @@
 
 ## Ticket
 
-> **From:** Priya (orders team)\
+> **From:** Sam (api team)\
 > **Priority:** medium
 >
 > Last sprint we added a HorizontalPodAutoscaler to `api` so it adds pods
@@ -34,10 +34,9 @@ the controller's own reason.
 ## Done when
 
 - deployment api has at least 1 ready replica
-- hpa api targets deployment api
-- hpa api scales on cpu utilization
 - hpa api has condition ScalingActive True
 - hpa api reports a current metric value
+- hpa api still resizes deployment api on 50% average cpu, between 1 and 4 pods
 
 ## Constraints
 

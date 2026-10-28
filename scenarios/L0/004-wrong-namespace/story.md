@@ -2,11 +2,11 @@
 
 ## What happened
 
-Priya's team runs the catalog, the list of products the storefront shows.
+Ravi's team runs the catalog, the list of products the storefront shows.
 For two years it lived in its own namespace, a folder of the cluster named
 `catalog`. This morning the team moved it into the shop namespace, the
 folder where the storefront already lives, so that the two sit together.
-Priya copied the catalog's YAML files from the old folder, edited them by
+Ravi copied the catalog's YAML files from the old folder, edited them by
 hand for the new one, and applied them. kubectl printed `created`. The pods
 are Running.
 
@@ -68,7 +68,7 @@ can break any one of the three, and this episode breaks exactly one.
 Every command here only reads. In the workstation the namespace is already
 set, so plain `kubectl` (or `k`) works; the full form is shown once.
 
-Start by reproducing what Priya saw, from the storefront pod:
+Start by reproducing what Ravi saw, from the storefront pod:
 
 ```sh
 kubectl -n {{ .Namespace }} exec deploy/storefront -- wget -qO- -T 5 http://catalog/

@@ -8,7 +8,7 @@ minutes = 10
 namespace = "shop"
 exam = ["CKA:troubleshooting"]
 concepts = ["pod-lifecycle", "readiness-and-endpoints", "resources-and-qos", "labels-and-selectors"]
-fix_targets = ["apps/deployments/reviews"]
+fix_targets = ["apps/deployments/reviews", "core/configmaps/reviews-config"]
 
 [[variant]]
 name = "config-mount-path"

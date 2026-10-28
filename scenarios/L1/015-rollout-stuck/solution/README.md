@@ -8,9 +8,8 @@ progress deadline`, `get deployment` shows fewer than 4 up-to-date
 replicas, and the Deployment's `Progressing` condition is `False` with
 reason `ProgressDeadlineExceeded`. Checkout still answers, because the
 rolling update keeps the old ReplicaSet's pods serving until new ones are
-available, so no customer-facing alert fired. The capacity is short (3 of 4
-ready with `maxUnavailable: 25%`) or intact (4 of 4 with `maxUnavailable:
-0`), depending on the strategy, but the rollout cannot move.
+available, so no customer-facing alert fired. The capacity is one pod short (3 of 4
+ready with `maxUnavailable: 25%`) and the rollout cannot move.
 
 ## Candidate causes
 
@@ -27,6 +26,8 @@ each with its own trace on the new pods:
   `kubectl logs --previous` shows the exit.
 - A quota or admission refusal: the ReplicaSet has fewer pods than it wants,
   and `describe replicaset` shows `FailedCreate`.
+- Missing configuration: STATUS `CreateContainerConfigError`, Events show
+  `couldn't find key` or `configmap ... not found`.
 
 All of them sit in what revision 2 changed, because revision 1 runs fine
 on the same nodes right now.
@@ -63,28 +64,41 @@ kubectl -n {{ .Namespace }} rollout history deployment/checkout --revision=2
 kubectl -n {{ .Namespace }} get deployment checkout -o jsonpath='{.status.conditions[?(@.type=="Progressing")].reason}'
 ```
 
-The two revision templates differ in the `app.kubernetes.io/version` label
-and in the one field the Events point at: the readiness probe path, the
-cpu request or the image tag. The last command prints
+The two revision templates differ in the `app.kubernetes.io/version` label,
+in the ConfigMap key `PAYMENTS_URL` comes from (`payments_url` in revision 1,
+`payments_endpoint` in revision 2), and in the one field the Events point
+at: the readiness probe path, the cpu request or the image tag. The last command prints
 `ProgressDeadlineExceeded`: the controller gave up waiting after
 `progressDeadlineSeconds` (30 here) without progress. It does not roll back
 by itself; it only reports.
 
 ## Change
 
-Mitigate first: put the Deployment back on revision 1, the template that ran
-all week. It is one command, it does not need the root cause, and it works
-for every variant.
+Before a rollback, check that revision 1 can still start a pod in today's
+cluster: it reads key `payments_url` from ConfigMap `checkout-config`.
 
 ```sh
-kubectl -n {{ .Namespace }} rollout undo deployment/checkout --to-revision=1
+kubectl -n {{ .Namespace }} get configmap checkout-config -o jsonpath='{.data}'
 ```
 
-`rollout undo` copies the template of revision 1 into the Deployment, which
-becomes revision 3; the old ReplicaSet scales back to 4 and the broken one
-to 0. Then fix 2.5.0 forward in the manifest the team deploys from.
+- probe-404: the ConfigMap holds both `payments_url` and
+  `payments_endpoint`. Mitigate first: put the Deployment back on revision
+  1, the template that ran all week.
 
-Or fix forward now, by changing only the field revision 2 broke:
+  ```sh
+  kubectl -n {{ .Namespace }} rollout undo deployment/checkout --to-revision=1
+  ```
+
+  `rollout undo` copies the template of revision 1 into the Deployment,
+  which becomes revision 3; the old ReplicaSet scales back to 4 and the
+  broken one to 0. Then fix 2.5.0 forward in the manifest the team deploys
+  from.
+- cpu-64 and typo-tag: the 2.5.0 deploy removed `payments_url`. An undo
+  scales the old ReplicaSet back to 4, its fourth pod stays in
+  `CreateContainerConfigError` with `couldn't find key payments_url in
+  ConfigMap`, and the rollout is stuck on revision 3 instead. Fix forward.
+
+Fix forward by changing only the field revision 2 broke:
 
 ```sh
 kubectl -n {{ .Namespace }} patch deployment checkout --type=json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/httpGet/path","value":"/"}]'
@@ -94,7 +108,8 @@ kubectl -n {{ .Namespace }} set image deployment/checkout web=nginx:1.27-alpine
 
 Run the line that matches the Event you read: the probe path for a 404, the
 cpu request for `Insufficient cpu`, the image for `Failed to pull image`.
-Either route passes the checks, which read the ready and up-to-date replica
+Restoring `payments_url` in the ConfigMap and then rolling back also works
+in every variant. Every route passes the checks, which read the ready and up-to-date replica
 counts, the `Progressing` reason, the Service's ready endpoints and the pod
 phases.
 
@@ -125,6 +140,10 @@ an undo, revision 1 is gone from the list and reappears as revision 3 with
   rollout, at the cost of one extra pod of headroom on the nodes. With
   `maxUnavailable: 25%` a bad rollout costs a quarter of the capacity until
   someone acts.
+- A rollback restores the pod template only. ConfigMaps, Secrets, CRDs and
+  database schemas the deploy changed stay changed; rename a configuration
+  key by adding the new one and removing the old one a release later, so
+  the previous release can still start.
 - An undo in the cluster leaves the repository on the broken version; the
   next deploy reapplies it. Revert or fix the manifest right after the
   mitigation, and record `kubernetes.io/change-cause` so the history says

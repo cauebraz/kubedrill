@@ -50,26 +50,44 @@ the rest (measured on kind v1.37):
   `done`; the killed pod is deleted with its Job, so its log is gone
   afterwards. The POLICY column of `invoice` prints `Replace`.
 - legacy-twin: `invoice-29885665` and `invoice-legacy-29885665` are created
-  in the same minute and both complete in about `43s`. `invoice-legacy`
-  prints SUSPEND `false` and the same SCHEDULE as `invoice`.
+  in the same minute and both complete in about `43s`. The POLICY column
+  prints `Forbid` for both CronJobs, and `invoice-legacy` prints SUSPEND
+  `false` and the same SCHEDULE as `invoice`: `Forbid` only sees the Jobs
+  of its own CronJob.
 
 ## Change
 
-Make `invoice` skip a tick while its last run is active, stop every other
-CronJob that runs the export, then remove the Jobs still running beyond one:
+The end state is one schedule that starts the export, and that schedule
+skips a tick while its last run is active, so even a slow run never gets a
+second writer next to it.
+{{ if eq .Variant "legacy-twin" }}
+Here `invoice` already skips ticks (`Forbid`); the second writer is
+`invoice-legacy`. Suspend it, then remove the Jobs still running beyond
+one:
 
 ```sh
-kubectl -n {{ .Namespace }} patch cronjob invoice --type=merge -p '{"spec":{"concurrencyPolicy":"Forbid"}}'
 kubectl -n {{ .Namespace }} patch cronjob invoice-legacy --type=merge -p '{"spec":{"suspend":true}}'
 kubectl -n {{ .Namespace }} get jobs -l app.kubernetes.io/name=invoice
 kubectl -n {{ .Namespace }} delete job <surplus-job-name>
 ```
 
-The second line only matters when `invoice-legacy` is not suspended yet.
 Deleting it (`kubectl -n {{ .Namespace }} delete cronjob invoice-legacy`)
-passes too; suspending keeps its history for whoever owns it. Neither change
-stops a Job that is already running, so the last two lines remove the extra
-active Jobs by hand. In production, waiting for the current run to finish is
+passes too; suspending keeps its history for whoever owns it.
+{{- else }}
+Here `invoice-legacy` is already suspended; the policy of `invoice` is the
+writer problem. Make `invoice` skip a tick while its last run is active,
+then remove the Jobs still running beyond one:
+
+```sh
+kubectl -n {{ .Namespace }} patch cronjob invoice --type=merge -p '{"spec":{"concurrencyPolicy":"Forbid"}}'
+kubectl -n {{ .Namespace }} get jobs -l app.kubernetes.io/name=invoice
+kubectl -n {{ .Namespace }} delete job <surplus-job-name>
+```
+
+`Replace` is not a fix: it avoids two runs by killing the one in progress.
+{{- end }}
+Neither change stops a Job that is already running, so the last two lines
+remove the extra active Jobs by hand. In production, waiting for the current run to finish is
 the safer way: deleting a running Job is exactly how `Replace` corrupted the
 file.
 

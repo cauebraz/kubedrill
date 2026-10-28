@@ -2,7 +2,7 @@
 
 ## What happened
 
-Marco's team runs `session-api`, the program that remembers who is logged
+Yuki's team runs `session-api`, the program that remembers who is logged
 in. It stores each login in redis, a small in-memory database, and it
 spreads the logins over three redis nodes. It decides itself which node
 holds which login, so it must reach each node by a fixed name, written in

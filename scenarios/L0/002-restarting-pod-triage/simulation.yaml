@@ -1,5 +1,5 @@
 customer:
-  name: Priya
+  name: Dana
   role: Shop on-call engineer
   company: ACME Retail
 
@@ -100,7 +100,7 @@ meeting:
             ConfigMaps.
           feedback: >-
             The end state and the constraints up front are what let you
-            verify the fix the same way Priya will: one labeled pod, zero
+            verify the fix the same way Dana will: one labeled pod, zero
             restarts, 40 pods across 14 Deployments.
           best: true
           fact: "Done: one pod labeled triage=yes, running with 0 restarts; 14 Deployments and 40 pods unchanged; keep the namespace and the ConfigMaps."
@@ -250,8 +250,10 @@ guide:
   - title: Wait for the rollout
     body: >-
       rollout status waits until the new pod is Ready. The new pod starts
-      with 0 restarts; the labeled check above turned red, because the pod
-      you labeled is gone and the new one has only the template's labels.
+      with 0 restarts, and the restart check turns green once it has stayed
+      up 45 seconds without one, longer than a failing liveness probe takes
+      to kill it. The labeled check above turned red, because the pod you
+      labeled is gone and the new one has only the template's labels.
     command: kubectl rollout status deployment/reviews
     check: restarts-zero
   - title: Label the pod that runs now

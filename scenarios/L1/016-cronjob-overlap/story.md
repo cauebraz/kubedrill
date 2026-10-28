@@ -2,7 +2,7 @@
 
 ## What happened
 
-Priya's billing team runs an export every night: a small program reads the
+Lucia's billing team runs an export every night: a small program reads the
 day's invoices and appends them to a file, `invoices.csv`, that finance uses
 to close the day. Last night the file came out with rows from two runs mixed
 together, and the log showed two `start` lines for the same night. Nothing
@@ -94,13 +94,16 @@ and `done`.
 Change the CronJob, not the Jobs or pods: they are recreated every minute
 from the CronJob's template.
 
+When the POLICY of `invoice` is not `Forbid`, set it:
+
 ```sh
 kubectl patch cronjob invoice --type=merge -p '{"spec":{"concurrencyPolicy":"Forbid"}}'
 ```
 
 With `Forbid`, a tick that finds the previous run still active creates
 nothing, so one export owns the file from `start` to `done`. If another
-CronJob also runs the export on the same schedule, suspend it (or remove it):
+CronJob also runs the export on the same schedule, suspend it (or remove
+it); `Forbid` on `invoice` cannot see its Jobs:
 
 ```sh
 kubectl patch cronjob invoice-legacy --type=merge -p '{"spec":{"suspend":true}}'

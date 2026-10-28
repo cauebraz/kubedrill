@@ -29,7 +29,7 @@ checks:
     equals: "3"
 
   - id: image-correct
-    description: deployment storefront runs the nginx:1.27-alpine image
+    description: deployment storefront runs the image every other environment runs
     why: >-
       The image reference is the contract between the manifest and the
       registry; one wrong host, repository or tag means no container ever

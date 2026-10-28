@@ -44,6 +44,10 @@ type Meta struct {
 	// it needs maintainer review, since smoke applies its setup on the
 	// contributor's cluster.
 	AllowPrivileged bool `toml:"allow_privileged"`
+	// RestartIsFix counts a rollout restart of a fix target as a fix in the
+	// telemetry verdict, for scenarios whose pods read their configuration
+	// only when they start; elsewhere a restart is a metadata-only change.
+	RestartIsFix bool `toml:"restart_is_fix"`
 	// Images lists images the learner's fix or the setup needs that no
 	// setup manifest or probe names with a digest, each written
 	// name:tag@sha256:digest, for example the image the fixed Deployment

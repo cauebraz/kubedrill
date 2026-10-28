@@ -180,7 +180,7 @@
     ]
   },
   "story": "<h1>The storefront that never started</h1>\n<h2>What happened</h2>\n<p>The team moved the storefront to a new cluster.</p>\n",
-  "ticket": "<h1>Storefront is down after the cluster migration</h1>\n<h2>Ticket</h2>\n<blockquote>\n<p><strong>From:</strong> Dana</p>\n<p>The status page shows <code>0/3</code> ready.</p>\n</blockquote>\n<h2>Done when</h2>\n<ul>\n<li>deployment storefront has 3 ready replicas</li>\n<li>deployment storefront runs the nginx:1.27-alpine image</li>\n</ul>\n<!-- raw HTML omitted -->\n",
+  "ticket": "<h1>Storefront is down after the cluster migration</h1>\n<h2>Ticket</h2>\n<blockquote>\n<p><strong>From:</strong> Dana</p>\n<p>The status page shows <code>0/3</code> ready.</p>\n</blockquote>\n<h2>Done when</h2>\n<ul>\n<li>deployment storefront has 3 ready replicas</li>\n<li>deployment storefront runs the image every other environment runs</li>\n</ul>\n<!-- raw HTML omitted -->\n",
   "title": "Storefront is down after the cluster migration",
   "variants": 3
 }

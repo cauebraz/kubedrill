@@ -2,7 +2,7 @@
 
 ## What happened
 
-Priya's team runs the billing api, a small web service. Before the api
+Lucia's team runs the billing api, a small web service. Before the api
 starts, each copy runs a short step called `migrate`: it waits until the
 database answers and until the DBA team's "schema ready" flag is in place,
 then applies the migrations and hands over to the api. On the old cluster

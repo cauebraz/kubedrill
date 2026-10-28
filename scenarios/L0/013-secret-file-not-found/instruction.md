@@ -1,8 +1,8 @@
-# db-password is mounted but the api says file not found
+# billing api never starts after db-password moved into a Secret
 
 ## Ticket
 
-> **From:** Priya (billing team)\
+> **From:** Lucia (billing team)\
 > **Priority:** high
 >
 > We moved the database password of the billing `api` out of an environment
@@ -15,8 +15,6 @@
 > container has not started. The Secret is there, `kubectl get secret
 > db-credentials` lists it. The same change worked in the dev namespace. What
 > are we missing?
-
-New to Kubernetes? `kubedrill story` tells this ticket from zero.
 
 ## Before you start
 

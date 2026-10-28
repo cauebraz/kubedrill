@@ -2,7 +2,7 @@
 
 ## Ticket
 
-> **From:** Priya (finance tooling)\
+> **From:** Lucia (billing team)\
 > **Priority:** medium
 >
 > Our `report` service moved to the shared cluster yesterday and has not
@@ -17,13 +17,13 @@
 
 ## Before you start
 
-A pod wraps one or more containers, and each container can carry its own
-memory limit. The limit is enforced by the node's kernel: a container that
-grows past it is killed with exit code 137, and `kubectl describe pod`
-records that as `Last State: Terminated, Reason: OOMKilled` on that
-container. The limit a pod got can come from the Deployment's pod template or
-from a LimitRange default in the namespace; `describe pod` shows the one in
-force. AVAILABLE in `kubectl get deploy` counts pods that stayed Ready for
+A pod wraps one or more containers, each with its own memory limit,
+enforced by the node's kernel: a container that grows past it is killed
+with exit code 137, which `kubectl describe pod` records as `Last State:
+Terminated, Reason: OOMKilled` on that container. The limit comes from the
+Deployment's pod template or from a LimitRange in the namespace, which fills
+in defaults and can cap the maximum; `describe pod` shows the one in force.
+AVAILABLE in `kubectl get deploy` counts pods that stayed Ready for
 `minReadySeconds` (10s here) without a restart.
 
 ## Environment

@@ -30,7 +30,9 @@ causes. Each one leaves a different trace:
   and only that block in `describe pod` shows `OOMKilled`.
 - A limit nobody wrote: the pod shows `Limits` while the Deployment's
   template has no `resources`; a LimitRange default in the namespace
-  filled it in at admission.
+  filled it in at admission. When the LimitRange also sets a `max`, a
+  higher limit in the Deployment is refused at admission and the
+  ReplicaSet records `FailedCreate`.
 
 ## Observation that splits them
 
@@ -55,8 +57,8 @@ container name. What differs per variant (measured on kind v1.37):
 - limitrange-default: the `report` block shows the same `Limits: memory:
   32Mi`, but the Deployment never wrote it (next command), and `kubectl -n
   {{ .Namespace }} describe limitrange namespace-defaults` prints a
-  Container row with `Default Request 32Mi` and `Default Limit 32Mi`. The
-  pod is `0/1`.
+  Container row with `Max 32Mi`, `Default Request 32Mi` and `Default Limit
+  32Mi`. The pod is `0/1`.
 - sidecar-limit: the pod is `1/2`. The `report` block is `Running`,
   `Restart Count: 0`, `Limits: memory: 128Mi`; the `log-shipper` block is
   the one with `OOMKilled`, `Limits: memory: 16Mi`, and the `BackOff`
@@ -75,7 +77,7 @@ prints `No resources found`), and two objects in sidecar-limit with the
 second one holding `16Mi`.
 
 The real need: the `report` container's `Args` say `--mem-total=48Mi`, and
-the Go runtime adds about 14Mi, so `kubectl -n {{ .Namespace }} top pod
+the Go runtime adds about 10Mi, so `kubectl -n {{ .Namespace }} top pod
 --containers` prints about `58Mi` for it once it stays up (the sidecar
 holds about `26Mi`). 32Mi and 16Mi are below those numbers, so the kernel
 kills the container on every start, a few hundred milliseconds in.
@@ -92,16 +94,22 @@ kubectl -n {{ .Namespace }} set resources deployment/report -c report --requests
 In sidecar-limit the killed container is `log-shipper`, so the same command
 takes `-c log-shipper --requests=memory=32Mi --limits=memory=64Mi` and the
 `report` container keeps its numbers. In limitrange-default the command
-above works as well, because explicit `resources` win over the LimitRange
-default; the other valid path keeps the Deployment untouched and raises the
-default, then restarts the rollout so a new pod picks it up (a LimitRange
-is applied at admission, so the running pod keeps 32Mi until it is
-replaced):
+above is not enough: the LimitRange caps every container at `max` 32Mi, so
+the new pod is refused at admission (`kubectl -n {{ .Namespace }} get
+events` shows `FailedCreate ... maximum memory usage per Container is 32Mi,
+but limit is 128Mi`) and AVAILABLE stays `0`. The LimitRange has to change:
+raise `max` and the defaults, then restart the rollout so a new pod is
+admitted with them (a LimitRange is applied at admission, so the running
+pod keeps 32Mi until it is replaced):
 
 ```sh
-kubectl -n {{ .Namespace }} patch limitrange namespace-defaults --type=json -p '[{"op":"replace","path":"/spec/limits/0/default/memory","value":"128Mi"},{"op":"replace","path":"/spec/limits/0/defaultRequest/memory","value":"64Mi"}]'
+kubectl -n {{ .Namespace }} patch limitrange namespace-defaults --type=json -p '[{"op":"replace","path":"/spec/limits/0/max/memory","value":"128Mi"},{"op":"replace","path":"/spec/limits/0/default/memory","value":"128Mi"},{"op":"replace","path":"/spec/limits/0/defaultRequest/memory","value":"64Mi"}]'
 kubectl -n {{ .Namespace }} rollout restart deployment/report
 ```
+
+Raising only `max` and then running `set resources` on the Deployment
+works too; raising only the defaults does not, because `max` still caps
+them.
 
 The checks read the Deployment's available replicas, the `lastState` of
 every container in the pod and the `report` container's args, so either

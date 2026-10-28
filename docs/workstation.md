@@ -153,7 +153,9 @@ stays readable at `/workspace/repo` (see Accepted risks).
 - The first build downloads the base image, the apt packages and eight
   binaries (kubectl, helm, k9s, stern, kubectx, kubens, yq, asciinema). It
   needs the network once per image tag.
-- The host Go must satisfy `go.mod`. The image carries no Go.
+- When `go` is on the host's PATH it must satisfy `go.mod`; otherwise the
+  golang image of `workstation/builder.env` builds the binary. The
+  workstation image carries no Go.
 - Files written outside `/data` are gone when the session ends.
 - On Linux the kind API server can write the audit log as root. The
   workstation runs with your uid and reads the log only when you can. `ls

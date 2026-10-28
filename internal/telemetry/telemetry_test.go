@@ -615,5 +615,8 @@ func TestMetadataOnlyWriteIsNotRootCause(t *testing.T) {
 		if got.Verdict != tc.wantVerdict || got.FirstWriteMetadataOnly != tc.wantMetaOnly {
 			t.Errorf("%s: verdict %q first write metadata only %v, want %q %v", tc.name, got.Verdict, got.FirstWriteMetadataOnly, tc.wantVerdict, tc.wantMetaOnly)
 		}
+		if wantRestart := strings.HasPrefix(tc.name, "rollout restart"); events[0].Restart != wantRestart {
+			t.Errorf("%s: first event Restart %v, want %v", tc.name, events[0].Restart, wantRestart)
+		}
 	}
 }

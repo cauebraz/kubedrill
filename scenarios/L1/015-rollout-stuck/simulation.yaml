@@ -1,6 +1,6 @@
 customer:
-  name: Priya
-  role: Checkout team lead
+  name: Dana
+  role: Storefront team lead, owns checkout
   company: ACME Retail
 
 mentor:
@@ -161,11 +161,12 @@ quiz:
           Service never sends it traffic.
   - question: The rollout is stuck right after a deploy and you are not sure of the cause yet. What is the first change?
     choices:
-      - text: Roll back to the last revision that worked, then find the cause.
+      - text: Roll back to the last revision that worked, verify it, then find the cause.
         correct: true
         explain: >-
-          Mitigation first: the old ReplicaSet still exists, undo is one
-          command, and it works whatever the cause is.
+          Mitigation first: the old ReplicaSet still exists and undo is one
+          command. Verify it with rollout status: the old revision can depend
+          on settings the deploy changed, and then it gets stuck too.
       - text: Edit the field you think is wrong and see if the rollout moves.
         explain: >-
           A guess that is also wrong starts another revision and another
