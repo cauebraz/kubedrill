@@ -285,10 +285,13 @@ guide:               # at least 3 steps of the guided practice
 - A step without `check` is marked done by the learner; a step whose
   `check` passes turns green with every step before it.
 - Unknown keys are errors (strict YAML).
-- The diagram puts each node in the row of its longest path from a node
-  with no incoming edge; inside a row, nodes follow `column` (lower first)
-  and then their order in the file. More than 9 nodes is an error: the
-  rows cross their edges, so split the story instead.
+- The diagram puts each node one row below its deepest parent; a node
+  with no incoming edge sits one row above its nearest child, so arrows
+  stay short. An arrow that still skips rows is routed around the boxes
+  it passes. Inside a row, nodes follow `column` (lower first) when any
+  node of the row sets it, otherwise the order that crosses the fewest
+  arrows. Labels sit below the source box and never cover a box. More
+  than 9 nodes is an error: split the story instead.
 - Writing choices: a wrong choice is a plausible move that reveals a wrong
   mental model (acting before observing, scaling a failure, blaming a
   layer the symptom rules out), its reply still gives a real fact, and its

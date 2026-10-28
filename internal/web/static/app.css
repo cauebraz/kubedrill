@@ -417,6 +417,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--s-5) 0; }
 .prose strong { color: var(--fg); font-weight: 600; }
 .prose blockquote { margin: 14px 0; padding: 10px 16px; border-left: 2px solid var(--brand); background: var(--bg-2); border-radius: 0 var(--r-2) var(--r-2) 0; }
 .prose a { color: var(--brand); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--brand) 40%, transparent); }
+.prose a[href^="http"] { overflow-wrap: anywhere; }
 .prose table { border-collapse: collapse; width: 100%; font-size: var(--t-sm); margin: 12px 0; }
 .prose th, .prose td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
 .prose th { color: var(--fg); font-weight: 600; }

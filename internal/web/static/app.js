@@ -33,6 +33,13 @@ document.getElementById("theme-toggle").addEventListener("click", () => {
   try { localStorage.setItem("kd:theme", light ? "light" : "dark"); } catch (e) { /* private window */ }
 });
 
+document.addEventListener("click", (e) => {
+  const a = e.target.closest && e.target.closest(".prose a[href^='http']");
+  if (!a || e.defaultPrevented || e.button !== 0) { return; }
+  e.preventDefault();
+  window.open(a.href, "_blank", "noopener,noreferrer");
+});
+
 document.getElementById("help-toggle").addEventListener("click", () => {
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "?", bubbles: true }));
 });

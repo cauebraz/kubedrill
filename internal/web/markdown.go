@@ -7,10 +7,11 @@ import (
 	"github.com/yuin/goldmark/extension"
 )
 
-var md = goldmark.New(goldmark.WithExtensions(extension.Table, extension.Strikethrough))
+var md = goldmark.New(goldmark.WithExtensions(extension.Table, extension.Strikethrough, extension.Linkify))
 
 // toHTML renders scenario markdown; raw HTML in the source is dropped, so
-// the page never runs markup from a scenario.
+// the page never runs markup from a scenario. Bare http and https URLs
+// become links.
 func toHTML(src string) string {
 	if src == "" {
 		return ""

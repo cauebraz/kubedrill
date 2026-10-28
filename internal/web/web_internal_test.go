@@ -20,6 +20,13 @@ func TestToHTMLDropsRawHTML(t *testing.T) {
 	}
 }
 
+func TestToHTMLLinksBareURLs(t *testing.T) {
+	got := toHTML("## Go deeper\n\n- https://kubernetes.io/docs/concepts/services-networking/service/#defining-a-service : how spec.selector picks endpoints\n")
+	if want := `<a href="https://kubernetes.io/docs/concepts/services-networking/service/#defining-a-service">`; !contains(got, want) {
+		t.Errorf("toHTML: got %q, want a link %s", got, want)
+	}
+}
+
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {
