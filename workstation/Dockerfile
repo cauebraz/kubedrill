@@ -9,7 +9,7 @@ RUN apt-get update \
         bash-completion=1:2.11-6 \
         ca-certificates=20250419~deb12u2 \
         curl=7.88.1-10+deb12u15 \
-        dnsutils=1:9.18.49-1~deb12u2 \
+        bind9-dnsutils=1:9.18.49-1~deb12u3 \
         git=1:2.39.5-0+deb12u3 \
         iputils-ping=3:20221126-1+deb12u1 \
         jq=1.6-2.1+deb12u3 \

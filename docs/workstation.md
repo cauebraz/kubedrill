@@ -75,8 +75,8 @@ Debian bookworm-slim (pinned by digest in `workstation/Dockerfile`), user
 | asciinema       | v3.2.1  | github.com/asciinema/asciinema                          |
 
 From Debian bookworm through apt, versions pinned in the Dockerfile: jq,
-vim (vim-tiny), git, less, bash-completion, dnsutils, ping, nc, ssh, curl,
-ca-certificates, procps.
+vim (vim-tiny), git, less, bash-completion, bind9-dnsutils (dig, nslookup),
+ping, nc, ssh, curl, ca-certificates, procps.
 
 ## Node shells and replays
 

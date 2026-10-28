@@ -106,8 +106,9 @@ just check-ci       # check, govulncheck and smoke for every scenario, as CI doe
 What runs in CI:
 
 - `.github/workflows/ci.yml` checks the DCO sign-off of every commit of a
-  pull request, runs the `check` steps plus govulncheck, then
-  `kubedrill smoke` on a kind cluster. Its shellcheck step runs the
+  pull request, runs the `check` steps plus govulncheck, then on a kind
+  cluster `kubedrill up` (metrics-server, which the HPA scenarios need,
+  and the image preload) and `kubedrill smoke`. Its shellcheck step runs the
   runner's `shellcheck -x` over the files `just shellcheck` scans:
   `start.sh`, `workstation/entrypoint.sh`, `workstation/bashrc` and the
   scenario scripts.

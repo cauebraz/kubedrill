@@ -58,7 +58,7 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     needs: check
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -76,4 +76,6 @@ jobs:
           cluster_name: kubedrill
           config: ${{ runner.temp }}/kind.yaml
       - run: go build -o bin/kubedrill ./cmd/kubedrill
+      - name: Install the addons and preload the scenario images
+        run: ./bin/kubedrill up
       - run: ./bin/kubedrill smoke
