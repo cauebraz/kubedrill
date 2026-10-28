@@ -254,11 +254,11 @@ func TestUnlockKeepsALockTakenOverDuringRelease(t *testing.T) {
 func TestBreakKeepsALockRetakenAfterTheStaleCheck(t *testing.T) {
 	s := openTest(t)
 	path := filepath.Join(s.Dir(), lockFile)
-	stale := []byte(fmt.Sprintf(`{"pid":%d,"hostname":%q,"token":"dead"}`, deadPID(t), s.lockCfg.hostname))
+	stale := []byte(fmt.Sprintf(`{"pid":%d,"hostname":%q,"pid_ns":%q,"token":"dead"}`, deadPID(t), s.lockCfg.hostname, s.lockCfg.pidNS))
 	if err := os.WriteFile(path, stale, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fresh := []byte(fmt.Sprintf(`{"pid":%d,"hostname":%q,"token":"fresh"}`, os.Getpid(), s.lockCfg.hostname))
+	fresh := []byte(fmt.Sprintf(`{"pid":%d,"hostname":%q,"pid_ns":%q,"token":"fresh"}`, os.Getpid(), s.lockCfg.hostname, s.lockCfg.pidNS))
 	s.lockCfg.beforeRelease = func() {
 		if err := os.Remove(path); err != nil {
 			t.Errorf("owner unlock: %v", err)
