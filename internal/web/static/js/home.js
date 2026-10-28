@@ -1,16 +1,19 @@
-// Home: what to do now (the active run or the recommendation), the plans
-// in progress, reviews due, and the way into the full catalog.
+// Home: what to do now (the active run or the recommendation), the badge
+// count and the next badge in progress, the plans in progress, reviews due,
+// and the way into the full catalog.
 
 import { api } from "./api.js";
 import { el, clear, icon, plural, duration } from "./dom.js";
 import { bind } from "./keys.js";
-import { assignmentRow, flatten, isDone, ring, skeleton, errorState, REPO } from "./ui.js";
+import { assignmentRow, flatten, isDone, skeleton, errorState, REPO } from "./ui.js";
+import { badgeSVG, allBadges, isEarned, remember, KIND_WORDS } from "./badge.js";
 
 export function showHome(app, ctx) {
   ctx.crumbs([{ text: "Home" }]);
   const page = el("div", { class: "page home" }, el("div", { class: "page-inner" }, skeleton(4)));
   clear(app, page);
   Promise.all([api.get("/api/catalog"), api.get("/api/next")]).then(([c, next]) => {
+    remember(c);
     clear(page, render(c, next));
   }).catch((e) => clear(page, el("div", { class: "page-inner" }, errorState("Could not load your plans: " + e.message, () => showHome(app, ctx)))));
 }
@@ -19,7 +22,8 @@ function render(c, next) {
   const all = flatten(c);
   const byID = Object.fromEntries(all.map((a) => [a.id, a]));
   const done = all.filter(isDone).length;
-  const badges = c.levels.reduce((n, lv) => n + lv.modules.filter((m) => m.badge).length, 0);
+  const every = allBadges(c);
+  const badges = every.filter((x) => isEarned(x.badge)).length;
   const planned = c.levels.reduce((n, lv) => n + lv.modules.reduce((k, m) => k + m.planned, 0), 0);
 
   const head = el("header", { class: "home-head" },
@@ -28,13 +32,14 @@ function render(c, next) {
     el("p", { class: "profile" },
       el("span", null, el("b", { text: String(done) }), " of " + all.length + " assignments complete"),
       el("span", { class: "sep", text: "/" }),
-      el("span", { title: "A plan badge needs every written assignment of the plan complete" }, el("b", { text: String(badges) }), " plan " + (badges === 1 ? "badge" : "badges")),
+      el("a", { class: "profile-link", href: "#/badges", title: "A badge counts clean solves: no guide, no hint, within the expected time" }, el("b", { text: String(badges) }), " of " + every.length + " badges"),
       next.reviewsPending ? [el("span", { class: "sep", text: "/" }), el("span", null, el("b", { text: String(next.reviewsPending) }), " " + (next.reviewsPending === 1 ? "review" : "reviews") + " due")] : null,
       el("span", { class: "sep", text: "/" }),
       el("span", null, planned + " more planned")),
     el("a", { class: "link small method-link", href: "#/welcome", text: "How kubedrill works: the five-step method" }));
 
   const cont = continueCard(next, byID);
+  const nb = nextBadge(every);
   const plans = plansInProgress(c, byID);
 
   const browse = el("a", { class: "card browse", href: "#/catalog" },
@@ -60,7 +65,7 @@ function render(c, next) {
   bind("c", "Open the catalog", () => { location.hash = "#/catalog"; });
   bind("Enter", "Continue with the highlighted assignment", () => { const a = cont.querySelector("a.btn.primary"); if (a) { a.click(); } });
 
-  return el("div", { class: "page-inner" }, head, cont,
+  return el("div", { class: "page-inner" }, head, cont, nb,
     el("section", { class: "section" }, el("div", { class: "section-head" }, el("h2", { text: "Your plans" }), el("a", { class: "link", href: "#/catalog", text: "All plans" })), plans),
     el("div", { class: "browse-row" }, browse, exams, contribute));
 }
@@ -97,6 +102,20 @@ function continueCard(next, byID) {
     el("a", { class: "btn", href: "#/catalog", text: "Open the catalog" }));
 }
 
+// nextBadge shows the first badge in progress, modules first, at small
+// size.
+function nextBadge(every) {
+  const x = every.find((y) => y.badge.state === "in-progress");
+  if (!x) { return null; }
+  return el("a", { class: "card next-badge", href: "#/badges", "aria-label": "Next badge: " + x.badge.code + " " + x.title + ", " + x.badge.caption },
+    badgeSVG(x.kind, x.badge, { size: 56, level: x.level }),
+    el("div", null,
+      el("div", { class: "eyebrow muted", text: "Next badge / " + KIND_WORDS[x.kind] }),
+      el("h3", { text: (x.kind === "track" ? "" : x.badge.code + " ") + x.title }),
+      el("p", { class: "small muted", text: x.badge.caption })),
+    el("span", { class: "arrow", text: "All badges" }));
+}
+
 function capitalize(s) { return s ? s[0].toUpperCase() + s.slice(1) : s; }
 
 // plansInProgress shows the modules the learner started and the first one
@@ -106,21 +125,20 @@ function plansInProgress(c, byID) {
   for (const lv of c.levels) {
     for (const m of lv.modules) {
       if (!m.assignments.length) { continue; }
-      const done = m.assignments.filter(isDone).length;
       const started = m.assignments.some((a) => a.status !== "todo" || (a.progress && (a.progress.meeting.done || a.progress.learn.done)));
-      mods.push({ lv, m, done, started });
+      mods.push({ lv, m, started });
     }
   }
-  let shown = mods.filter((x) => x.started && !x.m.badge);
+  let shown = mods.filter((x) => x.started && !isEarned(x.m.badge));
   const firstNew = mods.find((x) => !x.started);
   if (firstNew) { shown.push(firstNew); }
   if (!shown.length) { shown = mods.slice(0, 2); }
   if (!shown.length) { return el("div", { class: "empty", text: "No assignment is written yet. The catalog lists the planned ones." }); }
-  return el("div", { class: "modules" }, shown.slice(0, 4).map(({ lv, m, done }) =>
+  return el("div", { class: "modules" }, shown.slice(0, 4).map(({ lv, m }) =>
     el("article", { class: "card module" },
       el("div", { class: "module-top" },
-        el("div", null, el("div", { class: "eyebrow", text: lv.id + " / " + m.id }), el("h3", { text: m.title }), el("p", { class: "summary", text: m.summary })),
-        ring(done, m.assignments.length, m.badge)),
+        el("div", null, el("div", { class: "eyebrow", text: lv.id + " / " + m.id }), el("h3", { text: m.title }), el("p", { class: "summary", text: m.summary }), el("p", { class: "bdg-caption", text: m.badge.caption })),
+        el("a", { class: "bdg-link", href: "#/badges", title: m.badge.caption }, badgeSVG("module", m.badge, { size: 52, level: lv.id }))),
       el("div", { class: "assign-list" }, m.assignments.map((a) => assignmentRow(a, byID))),
       m.planned ? el("div", { class: "planned", text: plural(m.planned, "more assignment") + " planned" }) : null)));
 }

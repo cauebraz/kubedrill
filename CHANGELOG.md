@@ -8,6 +8,11 @@ All notable changes to kubedrill. The format follows
 
 ### Added
 
+- Badges: a module (hexagon), level (shield) and exam track (rosette)
+  badge, each locked, in progress, earned or mastered from the clean-solve
+  and mastery rules; a Badges screen with a 1200x627 share card (PNG,
+  self-reported, local); the badge state on `kubedrill path`. They replace
+  the plan badges of the browser workspace.
 - Browser workspace (`kubedrill web`): meeting with the customer, quiz,
   learn page, guided practice, DIY run, exam rehearsal, debrief, catalog
   with filters, exam coverage, authoring preview.

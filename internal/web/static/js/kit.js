@@ -3,7 +3,8 @@
 // kubedrill web runs with --static-dir.
 
 import { el, clear, toast } from "./dom.js";
-import { ring, statusPill, masteryMeter, stageDots, assignmentRow, skeleton, errorState } from "./ui.js";
+import { statusPill, masteryMeter, stageDots, assignmentRow, skeleton, errorState } from "./ui.js";
+import { badgeSVG, pips, stateLabel } from "./badge.js";
 
 export function showKit(app, ctx) {
   ctx.crumbs([{ href: "#/", text: "Home" }, { text: "Component kit" }]);
@@ -19,7 +20,11 @@ export function showKit(app, ctx) {
       el("button", { class: "btn small", text: "Small" }), el("button", { class: "btn", disabled: true, text: "Disabled" }),
       el("button", { class: "btn", text: "Toast", onclick: () => toast("A toast message") }), el("button", { class: "btn", text: "Error toast", onclick: () => toast("An error toast", true) })),
     section("Pills", statusPill({ status: "todo" }), statusPill({ status: "solved" }), statusPill({ status: "active" }), statusPill({ status: "solved", progress: { diy: { done: true } } }), statusPill({ status: "mastered" }), el("span", { class: "pill bad", text: "fail" }), el("span", { class: "pill good live", text: "In meeting" })),
-    section("Progress", ring(0, 3), ring(2, 3), ring(3, 3, true), stageDots(card.progress, true), masteryMeter(card.mastery), masteryMeter({ variants: 3, variantsSolved: 3, cleanVariants: 3, mastered: true, cleanInLast: 3, last: 4 }),
+    section("Badges", [["module", "locked", 0, 0], ["module", "in-progress", 3, 1], ["level", "earned", 5, 1], ["track", "mastered", 5, 3]].map(([kind, state, lit, n]) => {
+      const b = { state, lit, pips: n, code: kind === "track" ? "CKA" : kind === "level" ? "L1" : "L0.2", caption: "Kit sample, " + state };
+      return el("div", { class: "kit-badge" }, badgeSVG(kind, b, { size: 96 }), pips(kind, b), stateLabel(kind, b));
+    })),
+    section("Progress", stageDots(card.progress, true), masteryMeter(card.mastery), masteryMeter({ variants: 3, variantsSolved: 3, cleanVariants: 3, mastered: true, cleanInLast: 3, last: 4 }),
       el("div", { class: "meter", style: "width:160px" }, el("div", { style: "width:60%" }))),
     section("Keyboard", el("kbd", { class: "kbd", text: "1" }), el("kbd", { class: "kbd", text: "Enter" }), el("kbd", { class: "kbd", text: "Cmd Enter" })),
     section("Callouts", el("div", { class: "callout", text: "A warning callout: something the learner should know before acting." }), el("div", { class: "callout info", text: "An info callout: context that helps." })),

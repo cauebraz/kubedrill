@@ -886,10 +886,10 @@ func TestPathAndExam(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("path exit %d", code)
 	}
-	mustContain(t, out, "L0  First contact  (6 h)", "workloads-basics", "2 planned, 1 existing, 1 solved", "          concepts: pods 1/1 clean, deployments 1/1 clean", "\nNext: Hello app is down (001-hello-down, L0, 15 min): you solved your last attempt at L0\n", "  kubedrill start 001-hello-down\n")
+	mustContain(t, out, "L0  First contact  (6 h)", "workloads-basics", "(6 h)  badge: earned\n", "2 planned, 1 existing, 1 solved; badge: earned", "          concepts: pods 1/1 clean, deployments 1/1 clean", "\nNext: Hello app is down (001-hello-down, L0, 15 min): you solved your last attempt at L0\n", "  kubedrill start 001-hello-down\n")
 	f.journal.episodes = masteredEpisodes()
 	_, out, _ = f.run(t, "", "path")
-	mustContain(t, out, "concepts: pods mastered, deployments mastered")
+	mustContain(t, out, "concepts: pods mastered, deployments mastered", "(6 h)  badge: mastered\n", "1 solved; badge: mastered")
 	code, out, errOut := f.run(t, "", "exam", "cka")
 	if code != 0 {
 		t.Fatalf("exam exit %d: %s", code, errOut)

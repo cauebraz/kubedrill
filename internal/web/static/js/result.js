@@ -3,11 +3,8 @@
 import { api } from "./api.js";
 import { el, clear, toast, store, duration } from "./dom.js";
 import { bind } from "./keys.js";
-import { masteryMeter, masteryNeed, cleanVariantsText, skeleton, errorState, isDone } from "./ui.js";
-
-const BADGE = '<svg viewBox="0 0 132 132" aria-hidden="true"><defs><linearGradient id="badge-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5eead4"/><stop offset="1" stop-color="#0f766e"/></linearGradient></defs>' +
-  '<circle class="b-ring" cx="66" cy="66" r="64"/><circle class="b-orbit" cx="66" cy="66" r="56"/><circle class="b-core" cx="66" cy="66" r="42"/>' +
-  '<path class="b-star" d="M66 44l6.2 13.2 14.5 1.7-10.7 9.9 2.9 14.3L66 76l-12.9 7.1 2.9-14.3-10.7-9.9 14.5-1.7z"/></svg>';
+import { masteryMeter, masteryNeed, cleanVariantsText, skeleton, errorState } from "./ui.js";
+import { badgeSVG, allBadges, remember, STATE_WORDS, KIND_WORDS } from "./badge.js";
 
 const VERDICTS = {
   "root-cause": ["good", "Root cause", "Your first change hit an object the fix belongs to."],
@@ -105,23 +102,29 @@ function reflectionCard(d, onDone) {
 export function renderDone(stage, a) {
   const p = a.progress;
   const earned = p.diy && p.diy.done;
-  const badge = el("div", { class: "badge locked", html: BADGE, role: "img", "aria-label": "Plan badge (locked)" });
-  const badgeLabel = el("div", { class: "small muted badge-label", text: "Plan badge (locked)" });
-  const plan = el("p", { class: "small muted plan-line", text: "Plan badge: loading the plan..." });
+  const mb = a.moduleBadge && a.moduleBadge.code ? a.moduleBadge : null;
+  const badge = el("a", { class: "result-badge", href: "#/badges" }, mb ? badgeSVG("module", mb, { size: 132, level: a.level }) : null);
+  const badgeLine = el("div", { class: "badge-line" }, mb ? [el("b", { text: mb.code + " " + a.moduleTitle + ": " + STATE_WORDS[mb.state].toLowerCase() }), el("span", { class: "small muted", text: mb.caption })] : null);
+  const changes = el("ul", { class: "badge-changes", hidden: true });
   api.get("/api/catalog").then((c) => {
-    for (const lv of c.levels) {
-      for (const mod of lv.modules) {
-        if (!mod.assignments.some((x) => x.id === a.id)) { continue; }
-        const done = mod.assignments.filter(isDone).length;
-        badge.classList.toggle("locked", !mod.badge);
-        badge.setAttribute("aria-label", mod.badge ? "Plan badge earned" : "Plan badge (locked)");
-        badgeLabel.textContent = mod.badge ? "Plan badge earned" : "Plan badge (locked)";
-        plan.textContent = mod.badge
-          ? "Plan badge earned: every written assignment of " + mod.title + " is complete."
-          : "Plan badge for " + mod.title + ": " + done + " of " + mod.assignments.length + " assignments complete. It needs all of them.";
-      }
+    const before = remember(c);
+    const changed = allBadges(c).filter((x) => before[x.key] && before[x.key] !== x.badge.state);
+    const mine = mb ? changed.find((x) => x.key === "module:" + mb.code) : null;
+    if (mine) {
+      clear(badge, badgeSVG("module", mine.badge, { size: 132, level: mine.level }));
+      clear(badgeLine,
+        el("span", { class: "eyebrow", text: "Badge " + STATE_WORDS[mine.badge.state].toLowerCase() }),
+        el("b", { text: mine.badge.code + " " + mine.title + ": " + STATE_WORDS[before[mine.key]].toLowerCase() + " -> " + STATE_WORDS[mine.badge.state].toLowerCase() }),
+        el("span", { class: "small muted", text: mine.badge.caption }));
     }
-  }).catch(() => { plan.textContent = ""; });
+    const others = changed.filter((x) => x !== mine);
+    if (others.length) {
+      changes.hidden = false;
+      clear(changes, others.map((x) => el("li", null,
+        badgeSVG(x.kind, x.badge, { size: 40, level: x.level }),
+        el("span", null, el("b", { text: KIND_WORDS[x.kind] + " " + (x.kind === "track" ? x.title : x.badge.code + " " + x.title) + ": " + STATE_WORDS[x.badge.state].toLowerCase() }), " ", el("span", { class: "muted", text: x.badge.caption })))));
+    }
+  }).catch(() => {});
   const row = (label, r, href) => el("li", null,
     el("span", { text: label }),
     el("span", { class: "row-end" },
@@ -133,11 +136,10 @@ export function renderDone(stage, a) {
   const m = a.mastery;
   stage.appendChild(el("div", { class: "stage-inner" },
     el("div", { class: "card done-card" },
-      badge, badgeLabel,
+      badge, badgeLine, changes,
       el("div", { class: "eyebrow", text: earned ? "Assignment complete" : "Not complete yet" }),
       el("h1", { text: a.title }),
-      el("p", { text: earned ? "Fixed with the guide, then again on your own on another variant. That is the whole loop." : "Pass the Do it yourself run to complete this assignment and count it toward the plan badge." }),
-      plan,
+      el("p", { text: earned ? "Fixed with the guide, then again on your own on another variant. That is the whole loop." : "Pass the Do it yourself run to complete this assignment." }),
       el("ul", { class: "stage-list" },
         a.simulation ? [row("Meeting, best questions first try", p.meeting, null), row("Quiz, right first try", p.quiz, null)] : null,
         row("Learn", p.learn, base + "learn"), row("Guided practice", p.practice, base + "practice"), row("Do it yourself", p.diy, base + "diy"),
@@ -147,7 +149,7 @@ export function renderDone(stage, a) {
       el("div", { class: "mastery-head" },
         el("div", null, el("div", { class: "eyebrow muted", text: "Mastery" }), el("h3", { text: m.mastered ? "Mastered" : "Not mastered yet" })),
         masteryMeter(m)),
-      el("p", { class: "small muted", text: "Complete marks that you finished the assignment once, and the plan badge that you finished every assignment of the plan. Mastery is the long game: 3 clean solves (no hint, within " + a.minutes + " min) in your last 4 attempts, across " + masteryNeed(m) + " different variants and at least 2 sessions. kubedrill then brings it back for spaced review." }),
+      el("p", { class: "small muted", text: "Complete marks that you finished the assignment once. The module badge counts clean solves: no guide, no hint, within " + a.minutes + " min. Mastery is the long game: 3 clean solves (no hint, within " + a.minutes + " min) in your last 4 attempts, across " + masteryNeed(m) + " different variants and at least 2 sessions. kubedrill then brings it back for spaced review." }),
       el("dl", { class: "facts" },
         el("dt", { text: "Clean solves in the last attempts" }), el("dd", { text: m.cleanInLast + " of " + (m.last || 0) + " (3 needed)" }),
         el("dt", { text: "Variants among the clean solves" }), el("dd", { text: cleanVariantsText(m) }),

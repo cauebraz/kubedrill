@@ -9,14 +9,16 @@ the first page with a ```mermaid block and themes it from the tokens.
 |------|------|
 | `index.html` | Shell: top bar with the mark, banner, toast, the theme bootstrap that runs before the first paint |
 | `favicon.svg` | The mark (a five-step ring, one step and the center in the brand teal) with its own light and dark colors through `prefers-color-scheme`; the top bar draws the same paths with `--fg` and `--brand` |
-| `app.js` | Entry: routes (`#/`, `#/catalog`, `#/exams`, `#/a/<id>/<stage>`, `#/a/<id>/debrief/<episode>`, `#/kit`), navigation, theme, preview and server-down banners |
+| `app.js` | Entry: routes (`#/`, `#/catalog`, `#/exams`, `#/badges`, `#/a/<id>/<stage>`, `#/a/<id>/debrief/<episode>`, `#/kit`), navigation, theme, preview and server-down banners |
 | `js/api.js` | The JSON API, the NDJSON launch stream, the connection listener |
 | `js/dom.js` | `el`, `svg`, `clear`, `toast`, `store` (localStorage), `onLeave` cleanups, `shuffledOrder` (the choice order of a question, seeded by its text), icons |
 | `js/keys.js` | Shortcuts per screen (`bind`), the overlay stack Esc closes, the `?` help |
-| `js/ui.js` | Shared components: stages, rings, dots, mastery meter (clean solves out of 3), `cleanVariantsText` (distinct variants among the clean solves against the variants mastery needs), status pill and its vocabulary (`statusOf`: not started, in progress, live, complete, mastered), assignment row, `hideFixSection`, skeleton, error state |
+| `js/ui.js` | Shared components: stages, dots, mastery meter (clean solves out of 3), `cleanVariantsText` (distinct variants among the clean solves against the variants mastery needs), status pill and its vocabulary (`statusOf`: not started, in progress, live, complete, mastered), assignment row, `hideFixSection`, skeleton, error state |
 | `js/welcome.js` | The welcome flow (`#/welcome`): the five steps of the loop on a worked ticket, shown once per journal before the workspace opens |
 | `js/mermaid.js` | Renders ```mermaid blocks of scenario markdown with the vendored mermaid, themed from the tokens, redrawn on theme change |
-| `js/home.js`, `js/catalog.js`, `js/exams.js` | The three top-level screens |
+| `js/home.js`, `js/catalog.js`, `js/exams.js`, `js/badges.js` | The four top-level screens |
+| `js/badge.js` | The badge SVG (`badgeSVG(kind, badge, {size, level})`, built with `createElementNS`, text through `textContent`; under 64 pixels (`SMALL`) the center code gives way to the center dot of the mark), the shapes and ring arcs, `pips`, `stateLabel`, `colorVar`, `allBadges` (every badge of a catalog) and `remember` (the last states seen, in localStorage, so the result page names a change) |
+| `js/share.js` | The share dialog: the 1200x627 card drawn on a canvas with 2D primitives from the `.share-card` tokens, the name field, Download PNG and Copy text |
 | `js/assignment.js` | The assignment shell, stepper and concept drawer |
 | `js/meeting.js`, `js/quiz.js`, `js/learn.js`, `js/lab.js`, `js/result.js` | The stages: meeting, quiz, learn and diagram, practice and DIY lab, debrief and result |
 | `js/kit.js` | The component kit (`#/kit`, linked when the server runs with `--static-dir`) |
@@ -48,7 +50,8 @@ surface that is dark in both).
 | Spacing | `--s-1` 4 to `--s-8` 72 | paddings and gaps |
 | Type | `--t-xs` 11 to `--t-3xl` 40; `--font-sans`, `--font-mono` | Inter-first system stack; mono for labels, ids and numbers |
 | Motion | `--fast` 120ms, `--base` 200ms, `--slow` 360ms, `--ease` | every transition; `prefers-reduced-motion` turns them off |
-| Effects | `--shadow-1..3`, `--glow`, `--ring` | depth, the home and badge glow, the focus ring |
+| Effects | `--shadow-1..3`, `--glow`, `--ring` | depth, the home and result glow, the focus ring |
+| Badges | `--level-0` .. `--level-6`, `--track-cka`, `--track-ckad`, `--track-cks`, `--badge-unlit`, `--badge-locked`, `--badge-locked-text` | the color of a badge (its level, or its exam), unlit arcs and pips, the dashed outline and code of a locked badge; the light values meet 3:1 on every light surface, the dark ones are the approved design |
 | Backdrops | `--backdrop`, `--backdrop-soft` | behind a dialog, behind a drawer |
 
 Rules:
@@ -71,9 +74,17 @@ Rules:
 - Choices (meeting, quiz, welcome) are shown in `shuffledOrder`, never in
   file order, and the number keys follow the shown order.
 - One status vocabulary everywhere: an assignment is complete when its Do
-  it yourself run passed, which is what the plan rings, the exam coverage
-  and the catalog filter count; a plan badge needs every assignment of the
-  plan complete.
+  it yourself run passed, which is what the stage dots, the exam coverage
+  and the catalog filter count. Badges are a separate vocabulary computed by
+  the server from clean solves and mastery (locked, in progress, earned,
+  mastered); the page never derives a badge from stage progress.
+- A badge is drawn only by `badgeSVG`: the shape is the tier (hexagon,
+  shield, rosette), the five arcs are the method, the color is the level.
+  The states differ by fill and stroke opacity, a dashed outline when
+  locked and a halo when mastered, never by color alone, and the state is
+  in the `aria-label` and a text label.
+- The share card (`canvas.share-card`) keeps the dark token set in both
+  themes, like the terminal: `:root, .share-card` declares it.
 - Esc that closes an overlay stops there and never reaches the terminal.
   The lab's mentor is a docked column beside the terminal at 961 pixels and
   up (Esc inside it closes it), a drawer below that.

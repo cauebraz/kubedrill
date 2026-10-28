@@ -21,8 +21,11 @@ from a learning plan and walk its stages:
    seconds. Validate grades it like `kubedrill check`.
 5. Do it yourself: another variant, the ticket only, the mentor's hint
    ladder and your diagnosis. A pass completes the assignment.
-6. Result: the badge, your stage scores and the mastery rule with your
-   numbers; every DIY of a learning plan passed earns the plan's badge.
+6. Result: your module badge, your stage scores and the mastery rule with
+   your numbers. A module badge is earned when every assignment of the
+   module has a clean solve (no guide, no hint, within the expected time)
+   and mastered when every one is mastered; the Badges screen shows every
+   module, level and exam track badge.
 
 After each passed run the page opens the debrief: the same summary and
 questions as `kubedrill debrief`, stored on the episode. The home page

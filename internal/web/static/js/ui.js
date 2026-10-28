@@ -1,6 +1,6 @@
 // Components shared by the home, catalog and assignment screens.
 
-import { el, svg, icons } from "./dom.js";
+import { el, icons } from "./dom.js";
 
 // REPO is the public repository; every screen that names the source links it.
 export const REPO = "https://github.com/cauebraz/kubedrill";
@@ -30,25 +30,13 @@ export function stageDots(p, simulation) {
     keys.map((k) => el("i", { class: p && p[k] && p[k].done ? "on" : "" })));
 }
 
-export function ring(done, total, earned, size) {
-  const s = size || 44;
-  const r = s / 2 - 3;
-  const c = 2 * Math.PI * r;
-  const frac = total ? done / total : 0;
-  return el("div", { class: "ring" + (earned ? " earned" : ""), style: "width:" + s + "px;height:" + s + "px", role: "img", "aria-label": earned ? "Badge earned" : done + " of " + total + " done" },
-    svg("svg", { viewBox: "0 0 " + s + " " + s, width: s, height: s },
-      svg("circle", { class: "track", cx: s / 2, cy: s / 2, r }),
-      svg("circle", { class: "bar", cx: s / 2, cy: s / 2, r, "stroke-dasharray": c, "stroke-dashoffset": c * (1 - frac) })),
-    el("span", { class: "lbl", text: earned ? "\u2713" : done + "/" + total }));
-}
-
 export const STATUS_WORDS = [["todo", "not started"], ["started", "in progress"], ["live", "live"], ["complete", "complete"], ["mastered", "mastered"]];
 const STATUS_CLASS = { todo: "", started: "info", live: "warn", complete: "good", mastered: "brand" };
 const STATUS_TITLES = {
   todo: "No stage done yet",
   started: "Some stages done; the assignment is complete when the Do it yourself run passes",
   live: "A run of this assignment is active now",
-  complete: "The Do it yourself run passed; it counts toward the plan badge",
+  complete: "The Do it yourself run passed; a badge counts it when the solve was clean (no guide, no hint, within the expected time)",
   mastered: "3 clean solves on different variants; kubedrill brings it back for review"
 };
 

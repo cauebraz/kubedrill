@@ -326,10 +326,11 @@ func (a *app) pathCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "path",
 		Short: "Print the learning ladder with progress per module",
-		Long: "path prints curriculum.yaml as a ladder: each level with its hours and capstone,\n" +
-			"each module with planned, existing and solved scenario counts and the mastery\n" +
-			"of its concepts, then the next recommended scenario (hidden while an episode\n" +
-			"is active).",
+		Long: "path prints curriculum.yaml as a ladder: each level with its hours, capstone\n" +
+			"and badge state, each module with planned, existing and solved scenario counts,\n" +
+			"its badge state and the mastery of its concepts, then the next recommended\n" +
+			"scenario (hidden while an episode is active). A badge is locked, in progress,\n" +
+			"earned (every assignment solved clean) or mastered (every assignment mastered).",
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return a.runPath()
@@ -356,11 +357,12 @@ func (a *app) runPath() error {
 	}
 	solved := solvedSet(eps)
 	mastery := progress.ConceptMastery(scenarioInfos(cat), eps)
+	book := badgesOf(c, cat, eps)
 	for i, lv := range c.Levels {
 		if i > 0 {
 			a.println()
 		}
-		a.printLevel(lv, solved, mastery)
+		a.printLevel(lv, solved, mastery, book)
 	}
 	cur, err := j.Current()
 	if err != nil {
@@ -383,10 +385,11 @@ func (a *app) runPath() error {
 // concepts line align after "concepts: ".
 const pathConceptsIndent = "          "
 
-// printLevel prints one level of the ladder: its header, the capstone and
-// each module with its counts and the state of its concepts.
-func (a *app) printLevel(lv curriculum.Level, solved map[string]bool, mastery map[string]progress.Mastery) {
-	a.printf("%s  %s  (%d h)\n", a.printer().Style(render.StyleBold, lv.ID), lv.Title, lv.Hours)
+// printLevel prints one level of the ladder: its header with the badge
+// state, the capstone and each module with its counts, its badge state and
+// the state of its concepts.
+func (a *app) printLevel(lv curriculum.Level, solved map[string]bool, mastery map[string]progress.Mastery, book badgeBook) {
+	a.printf("%s  %s  (%d h)  badge: %s\n", a.printer().Style(render.StyleBold, lv.ID), lv.Title, lv.Hours, badgeWord(book.levels[lv.ID]))
 	if lv.Capstone != "" {
 		a.println(a.printer().WrapLine("    capstone: "+lv.Capstone, "              "))
 	}
@@ -405,7 +408,7 @@ func (a *app) printLevel(lv curriculum.Level, solved map[string]bool, mastery ma
 		if m.Pack != "" {
 			title += " (pack " + m.Pack + ")"
 		}
-		a.println(a.printer().WrapLine(fmt.Sprintf("    %-5s %s: %d planned, %d existing, %d solved", m.ID, title, len(m.Scenarios), existing, done), pathConceptsIndent))
+		a.println(a.printer().WrapLine(fmt.Sprintf("    %-5s %s: %d planned, %d existing, %d solved; badge: %s", m.ID, title, len(m.Scenarios), existing, done, badgeWord(book.modules[m.ID])), pathConceptsIndent))
 		if len(m.Concepts) == 0 {
 			continue
 		}

@@ -140,10 +140,11 @@ Screens:
 | Screen | What it shows |
 |--------|---------------|
 | Welcome | The first visit of a journal: the five steps of the troubleshooting loop, each on a worked ticket with one pick and the reason the step exists, then the way into the workspace. Every other route redirects here until it is finished or skipped (`POST /api/onboarded`, stored in `web-progress.json`), then opens the route that was asked for; `--preview` skips it, and Home links it again as "How kubedrill works" |
-| Home | A Continue card (the live run with its namespace and elapsed time, or the assignment `kubedrill list` recommends with its reason, or "all caught up"), the plans in progress, and links to the catalog, the exams and the GitHub repository. A profile line counts completed assignments, plan badges, reviews due and planned assignments |
-| Catalog | Every level and plan, with search (title, id, plan, concept) and filters for level, status (not started, in progress, live, complete, mastered; complete means the Do it yourself run passed, the rule the plan rings use), exam domain (only domains with an assignment, with their count) and concept (by title). The filters live in the URL. A level with nothing written yet collapses to one line with its planned count. An assignment whose `requires` are not solved shows a lock and stays open |
-| Exams | Each exam domain with its weight, the assignments that train it and how many are complete (Do it yourself passed, as in the plans) |
-| Assignment | The stages below, with the concept pages as chips (each opens in a drawer) and the mastery meter with the clean solves and the distinct variants among them, for example `2 of 3 clean solves, 2 of 3 variants solved clean` |
+| Home | A Continue card (the live run with its namespace and elapsed time, or the assignment `kubedrill list` recommends with its reason, or "all caught up"), the plans in progress, and links to the catalog, the exams and the GitHub repository. A profile line counts completed assignments, badges earned or mastered out of every badge (a link to Badges), reviews due and planned assignments; a card shows the next badge in progress |
+| Catalog | Every level and plan, each plan with its module badge and caption, with search (title, id, plan, concept) and filters for level, status (not started, in progress, live, complete, mastered; complete means the Do it yourself run passed), exam domain (only domains with an assignment, with their count) and concept (by title). The filters live in the URL. A level with nothing written yet collapses to one line with its planned count. An assignment whose `requires` are not solved shows a lock and stays open |
+| Exams | Each exam with its track badge, and each domain with its weight, the assignments that train it and how many are complete (Do it yourself passed) |
+| Badges | Every module badge (hexagon, grouped by level), level badge (shield) and exam track badge (rosette) with its state, its caption and three dots for the variants solved clean, the legend, and a Share button on each earned or mastered badge (see [Badges](#badges)) |
+| Assignment | The stages below, with the concept pages as chips (each opens in a drawer), the mastery meter with the clean solves and the distinct variants among them, for example `2 of 3 clean solves, 2 of 3 variants solved clean`, and the badge of its module |
 
 An assignment walks through six stages, plus the exam rehearsal:
 
@@ -155,7 +156,39 @@ An assignment walks through six stages, plus the exam rehearsal:
 | Guided practice | `start` on the first variant, recorded `"guided": true`; the steps beside a terminal into the workstation, the live checks and a timer. A guided solve is never a clean solve | passed |
 | Do it yourself | `start` on another variant at random, the ticket and the story (its fix section closed until the run ends or hint 4) instead of the steps, the mentor | passed |
 | Exam rehearsal | `start` on a random variant in a time box, the ticket and a terminal, no hints, guide or live checks; one Submit grades it (see [Exam mode](#exam-mode)) | passed |
-| Result | Assignment complete or not, the plan badge (locked until every assignment of the plan is complete), the stage results with redo links, and the mastery rule with the learner's numbers: clean solves in the last attempts, variants among the clean solves (`cleanVariants`, `2 of 3 variants solved clean`; the denominator is the variants mastery needs, at most 3) and variants solved in any run | - |
+| Result | Assignment complete or not, the module badge with its state and caption (`L0.1 Reading the cluster: in progress -> earned` when the solve changed it since the page last showed it, with any level or track badge that changed too), the stage results with redo links, and the mastery rule with the learner's numbers: clean solves in the last attempts, variants among the clean solves (`cleanVariants`, `2 of 3 variants solved clean`; the denominator is the variants mastery needs, at most 3) and variants solved in any run | - |
+
+#### Badges
+
+A badge is computed from the journal by `internal/progress`; nothing is
+stored for it. Clean is the clean-solve rule (no guide, no hint, within
+the scenario minutes, a read before the first write when the audit log saw
+the run); mastered is the mastery rule.
+
+| Badge | Locked | In progress | Earned | Mastered |
+|-------|--------|-------------|--------|----------|
+| Module (hexagon) | no run of its written assignments finished | a run finished, not every assignment clean | every written assignment has a clean solve | every written assignment mastered |
+| Level (shield) | every module badge locked | some module badge started | every module badge earned | every module badge mastered |
+| Exam track (rosette) | no domain covered | some domain covered | every domain covered | every domain has a mastered assignment |
+
+- A domain is covered when one of its written assignments has a clean
+  solve. A domain with no written assignment cannot be covered, so the
+  track is not earned while one exists; the caption says so (`1 of 2
+  domains covered by clean solves; 1 of 2 domains have assignments yet`).
+- The ring has five arcs: lit = round(5 x clean / total) (assignments,
+  module badges or domains), at least 1 once a clean solve exists and at
+  most 4 while in progress, so 5 lit arcs always mean earned. The
+  three dots are the variants solved clean among the last attempts, the
+  lowest across the parts of the badge.
+- Planned scenarios and modules without a written assignment do not
+  count; a level with none shows `No assignment written yet`.
+- Share draws a 1200x627 PNG in the page (canvas, no external font or
+  image): the badge, the name typed in the dialog (kept in this browser
+  only), the variants solved clean, the module badges earned and the date
+  earned (today when unknown), with `self-reported, local` and
+  `github.com/cauebraz/kubedrill`. Nothing is hosted, so there is no
+  verification link. Copy text puts one line for a post on the clipboard.
+- The exam tracks are kubedrill practice tracks, not a certification.
 
 Launching a run:
 
@@ -570,6 +603,13 @@ kubedrill path
 The ladder from `curriculum.yaml`: levels, hours, and modules with planned,
 existing and solved scenario counts. A guided practice run of the browser
 workspace does not make a scenario solved here.
+
+- Each level header and module line ends with its badge state, the same
+  rule as the badges of the browser workspace: `badge: locked` (no run of
+  its assignments finished), `badge: in progress`, `badge: earned` (every
+  written assignment has a clean solve; a level: every module badge
+  earned) or `badge: mastered` (every assignment mastered; a level: every
+  module badge mastered). Planned scenarios do not count.
 
 - A module line wider than the terminal wraps under the text after the
   module id, the same hanging indent as the concepts line.

@@ -64,8 +64,9 @@ exists. Then each assignment runs in the browser, in six stages:
 6. **Debrief and badge.** After each passed run the debrief puts your
    diagnosis next to the real cause and shows your trajectory: how much you
    observed before the first change, and whether that change hit the
-   object the fix belongs to. Finish every DIY run of a learning plan to
-   earn its badge.
+   object the fix belongs to. Solve every assignment of a module clean (no
+   guide, no hint, within the expected time) to earn its badge; the
+   Badges screen also has level and exam track badges and a share card.
 
 The home page always has one next step: the run you left open, or the
 assignment kubedrill recommends and why. The catalog filters every

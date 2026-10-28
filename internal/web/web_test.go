@@ -316,24 +316,36 @@ func TestStageFlowAndDebrief(t *testing.T) {
 	}
 }
 
-func TestBadgeNeedsEveryDIY(t *testing.T) {
+func TestBadgesFollowCleanSolves(t *testing.T) {
 	f := newFake()
 	f.Passed = true
 	c := newClient(t, f)
-	for _, id := range []string{"001", "002"} {
-		c.start(`{"id":"` + id + `","stage":"diy","replace":true}`)
-		c.json("POST", "/api/validate", "", nil)
+	badge := func() (web.Badge, web.Badge) {
+		var cat web.Catalog
+		c.json("GET", "/api/catalog", "", &cat)
+		return cat.Levels[0].Modules[0].Badge, cat.Levels[0].Badge
 	}
-	var cat web.Catalog
-	c.json("GET", "/api/catalog", "", &cat)
-	if !cat.Levels[0].Modules[0].Badge {
-		t.Errorf("L0.1 badge: got false after every DIY passed")
+	if m, lv := badge(); m.State != "in-progress" || m.Lit != 3 || m.Caption != "1 of 2 assignments solved clean" || m.Code != "L0.1" || lv.State != "in-progress" {
+		t.Fatalf("before: module %+v, level %+v; want L0.1 in progress with 3 lit arcs", m, lv)
 	}
-	if cat.Levels[0].Modules[1].Badge {
-		t.Error("L0.2 badge earned with no DIY")
+	c.start(`{"id":"001","stage":"practice","replace":true}`)
+	c.json("POST", "/api/validate", "", nil)
+	if m, _ := badge(); m.State != "in-progress" {
+		t.Errorf("after a guided solve: got %+v, want still in progress", m)
 	}
-	if cat.Levels[2].Modules[0].Badge {
-		t.Error("a plan with no assignment earned its badge")
+	c.start(`{"id":"001","stage":"diy","replace":true}`)
+	c.json("POST", "/api/validate", "", nil)
+	m, lv := badge()
+	if m.State != "earned" || m.Lit != 5 || m.EarnedAt == nil || m.Caption != "Every assignment solved clean" {
+		t.Errorf("after a clean DIY solve: got %+v, want earned", m)
+	}
+	if lv.State != "earned" || lv.Caption != "Every module badge earned" {
+		t.Errorf("level after every module earned: got %+v", lv)
+	}
+	var a web.Assignment
+	c.json("GET", "/api/assignment/001", "", &a)
+	if a.ModuleBadge.State != "earned" || a.ModuleBadge.Code != "L0.1" {
+		t.Errorf("assignment module badge: got %+v", a.ModuleBadge)
 	}
 }
 

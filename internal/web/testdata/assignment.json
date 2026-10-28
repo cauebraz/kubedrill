@@ -13,17 +13,27 @@
   "id": "001-storefront-down",
   "level": "L0",
   "mastery": {
-    "attempts": 3,
-    "cleanInLast": 2,
-    "cleanVariants": 2,
-    "last": 3,
+    "attempts": 2,
+    "cleanInLast": 0,
+    "cleanVariants": 0,
+    "last": 2,
     "mastered": false,
-    "solved": 2,
+    "solved": 0,
     "variants": 3,
-    "variantsSolved": 2
+    "variantsSolved": 0
   },
   "minutes": 10,
   "module": "L0.1",
+  "moduleBadge": {
+    "caption": "1 of 2 assignments solved clean",
+    "clean": 1,
+    "code": "L0.1",
+    "lit": 3,
+    "pips": 0,
+    "state": "in-progress",
+    "total": 2,
+    "variants": 1
+  },
   "moduleTitle": "Reading the cluster",
   "progress": {
     "diy": {

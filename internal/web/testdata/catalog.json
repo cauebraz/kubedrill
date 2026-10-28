@@ -18,6 +18,16 @@
   ],
   "exams": [
     {
+      "badge": {
+        "caption": "1 of 2 domains covered by clean solves; 1 of 2 domains have assignments yet",
+        "clean": 1,
+        "code": "CKA",
+        "lit": 3,
+        "pips": 0,
+        "state": "in-progress",
+        "total": 2,
+        "variants": 1
+      },
       "domains": [
         {
           "assignments": [
@@ -41,6 +51,17 @@
       "title": "Certified Kubernetes Administrator"
     },
     {
+      "badge": {
+        "caption": "Every domain covered by clean solves",
+        "clean": 2,
+        "code": "CKAD",
+        "earnedAt": "2026-10-23T09:30:00Z",
+        "lit": 5,
+        "pips": 1,
+        "state": "earned",
+        "total": 2,
+        "variants": 7
+      },
       "domains": [
         {
           "assignments": [
@@ -64,11 +85,53 @@
       ],
       "id": "CKAD",
       "title": "Certified Kubernetes Application Developer"
+    },
+    {
+      "badge": {
+        "caption": "No domain covered by a clean solve yet; 1 of 2 domains have assignments yet",
+        "clean": 0,
+        "code": "CKS",
+        "lit": 0,
+        "pips": 0,
+        "state": "locked",
+        "total": 2,
+        "variants": 0
+      },
+      "domains": [
+        {
+          "assignments": [
+            "012-config-typo"
+          ],
+          "id": "cluster-setup",
+          "solved": 0,
+          "title": "Cluster setup",
+          "weight": 15
+        },
+        {
+          "assignments": [],
+          "id": "supply-chain",
+          "solved": 0,
+          "title": "Supply chain security",
+          "weight": 20
+        }
+      ],
+      "id": "CKS",
+      "title": "Certified Kubernetes Security Specialist"
     }
   ],
   "levels": [
     {
       "after": "Reads any object and fixes one-object failures",
+      "badge": {
+        "caption": "1 of 2 module badges earned",
+        "clean": 1,
+        "code": "L0",
+        "lit": 3,
+        "pips": 0,
+        "state": "in-progress",
+        "total": 2,
+        "variants": 7
+      },
       "before": "",
       "id": "L0",
       "modules": [
@@ -84,14 +147,14 @@
               ],
               "id": "001-storefront-down",
               "mastery": {
-                "attempts": 3,
-                "cleanInLast": 2,
-                "cleanVariants": 2,
-                "last": 3,
+                "attempts": 2,
+                "cleanInLast": 0,
+                "cleanVariants": 0,
+                "last": 2,
                 "mastered": false,
-                "solved": 2,
+                "solved": 0,
                 "variants": 3,
-                "variantsSolved": 2
+                "variantsSolved": 0
               },
               "minutes": 10,
               "progress": {
@@ -128,14 +191,14 @@
               ],
               "id": "002-restart-triage",
               "mastery": {
-                "attempts": 0,
-                "cleanInLast": 0,
-                "cleanVariants": 0,
-                "last": 0,
+                "attempts": 1,
+                "cleanInLast": 1,
+                "cleanVariants": 1,
+                "last": 1,
                 "mastered": false,
-                "solved": 0,
+                "solved": 1,
                 "variants": 3,
-                "variantsSolved": 0
+                "variantsSolved": 1
               },
               "minutes": 12,
               "progress": {
@@ -160,11 +223,20 @@
               },
               "requires": [],
               "simulation": false,
-              "status": "todo",
+              "status": "solved",
               "title": "Find the pod that keeps restarting"
             }
           ],
-          "badge": false,
+          "badge": {
+            "caption": "1 of 2 assignments solved clean",
+            "clean": 1,
+            "code": "L0.1",
+            "lit": 3,
+            "pips": 0,
+            "state": "in-progress",
+            "total": 2,
+            "variants": 1
+          },
           "id": "L0.1",
           "planned": 2,
           "summary": "kubectl verbs, namespaces, events",
@@ -181,14 +253,14 @@
               ],
               "id": "003-crashloop",
               "mastery": {
-                "attempts": 0,
-                "cleanInLast": 0,
-                "cleanVariants": 0,
-                "last": 0,
-                "mastered": false,
-                "solved": 0,
+                "attempts": 3,
+                "cleanInLast": 3,
+                "cleanVariants": 3,
+                "last": 3,
+                "mastered": true,
+                "solved": 3,
                 "variants": 3,
-                "variantsSolved": 0
+                "variantsSolved": 3
               },
               "minutes": 15,
               "progress": {
@@ -213,7 +285,7 @@
               },
               "requires": [],
               "simulation": false,
-              "status": "todo",
+              "status": "mastered",
               "title": "Worker is in CrashLoopBackOff since the deploy"
             },
             {
@@ -224,6 +296,152 @@
                 "CKAD:observability"
               ],
               "id": "004-never-ready",
+              "mastery": {
+                "attempts": 3,
+                "cleanInLast": 3,
+                "cleanVariants": 3,
+                "last": 3,
+                "mastered": true,
+                "solved": 3,
+                "variants": 3,
+                "variantsSolved": 3
+              },
+              "minutes": 15,
+              "progress": {
+                "diy": {
+                  "done": false
+                },
+                "exam": {
+                  "done": false
+                },
+                "learn": {
+                  "done": false
+                },
+                "meeting": {
+                  "done": false
+                },
+                "practice": {
+                  "done": false
+                },
+                "quiz": {
+                  "done": false
+                }
+              },
+              "requires": [
+                "003-crashloop"
+              ],
+              "simulation": false,
+              "status": "mastered",
+              "title": "API never becomes Ready"
+            }
+          ],
+          "badge": {
+            "caption": "Every assignment, 3 variants clean",
+            "clean": 2,
+            "code": "L0.2",
+            "earnedAt": "2026-10-22T09:30:00Z",
+            "lit": 5,
+            "pips": 3,
+            "state": "mastered",
+            "total": 2,
+            "variants": 6
+          },
+          "id": "L0.2",
+          "planned": 3,
+          "summary": "Phases, probes, restarts",
+          "title": "Pod lifecycle"
+        }
+      ],
+      "title": "Foundations"
+    },
+    {
+      "after": "Debugs an app in a namespace without help",
+      "badge": {
+        "caption": "1 of 2 module badges earned",
+        "clean": 1,
+        "code": "L1",
+        "lit": 3,
+        "pips": 0,
+        "state": "in-progress",
+        "total": 2,
+        "variants": 1
+      },
+      "before": "",
+      "id": "L1",
+      "modules": [
+        {
+          "assignments": [
+            {
+              "concepts": [
+                "rollouts"
+              ],
+              "exam": [
+                "CKAD:deployment"
+              ],
+              "id": "011-rollout-stuck",
+              "mastery": {
+                "attempts": 1,
+                "cleanInLast": 1,
+                "cleanVariants": 1,
+                "last": 1,
+                "mastered": false,
+                "solved": 1,
+                "variants": 3,
+                "variantsSolved": 1
+              },
+              "minutes": 20,
+              "progress": {
+                "diy": {
+                  "done": false
+                },
+                "exam": {
+                  "done": false
+                },
+                "learn": {
+                  "done": false
+                },
+                "meeting": {
+                  "done": false
+                },
+                "practice": {
+                  "done": false
+                },
+                "quiz": {
+                  "done": false
+                }
+              },
+              "requires": [],
+              "simulation": false,
+              "status": "solved",
+              "title": "Rollout stuck at 1 of 3 new replicas"
+            }
+          ],
+          "badge": {
+            "caption": "Every assignment solved clean",
+            "clean": 1,
+            "code": "L1.1",
+            "earnedAt": "2026-10-23T09:30:00Z",
+            "lit": 5,
+            "pips": 1,
+            "state": "earned",
+            "total": 1,
+            "variants": 1
+          },
+          "id": "L1.1",
+          "planned": 4,
+          "summary": "Deployments, strategies, history",
+          "title": "Rollouts"
+        },
+        {
+          "assignments": [
+            {
+              "concepts": [
+                "configmaps"
+              ],
+              "exam": [
+                "CKS:cluster-setup"
+              ],
+              "id": "012-config-typo",
               "mastery": {
                 "attempts": 0,
                 "cleanInLast": 0,
@@ -256,91 +474,58 @@
                 }
               },
               "requires": [
-                "003-crashloop"
+                "001-storefront-down"
               ],
               "simulation": false,
               "status": "todo",
-              "title": "API never becomes Ready"
+              "title": "Settings page shows the defaults after the release"
             }
           ],
-          "badge": false,
-          "id": "L0.2",
-          "planned": 3,
-          "summary": "Phases, probes, restarts",
-          "title": "Pod lifecycle"
-        }
-      ],
-      "title": "Foundations"
-    },
-    {
-      "after": "Debugs an app in a namespace without help",
-      "before": "",
-      "id": "L1",
-      "modules": [
-        {
-          "assignments": [
-            {
-              "concepts": [
-                "rollouts"
-              ],
-              "exam": [
-                "CKAD:deployment"
-              ],
-              "id": "011-rollout-stuck",
-              "mastery": {
-                "attempts": 0,
-                "cleanInLast": 0,
-                "cleanVariants": 0,
-                "last": 0,
-                "mastered": false,
-                "solved": 0,
-                "variants": 3,
-                "variantsSolved": 0
-              },
-              "minutes": 20,
-              "progress": {
-                "diy": {
-                  "done": false
-                },
-                "exam": {
-                  "done": false
-                },
-                "learn": {
-                  "done": false
-                },
-                "meeting": {
-                  "done": false
-                },
-                "practice": {
-                  "done": false
-                },
-                "quiz": {
-                  "done": false
-                }
-              },
-              "requires": [],
-              "simulation": false,
-              "status": "todo",
-              "title": "Rollout stuck at 1 of 3 new replicas"
-            }
-          ],
-          "badge": false,
-          "id": "L1.1",
-          "planned": 4,
-          "summary": "Deployments, strategies, history",
-          "title": "Rollouts"
+          "badge": {
+            "caption": "Not started: no run finished in its one assignment",
+            "clean": 0,
+            "code": "L1.2",
+            "lit": 0,
+            "pips": 0,
+            "state": "locked",
+            "total": 1,
+            "variants": 0
+          },
+          "id": "L1.2",
+          "planned": 2,
+          "summary": "ConfigMaps, Secrets, environment",
+          "title": "Configuration"
         }
       ],
       "title": "Application operator"
     },
     {
       "after": "On-call for a cluster",
+      "badge": {
+        "caption": "No assignment written yet",
+        "clean": 0,
+        "code": "L2",
+        "lit": 0,
+        "pips": 0,
+        "state": "locked",
+        "total": 0,
+        "variants": 0
+      },
       "before": "",
       "id": "L2",
       "modules": [
         {
           "assignments": [],
-          "badge": false,
+          "badge": {
+            "caption": "No assignment written yet",
+            "clean": 0,
+            "code": "L2.1",
+            "lit": 0,
+            "pips": 0,
+            "state": "locked",
+            "total": 0,
+            "variants": 0
+          },
           "id": "L2.1",
           "planned": 6,
           "summary": "Taints, affinity, resources",

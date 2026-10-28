@@ -6,7 +6,8 @@
 import { api } from "./api.js";
 import { el, clear, icons, plural } from "./dom.js";
 import { bind } from "./keys.js";
-import { assignmentRow, flatten, isDone, ring, skeleton, errorState, statusOf, STATUS_WORDS } from "./ui.js";
+import { assignmentRow, flatten, skeleton, errorState, statusOf, STATUS_WORDS } from "./ui.js";
+import { badgeSVG } from "./badge.js";
 
 const STATUSES = [["", "Any status"]].concat(STATUS_WORDS.map(([id, word]) => [id, word[0].toUpperCase() + word.slice(1)]));
 
@@ -118,8 +119,9 @@ function levelBlock(lv, shown, byID, filtering, open) {
   details.appendChild(el("div", { class: "modules" }, (filtering ? visible : mods.filter((x) => x.m.assignments.length || x.m.planned)).map(({ m, list }) =>
     el("article", { class: "card module" },
       el("div", { class: "module-top" },
-        el("div", null, el("div", { class: "eyebrow" }, m.id, m.pack ? [" ", el("span", { class: "pill brand", text: "pack " + m.pack })] : null), el("h3", { text: m.title }), el("p", { class: "summary", text: m.summary })),
-        m.assignments.length ? ring(m.assignments.filter(isDone).length, m.assignments.length, m.badge) : null),
+        el("div", null, el("div", { class: "eyebrow" }, m.id, m.pack ? [" ", el("span", { class: "pill brand", text: "pack " + m.pack })] : null), el("h3", { text: m.title }), el("p", { class: "summary", text: m.summary }),
+          m.assignments.length ? el("p", { class: "bdg-caption", text: m.badge.caption }) : null),
+        m.assignments.length ? el("a", { class: "bdg-link", href: "#/badges", title: m.badge.caption }, badgeSVG("module", m.badge, { size: 52, level: lv.id })) : null),
       list.length ? el("div", { class: "assign-list" }, list.map((a) => assignmentRow(a, byID, true))) : el("div", { class: "planned", text: "Nothing written yet" }),
       m.planned && !filtering ? el("div", { class: "planned", text: plural(m.planned, "more assignment") + " planned" }) : null))));
   return details;

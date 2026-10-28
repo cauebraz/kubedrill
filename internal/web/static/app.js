@@ -6,6 +6,7 @@ import { el, clear, leave } from "./js/dom.js";
 import { showHome } from "./js/home.js";
 import { showCatalog } from "./js/catalog.js";
 import { showExams } from "./js/exams.js";
+import { showBadges } from "./js/badges.js";
 import { showAssignment } from "./js/assignment.js";
 import { showKit } from "./js/kit.js";
 import "./js/mermaid.js";
@@ -79,7 +80,7 @@ onConnection((ok) => {
 function navLinks(current) {
   if (current !== null) { section = current; }
   current = section;
-  const links = [["#/", "Home", "home"], ["#/catalog", "Catalog", "catalog"], ["#/exams", "Exams", "exams"]];
+  const links = [["#/", "Home", "home"], ["#/catalog", "Catalog", "catalog"], ["#/exams", "Exams", "exams"], ["#/badges", "Badges", "badges"]];
   if (meta.dev) { links.push(["#/kit", "Kit", "kit"]); }
   clear(nav, links.map(([href, text, id]) => el("a", { href, class: id === current ? "on" : "", "aria-current": id === current ? "page" : null, text })));
 }
@@ -114,6 +115,9 @@ function route() {
     case "exams":
       navLinks("exams");
       return showExams(app, ctx);
+    case "badges":
+      navLinks("badges");
+      return showBadges(app, ctx);
     case "kit":
       navLinks("kit");
       return showKit(app, ctx);

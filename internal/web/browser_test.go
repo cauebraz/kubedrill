@@ -262,6 +262,21 @@ func (b *browser) shot(name string) {
 	b.eval("document.documentElement.removeAttribute('data-theme')")
 }
 
+// fullShot saves a screenshot of the whole scrolling page at width w by
+// growing the window to its height, then restores the window.
+func (b *browser) fullShot(name string, w int, mobile bool) {
+	if b.dir == "" {
+		return
+	}
+	h := b.eval("String(Math.ceil(document.querySelector('.topbar').offsetHeight + document.querySelector('.page').scrollHeight))")
+	var height int
+	fmt.Sscanf(h, "%d", &height)
+	b.call("Emulation.setDeviceMetricsOverride", map[string]any{"width": w, "height": max(height, 600), "deviceScaleFactor": 1, "mobile": mobile})
+	time.Sleep(200 * time.Millisecond)
+	b.shot(name)
+	b.call("Emulation.clearDeviceMetricsOverride", nil)
+}
+
 func modKey() int {
 	return 2
 }
@@ -344,15 +359,21 @@ func TestBrowser(t *testing.T) {
 		}
 		b.shot("02-catalog-search")
 		b.clickText("Clear filters")
-		b.wait("filters cleared", "document.querySelectorAll('.assign-row').length === 5")
+		b.wait("filters cleared", "document.querySelectorAll('.assign-row').length === 6")
 		if b.eval("document.querySelectorAll('.assign-row .lock').length") != "1" {
-			t.Errorf("lock on 004 (requires 003): got %s locks", b.eval("document.querySelectorAll('.assign-row .lock').length"))
+			t.Errorf("lock on 012 (requires the storefront, not done): got %s locks", b.eval("document.querySelectorAll('.assign-row .lock').length"))
+		}
+		if got := b.eval("[...document.querySelectorAll('.module .bdg')].map((e) => e.getAttribute('class')).join(',')"); got != "bdg in-progress,bdg mastered,bdg earned,bdg locked" {
+			t.Errorf("catalog module badges: got %q", got)
 		}
 	})
 
 	sub("exams", func(t *testing.T) {
 		b.go_("#/exams")
-		b.wait("exams", "document.querySelectorAll('.domain').length === 4")
+		b.wait("exams", "document.querySelectorAll('.domain').length === 6")
+		if got := b.eval("[...document.querySelectorAll('.exam-head .bdg')].map((e) => e.getAttribute('class')).join(',')"); got != "bdg in-progress,bdg earned,bdg locked" {
+			t.Errorf("exam track badges: got %q", got)
+		}
 		b.shot("03-exams")
 	})
 
@@ -486,13 +507,88 @@ func TestBrowser(t *testing.T) {
 		b.key("Enter", modKey())
 		b.wait("debrief", "location.hash.includes('/debrief/')")
 		b.clickText("Skip for now")
-		b.wait("result", "document.querySelector('.done-card .eyebrow').textContent === 'Assignment complete' && document.querySelector('.plan-line').textContent.includes('1 of 2')")
-		if b.eval("String(!!document.querySelector('.done-card .badge.locked'))") != "true" {
-			t.Error("plan badge shown as earned with 1 of 2 assignments of the plan complete")
+		b.wait("result", "document.querySelector('.done-card .eyebrow') && document.querySelector('.badge-line').textContent.includes('in progress -> earned')")
+		if b.eval("String(!!document.querySelector('.done-card .result-badge .bdg.earned'))") != "true" {
+			t.Error("result: the L0.1 badge is not drawn as earned after the clean DIY solve")
+		}
+		if got := b.text(".badge-line"); !strings.Contains(got, "Every assignment solved clean") {
+			t.Errorf("result badge caption: got %q", got)
+		}
+		if got := b.text(".badge-changes"); !strings.Contains(got, "Level L0 Foundations: earned") {
+			t.Errorf("result: other badges changed by the solve: got %q, want the L0 level", got)
 		}
 		b.shot("12-result")
 		b.go_("#/")
-		b.wait("home updated", "document.querySelector('.profile').textContent.includes('1 of 5')")
+		b.wait("home updated", "document.querySelector('.profile').textContent.includes('1 of 6') && document.querySelector('.profile').textContent.includes('5 of 10 badges')")
+		if got := b.text(".next-badge"); !strings.Contains(strings.ToLower(got), "next badge") || !strings.Contains(got, "L1 Application operator") || !strings.Contains(got, "1 of 2 module badges earned") {
+			t.Errorf("home next badge: got %q, want the L1 level in progress", got)
+		}
+	})
+
+	sub("badges screen and share card", func(t *testing.T) {
+		b.go_("#/badges")
+		b.wait("badges", "document.querySelector('.badges .bdg-legend')")
+		for _, st := range []string{"locked", "in-progress", "earned", "mastered"} {
+			if b.eval(fmt.Sprintf("String(document.querySelectorAll('.badges .bdg.%s').length > 0)", st)) != "true" {
+				t.Errorf("badges screen: no %s badge", st)
+			}
+		}
+		if got := b.eval("String(document.querySelector('#app').innerText.split('not a certification').length - 1)"); got != "1" {
+			t.Errorf("badges screen: 'not a certification' appears %s times, want 1", got)
+		}
+		if got := b.eval("String(document.querySelectorAll('.badges .bdg-tile').length)"); got != "10" {
+			t.Errorf("badge tiles: got %s, want 4 modules, 3 levels, 3 tracks", got)
+		}
+		if got := b.eval("String(document.querySelectorAll('.badges .bdg-tile button').length)"); got != "5" {
+			t.Errorf("share buttons: got %s, want one per earned or mastered badge (5)", got)
+		}
+		if b.eval("String(!!document.querySelector('.nav a[href=\"#/badges\"].on'))") != "true" {
+			t.Error("nav: Badges is not the current section")
+		}
+		b.fullShot("19-badges", 1440, false)
+		b.eval("document.querySelector('.badges .bdg-tile button').focus()")
+		b.key("Enter", 0)
+		b.wait("share dialog", "document.querySelector('.modal.share canvas.share-card')")
+		if got := b.eval("document.activeElement && document.activeElement.getAttribute('aria-label')"); got != "Your name on the card" {
+			t.Errorf("share dialog focus: got %q, want the name field", got)
+		}
+		b.eval("(() => { const i = document.querySelector('.share-name input'); i.value = 'Ada Lovelace'; i.dispatchEvent(new Event('input')); })()")
+		if got := b.eval("localStorage.getItem('kd:share-name')"); got != `"Ada Lovelace"` {
+			t.Errorf("stored name: got %q", got)
+		}
+		if got := b.text(".share-post"); !strings.Contains(got, "self-reported, local") || !strings.Contains(got, "github.com/cauebraz/kubedrill") || strings.Contains(strings.ToLower(got), "verify") {
+			t.Errorf("post text: got %q", got)
+		}
+		if n := b.eval("String(document.querySelector('canvas.share-card').toDataURL('image/png').length)"); len(n) < 4 {
+			t.Errorf("card data URL: %s characters, want more than 1000", n)
+		}
+		if size := b.eval("new Promise((r) => document.querySelector('canvas.share-card').toBlob((x) => r(String(x ? x.size : 0)), 'image/png'))"); size == "0" || len(size) < 4 {
+			t.Errorf("card PNG blob: %s bytes, want a non-empty PNG", size)
+		}
+		if got := b.eval("[document.querySelector('canvas.share-card').width, document.querySelector('canvas.share-card').height].join('x')"); got != "1200x627" {
+			t.Errorf("card size: got %s, want 1200x627", got)
+		}
+		b.clickText("Download PNG")
+		b.shot("20-share")
+		b.key("Escape", 0)
+		b.wait("share closed", "!document.querySelector('.modal.share')")
+		b.call("Emulation.setDeviceMetricsOverride", map[string]any{"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": true})
+		b.go_("#/")
+		b.go_("#/badges")
+		b.wait("badges at 390px", "document.querySelector('.badges .bdg-legend')")
+		if over := b.eval("String(document.documentElement.scrollWidth > window.innerWidth + 1)"); over != "false" {
+			t.Errorf("badges at 390px scrolls horizontally (scrollWidth %s)", b.eval("String(document.documentElement.scrollWidth)"))
+		}
+		b.fullShot("19-badges-390px", 390, true)
+		b.call("Emulation.setDeviceMetricsOverride", map[string]any{"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": true})
+		b.clickText("Share")
+		b.wait("share dialog at 390px", "document.querySelector('.modal.share canvas.share-card')")
+		if over := b.eval("String([...document.querySelectorAll('.modal.share, .modal.share .btn')].some((e) => e.getBoundingClientRect().right > window.innerWidth + 1))"); over != "false" {
+			t.Error("share dialog at 390px: an element is past the right edge")
+		}
+		b.shot("20-share-390px")
+		b.key("Escape", 0)
+		b.call("Emulation.clearDeviceMetricsOverride", nil)
 	})
 
 	sub("exam rehearsal", func(t *testing.T) {
@@ -597,7 +693,7 @@ func TestBrowser(t *testing.T) {
 	sub("narrow windows", func(t *testing.T) {
 		for _, w := range []int{390, 900} {
 			b.call("Emulation.setDeviceMetricsOverride", map[string]any{"width": w, "height": 844, "deviceScaleFactor": 1, "mobile": w < 600})
-			for _, h := range []string{"#/", "#/catalog", "#/a/001-storefront-down/meeting", "#/welcome"} {
+			for _, h := range []string{"#/", "#/catalog", "#/badges", "#/exams", "#/a/001-storefront-down/meeting", "#/welcome"} {
 				b.go_(h)
 				b.wait("render "+h, "document.querySelector('.page-inner, .stage-inner, .welcome-inner') && !document.querySelector('.skeleton')")
 				if over := b.eval("document.documentElement.scrollWidth > window.innerWidth + 1"); over != "false" {

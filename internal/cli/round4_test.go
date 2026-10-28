@@ -128,7 +128,7 @@ func TestPathModuleLineWraps(t *testing.T) {
 	if !found {
 		t.Errorf("module line missing:\n%s", out)
 	}
-	mustContain(t, strings.Join(strings.Fields(out), " "), "behind them: 2 planned, 1 existing, 0 solved concepts: pods new")
+	mustContain(t, strings.Join(strings.Fields(out), " "), "behind them: 2 planned, 1 existing, 0 solved; badge: locked concepts: pods new")
 }
 
 func TestListNarrowDropsTypeAndCutsTitle(t *testing.T) {

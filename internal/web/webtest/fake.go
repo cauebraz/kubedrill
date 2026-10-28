@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cauebraz/kubedrill/internal/progress"
 	"github.com/cauebraz/kubedrill/internal/scenario"
 	"github.com/cauebraz/kubedrill/internal/web"
 )
@@ -50,8 +51,17 @@ type Fake struct {
 
 	active   *activeEpisode
 	ended    map[string]*endedEpisode
+	records  map[string]*record
 	sequence int
 	hints    []string
+}
+
+// record is the history of one assignment as the catalog shows it: the
+// mastery card and the standing its badges read.
+type record struct {
+	status   string
+	mastery  web.Mastery
+	standing progress.Standing
 }
 
 type activeEpisode struct {
@@ -65,9 +75,65 @@ type endedEpisode struct {
 	debrief web.Debrief
 }
 
-// New returns a Fake with no episode.
+// New returns a Fake with no episode and a history that puts the badges in
+// every state: L0.1 in progress (002 solved clean, the storefront tried but
+// not solved), L0.2 mastered, L1.1 earned, L1.2 locked; the CKA track in
+// progress with a domain that has no assignment, CKAD earned, CKS locked.
 func New() *Fake {
-	return &Fake{ended: map[string]*endedEpisode{}, Now: time.Now}
+	first := time.Date(2026, 10, 20, 9, 30, 0, 0, time.UTC)
+	cleanOnce := func(id string, at time.Time) *record {
+		return &record{status: "solved",
+			mastery:  web.Mastery{Attempts: 1, Solved: 1, CleanInLast: 1, Last: 1, Variants: 3, VariantsSolved: 1, CleanVariants: 1},
+			standing: progress.Standing{ID: id, Started: true, Clean: true, CleanVariants: 1, VariantsClean: 1, FirstClean: &at}}
+	}
+	mastered := func(id string, at time.Time) *record {
+		return &record{status: "mastered",
+			mastery:  web.Mastery{Attempts: 3, Solved: 3, CleanInLast: 3, Last: 3, Variants: 3, VariantsSolved: 3, CleanVariants: 3, Mastered: true},
+			standing: progress.Standing{ID: id, Started: true, Clean: true, Mastered: true, CleanVariants: 3, VariantsClean: 3, FirstClean: &at}}
+	}
+	return &Fake{ended: map[string]*endedEpisode{}, Now: time.Now, records: map[string]*record{
+		FullID: {status: "todo",
+			mastery:  web.Mastery{Attempts: 2, Last: 2, Variants: 3},
+			standing: progress.Standing{ID: FullID, Started: true}},
+		"002-restart-triage": cleanOnce("002-restart-triage", first),
+		"003-crashloop":      mastered("003-crashloop", first.Add(24*time.Hour)),
+		"004-never-ready":    mastered("004-never-ready", first.Add(48*time.Hour)),
+		"011-rollout-stuck":  cleanOnce("011-rollout-stuck", first.Add(72*time.Hour)),
+		"012-config-typo":    {status: "todo", mastery: web.Mastery{Variants: 3}, standing: progress.Standing{ID: "012-config-typo"}},
+	}}
+}
+
+// recordRun adds a finished run of id to its history: a clean solve
+// (solved without the guide and without a hint) counts toward the badges.
+// Callers hold mu.
+func (f *Fake) recordRun(id string, solved, clean bool) {
+	r := f.records[id]
+	if r == nil {
+		return
+	}
+	m, st := &r.mastery, &r.standing
+	m.Attempts++
+	m.Last = min(m.Last+1, 4)
+	st.Started = true
+	if !solved {
+		return
+	}
+	m.Solved++
+	m.VariantsSolved = min(m.VariantsSolved+1, m.Variants)
+	if r.status == "todo" {
+		r.status = "solved"
+	}
+	if !clean {
+		return
+	}
+	m.CleanInLast = min(m.CleanInLast+1, 4)
+	m.CleanVariants = min(m.CleanVariants+1, m.Variants)
+	st.Clean = true
+	st.CleanVariants, st.VariantsClean = m.CleanVariants, st.VariantsClean+1
+	if st.FirstClean == nil {
+		at := f.now()
+		st.FirstClean = &at
+	}
 }
 
 // Lock and Unlock guard the recorded fields.
@@ -96,14 +162,15 @@ func card(id, title string, minutes int, sim bool, concepts, exam []string) web.
 }
 
 // Catalog is three levels: L0 with two plans and four assignments, L1 with
-// one plan, L2 planned only.
+// two plans of one assignment each, L2 planned only; the badges follow the
+// recorded runs with the rules of progress.
 func (f *Fake) Catalog(context.Context) (web.Catalog, error) {
 	f.mu.Lock()
+	defer f.mu.Unlock()
 	activeID := ""
 	if f.active != nil {
 		activeID = f.active.view.ScenarioID
 	}
-	f.mu.Unlock()
 	reading := []web.AssignmentCard{
 		card(FullID, "Storefront is down after the cluster migration", 10, true, []string{"pod-lifecycle", "image-pull"}, []string{"CKA:troubleshooting"}),
 		card("002-restart-triage", "Find the pod that keeps restarting", 12, false, []string{"pod-lifecycle"}, []string{"CKA:troubleshooting"}),
@@ -113,18 +180,24 @@ func (f *Fake) Catalog(context.Context) (web.Catalog, error) {
 		card("004-never-ready", "API never becomes Ready", 15, false, []string{"readiness-and-endpoints"}, []string{"CKAD:observability"}),
 	}
 	lifecycle[1].Requires = []string{"003-crashloop"}
-	reading[0].Mastery = web.Mastery{Attempts: 3, Solved: 2, CleanInLast: 2, Last: 3, Variants: 3, VariantsSolved: 2, CleanVariants: 2}
 	operator := []web.AssignmentCard{
 		card("011-rollout-stuck", "Rollout stuck at 1 of 3 new replicas", 20, false, []string{"rollouts"}, []string{"CKAD:deployment"}),
 	}
-	for _, list := range [][]web.AssignmentCard{reading, lifecycle, operator} {
+	config := []web.AssignmentCard{
+		card("012-config-typo", "Settings page shows the defaults after the release", 15, false, []string{"configmaps"}, []string{"CKS:cluster-setup"}),
+	}
+	config[0].Requires = []string{FullID}
+	for _, list := range [][]web.AssignmentCard{reading, lifecycle, operator, config} {
 		for i := range list {
+			if r := f.records[list[i].ID]; r != nil {
+				list[i].Status, list[i].Mastery = r.status, r.mastery
+			}
 			if list[i].ID == activeID {
 				list[i].Status = "active"
 			}
 		}
 	}
-	return web.Catalog{
+	c := web.Catalog{
 		Levels: []web.Level{
 			{ID: "L0", Title: "Foundations", After: "Reads any object and fixes one-object failures", Modules: []web.Module{
 				{ID: "L0.1", Title: "Reading the cluster", Summary: "kubectl verbs, namespaces, events", Assignments: reading, Planned: 2},
@@ -132,6 +205,7 @@ func (f *Fake) Catalog(context.Context) (web.Catalog, error) {
 			}},
 			{ID: "L1", Title: "Application operator", After: "Debugs an app in a namespace without help", Modules: []web.Module{
 				{ID: "L1.1", Title: "Rollouts", Summary: "Deployments, strategies, history", Assignments: operator, Planned: 4},
+				{ID: "L1.2", Title: "Configuration", Summary: "ConfigMaps, Secrets, environment", Assignments: config, Planned: 2},
 			}},
 			{ID: "L2", Title: "Cluster operator", After: "On-call for a cluster", Modules: []web.Module{
 				{ID: "L2.1", Title: "Scheduling", Summary: "Taints, affinity, resources", Assignments: []web.AssignmentCard{}, Planned: 6},
@@ -146,13 +220,65 @@ func (f *Fake) Catalog(context.Context) (web.Catalog, error) {
 				{ID: "observability", Title: "Application observability and maintenance", Weight: 15, Assignments: []string{"003-crashloop", "004-never-ready"}},
 				{ID: "deployment", Title: "Application deployment", Weight: 20, Assignments: []string{"011-rollout-stuck"}},
 			}},
+			{ID: "CKS", Title: "Certified Kubernetes Security Specialist", Domains: []web.ExamDomain{
+				{ID: "cluster-setup", Title: "Cluster setup", Weight: 15, Assignments: []string{"012-config-typo"}},
+				{ID: "supply-chain", Title: "Supply chain security", Weight: 20, Assignments: []string{}},
+			}},
 		},
 		Concepts: []web.Concept{
 			{ID: "image-pull", Title: "Image pull"},
 			{ID: "pod-lifecycle", Title: "Pod lifecycle"},
 			{ID: "readiness-and-endpoints", Title: "Readiness and endpoints"},
 		},
-	}, nil
+	}
+	f.badges(&c)
+	return c, nil
+}
+
+// badges fills the badges of c from the records with the rules of
+// progress. Callers hold mu.
+func (f *Fake) badges(c *web.Catalog) {
+	standing := func(id string) (progress.Standing, bool) {
+		r := f.records[id]
+		if r == nil {
+			return progress.Standing{}, false
+		}
+		return r.standing, true
+	}
+	view := func(b progress.Badge, code string) web.Badge {
+		return web.Badge{State: string(b.State), Lit: b.Lit, Clean: b.Clean, Total: b.Total, Pips: b.Pips, Variants: b.Variants, Caption: b.Caption, Code: code, EarnedAt: b.EarnedAt}
+	}
+	for i := range c.Levels {
+		lv := &c.Levels[i]
+		mods := make([]progress.Badge, 0, len(lv.Modules))
+		for j := range lv.Modules {
+			m := &lv.Modules[j]
+			var in []progress.Standing
+			for _, a := range m.Assignments {
+				if s, ok := standing(a.ID); ok {
+					in = append(in, s)
+				}
+			}
+			b := progress.ModuleBadge(in)
+			m.Badge = view(b, m.ID)
+			mods = append(mods, b)
+		}
+		lv.Badge = view(progress.LevelBadge(mods), lv.ID)
+	}
+	for i := range c.Exams {
+		e := &c.Exams[i]
+		domains := make([][]progress.Standing, 0, len(e.Domains))
+		for _, d := range e.Domains {
+			var in []progress.Standing
+			for _, id := range d.Assignments {
+				if s, ok := standing(id); ok {
+					in = append(in, s)
+				}
+			}
+			domains = append(domains, in)
+		}
+		e.Badge = view(progress.TrackBadge(domains), e.ID)
+	}
 }
 
 // Simulation is the simulation of FullID.
@@ -212,7 +338,7 @@ func (f *Fake) Assignment(_ context.Context, id string) (web.Assignment, error) 
 				}
 				out := web.Assignment{
 					ID: a.ID, Title: a.Title, Level: lv.ID, Module: m.ID, ModuleTitle: m.Title, Minutes: a.Minutes,
-					Exam: a.Exam, Variants: 3, Ticket: ticket, Story: story, Mastery: a.Mastery,
+					Exam: a.Exam, Variants: 3, Ticket: ticket, Story: story, Mastery: a.Mastery, ModuleBadge: m.Badge,
 					Concepts: []web.Concept{{ID: "pod-lifecycle", Title: "Pod lifecycle", Summary: "From Pending to Running to Ready.", Body: "# Pod lifecycle\n\nA pod moves from **Pending** to **Running**.\n"}},
 				}
 				if a.Simulation {
@@ -370,6 +496,7 @@ func (f *Fake) end(final bool) web.Validation {
 		}
 	}
 	v.Outcome = outcome
+	f.recordRun(v.ScenarioID, pass, pass && f.active.stage != web.StagePractice && len(f.hints) == 0)
 	v.RootCause = "The Deployment image points at a registry the new nodes cannot resolve."
 	v.Diagnosis = f.active.diagnosis
 	v.Solution = "## Change\n\n```\nkubectl set image deployment/storefront web=nginx:1.27-alpine\n```\n"

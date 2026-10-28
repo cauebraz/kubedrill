@@ -4,6 +4,7 @@ import { api } from "./api.js";
 import { el, clear, icons } from "./dom.js";
 import { pushOverlay, bind } from "./keys.js";
 import { stagesFor, masteryMeter, cleanVariantsText, skeleton, errorState } from "./ui.js";
+import { badgeSVG, STATE_WORDS } from "./badge.js";
 import { renderMeeting } from "./meeting.js";
 import { renderQuiz } from "./quiz.js";
 import { renderLearn } from "./learn.js";
@@ -41,7 +42,13 @@ export function showAssignment(app, ctx, id, stageId, extra) {
       a.concepts.length ? el("div", { class: "concepts" },
         el("div", { class: "eyebrow muted", text: "Concepts" }),
         el("div", { class: "chips" }, a.concepts.map((c) => el("button", { class: "chip", title: c.summary || c.title, onclick: () => openConcept(c) }, el("span", { class: "ic", html: icons.book }), c.title)))) : null,
-      el("div", { class: "stepper-mastery" }, el("div", { class: "eyebrow muted", text: "Mastery" }), masteryMeter(a.mastery), el("span", { class: "small muted", text: a.mastery.mastered ? "mastered" : Math.min(a.mastery.cleanInLast, 3) + " of 3 clean solves, " + cleanVariantsText(a.mastery) })));
+      el("div", { class: "stepper-mastery" }, el("div", { class: "eyebrow muted", text: "Mastery" }), masteryMeter(a.mastery), el("span", { class: "small muted", text: a.mastery.mastered ? "mastered" : Math.min(a.mastery.cleanInLast, 3) + " of 3 clean solves, " + cleanVariantsText(a.mastery) })),
+      a.moduleBadge && a.moduleBadge.code ? el("a", { class: "stepper-badge", href: "#/badges" },
+        badgeSVG("module", a.moduleBadge, { size: 56, level: a.level }),
+        el("span", null,
+          el("span", { class: "eyebrow muted", text: "Module badge / " + STATE_WORDS[a.moduleBadge.state] }),
+          el("span", { class: "small", text: a.moduleTitle }),
+          el("span", { class: "small muted", text: a.moduleBadge.caption }))) : null);
     const stage = el("section", { class: "stage", tabindex: "-1" });
     const lab = stageId === "practice" || stageId === "diy" || stageId === "exam";
     clear(app, el("div", { class: "assign" + (lab ? " lab-mode" : "") }, stepper, stage));

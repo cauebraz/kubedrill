@@ -78,11 +78,33 @@ type Catalog struct {
 	Concepts []Concept `json:"concepts,omitempty"`
 }
 
-// Exam is one certification and the learner's coverage of its domains.
+// Exam is one certification, the learner's coverage of its domains and
+// the badge of its kubedrill track.
 type Exam struct {
 	ID      string       `json:"id"`
 	Title   string       `json:"title"`
 	Domains []ExamDomain `json:"domains"`
+	Badge   Badge        `json:"badge"`
+}
+
+// Badge is the state of a module, level or exam track badge as the page
+// draws it: State is locked, in-progress, earned or mastered; Lit is the
+// number of lit arcs of the ring (0 to 5); Clean of Total is the count
+// behind it (assignments solved clean, module badges earned, domains
+// covered); Pips is the variants solved clean, out of 3, that every part
+// reaches; Variants sums the distinct variants solved clean; Code is the
+// text in the center (L0.2, L1, CKA); EarnedAt is when it was earned, when
+// known. The rules are progress.ModuleBadge, LevelBadge and TrackBadge.
+type Badge struct {
+	State    string     `json:"state"`
+	Lit      int        `json:"lit"`
+	Clean    int        `json:"clean"`
+	Total    int        `json:"total"`
+	Pips     int        `json:"pips"`
+	Variants int        `json:"variants"`
+	Caption  string     `json:"caption"`
+	Code     string     `json:"code"`
+	EarnedAt *time.Time `json:"earnedAt,omitempty"`
 }
 
 // ExamDomain is one exam domain: its weight, the assignments that train it
@@ -107,24 +129,25 @@ type Next struct {
 	ReviewsPending int     `json:"reviewsPending"`
 }
 
-// Level is one curriculum level.
+// Level is one curriculum level and its badge.
 type Level struct {
 	ID      string   `json:"id"`
 	Title   string   `json:"title"`
 	Before  string   `json:"before"`
 	After   string   `json:"after"`
 	Modules []Module `json:"modules"`
+	Badge   Badge    `json:"badge"`
 }
 
-// Module is one learning plan: its assignments and how many more are
-// planned.
+// Module is one learning plan: its assignments, how many more are
+// planned, and its badge.
 type Module struct {
 	ID          string           `json:"id"`
 	Title       string           `json:"title"`
 	Summary     string           `json:"summary"`
 	Assignments []AssignmentCard `json:"assignments"`
 	Planned     int              `json:"planned"`
-	Badge       bool             `json:"badge"`
+	Badge       Badge            `json:"badge"`
 	Pack        string           `json:"pack,omitempty"`
 }
 
@@ -158,7 +181,8 @@ type Mastery struct {
 }
 
 // Assignment is the content of one scenario for the stages that need no
-// episode: the simulation, the ticket and the story as HTML.
+// episode: the simulation, the ticket and the story as HTML, and the badge
+// of its module.
 type Assignment struct {
 	ID          string               `json:"id"`
 	Title       string               `json:"title"`
@@ -174,6 +198,7 @@ type Assignment struct {
 	Story       string               `json:"story"`
 	Progress    StageProgress        `json:"progress"`
 	Mastery     Mastery              `json:"mastery"`
+	ModuleBadge Badge                `json:"moduleBadge"`
 }
 
 // Concept is one concept page: the id, the title, the one-line summary and
@@ -536,13 +561,8 @@ func (s *Server) catalog(r *http.Request) (any, error) {
 	for i := range c.Levels {
 		for j := range c.Levels[i].Modules {
 			m := &c.Levels[i].Modules[j]
-			m.Badge = len(m.Assignments) > 0
 			for k := range m.Assignments {
-				a := &m.Assignments[k]
-				a.Progress = all[a.ID]
-				if !a.Progress.DIY.Done {
-					m.Badge = false
-				}
+				m.Assignments[k].Progress = all[m.Assignments[k].ID]
 			}
 		}
 	}

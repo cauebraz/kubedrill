@@ -60,6 +60,12 @@ func TestWebBackendCatalogAndAssignment(t *testing.T) {
 	if a.ID != "001-hello-down" || a.ModuleTitle != "Workloads" || !strings.Contains(a.Story, "task-hello") || a.Simulation != nil {
 		t.Errorf("assignment: got %+v", a)
 	}
+	if b := a.ModuleBadge; b.Code != m.ID || b.State != "locked" || b.Total != 1 || b.Caption != "Not started: no run finished in its one assignment" {
+		t.Errorf("assignment module badge: got %+v, want %s locked over 1 assignment", b, m.ID)
+	}
+	if b := c.Levels[0].Badge; b.Code != c.Levels[0].ID || b.State != "locked" {
+		t.Errorf("level badge: got %+v, want locked", b)
+	}
 	if _, err := b.Assignment(ctx, "999"); err == nil {
 		t.Error("Assignment of an unknown scenario: got nil error")
 	}
@@ -249,6 +255,12 @@ func TestWebBackendNextDebriefAndExams(t *testing.T) {
 	if got := c.Exams[0].Domains[0]; !slices.Contains(got.Assignments, "001-hello-down") || got.Solved != 0 {
 		t.Errorf("exam domain after a guided solve: got %+v, want 001-hello-down listed and 0 solved", got)
 	}
+	if got := c.Levels[0].Modules[0].Badge; got.State != "in-progress" || got.Lit != 0 || got.Caption != "0 of 1 assignment solved clean" {
+		t.Errorf("module badge after a guided solve: got %+v, want in progress with no lit arc", got)
+	}
+	if got := c.Exams[0].Badge; got.State != "locked" || got.Code != "CKA" {
+		t.Errorf("track badge after a guided solve: got %+v, want CKA locked", got)
+	}
 	if _, err := b.Start(ctx, "001", web.StageDIY, false, nil); err != nil {
 		t.Fatalf("Start DIY: %v", err)
 	}
@@ -258,6 +270,15 @@ func TestWebBackendNextDebriefAndExams(t *testing.T) {
 	c, _ = b.Catalog(ctx)
 	if got := c.Exams[0].Domains[0]; got.Solved != 1 {
 		t.Errorf("exam domain after a DIY solve: got %+v, want 1 solved", got)
+	}
+	if got := c.Levels[0].Modules[0].Badge; got.State != "earned" || got.Lit != 5 || got.EarnedAt == nil || got.Caption != "Every assignment solved clean" {
+		t.Errorf("module badge after a clean DIY solve: got %+v, want earned", got)
+	}
+	if got := c.Levels[0].Badge; got.State != "earned" {
+		t.Errorf("level badge after a clean DIY solve: got %+v, want earned", got)
+	}
+	if got := c.Exams[0].Badge; got.State != "earned" || got.Caption != "Every domain covered by clean solves" {
+		t.Errorf("track badge after a clean DIY solve: got %+v, want earned", got)
 	}
 }
 

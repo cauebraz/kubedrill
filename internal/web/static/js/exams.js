@@ -4,6 +4,7 @@
 import { api } from "./api.js";
 import { el, clear } from "./dom.js";
 import { flatten, statusPill, isDone, skeleton, errorState } from "./ui.js";
+import { badgeSVG } from "./badge.js";
 
 export function showExams(app, ctx) {
   ctx.crumbs([{ href: "#/", text: "Home" }, { text: "Exams" }]);
@@ -26,7 +27,9 @@ function examCard(e, byID) {
   const done = e.domains.reduce((n, d) => n + complete(d), 0);
   return el("section", { class: "card exam" },
     el("div", { class: "exam-head" },
-      el("div", null, el("div", { class: "eyebrow", text: e.id }), el("h2", { text: e.title })),
+      el("div", { class: "exam-title" },
+        e.badge ? el("a", { class: "bdg-link", href: "#/badges", title: e.id + " track: " + e.badge.caption }, badgeSVG("track", e.badge, { size: 52 })) : null,
+        el("div", null, el("div", { class: "eyebrow", text: e.id }), el("h2", { text: e.title }), e.badge ? el("p", { class: "bdg-caption", text: e.id + " track: " + e.badge.caption }) : null)),
       el("div", { class: "exam-total", text: done + " / " + total + " complete" })),
     el("div", { class: "domains" }, e.domains.map((d) => {
       const n = complete(d);

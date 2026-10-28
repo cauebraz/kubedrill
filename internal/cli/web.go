@@ -280,10 +280,11 @@ func (b *webBackend) Catalog(ctx context.Context) (web.Catalog, error) {
 	}
 	out := web.Catalog{Levels: []web.Level{}, Exams: []web.Exam{}}
 	solved := solvedSet(st.eps)
+	book := badgesOf(c, st.cat, st.eps)
 	for _, lv := range c.Levels {
-		level := web.Level{ID: lv.ID, Title: lv.Title, Before: lv.Before, After: lv.After, Modules: []web.Module{}}
+		level := web.Level{ID: lv.ID, Title: lv.Title, Before: lv.Before, After: lv.After, Modules: []web.Module{}, Badge: webBadge(book.levels[lv.ID], lv.ID)}
 		for _, m := range lv.Modules {
-			mod := web.Module{ID: m.ID, Title: m.Title, Summary: m.Summary, Pack: m.Pack, Assignments: []web.AssignmentCard{}}
+			mod := web.Module{ID: m.ID, Title: m.Title, Summary: m.Summary, Pack: m.Pack, Assignments: []web.AssignmentCard{}, Badge: webBadge(book.modules[m.ID], m.ID)}
 			for _, ps := range m.Scenarios {
 				if ps.ID == "" {
 					mod.Planned++
@@ -316,7 +317,7 @@ func (b *webBackend) Catalog(ctx context.Context) (web.Catalog, error) {
 		if err != nil {
 			return web.Catalog{}, err
 		}
-		exam := web.Exam{ID: e.ID, Title: e.Title, Domains: []web.ExamDomain{}}
+		exam := web.Exam{ID: e.ID, Title: e.Title, Domains: []web.ExamDomain{}, Badge: webBadge(book.tracks[e.ID], e.ID)}
 		for _, d := range cov {
 			exam.Domains = append(exam.Domains, web.ExamDomain{ID: d.Domain.ID, Title: d.Domain.Title, Weight: d.Domain.Weight, Assignments: nonNil(d.Scenarios), Solved: d.Done})
 		}
@@ -382,11 +383,13 @@ func (b *webBackend) Assignment(ctx context.Context, id string) (web.Assignment,
 		}
 	}
 	if c, err := a.loadCurriculum(); err == nil {
+		book := badgesOf(c, st.cat, st.eps)
 		for _, lv := range c.Levels {
 			for _, m := range lv.Modules {
 				for _, ps := range m.Scenarios {
 					if ps.ID == sc.Meta.ID {
-						out.Module, out.ModuleTitle = m.ID, m.Title
+						out.Level, out.Module, out.ModuleTitle = lv.ID, m.ID, m.Title
+						out.ModuleBadge = webBadge(book.modules[m.ID], m.ID)
 					}
 				}
 			}
