@@ -43,6 +43,7 @@ Compare them with the pods before changing anything.
 - service catalog has at least one ready endpoint
 - deployment catalog exists
 - deployment catalog has 2 ready replicas
+- deployment catalog finished rolling out: every pod runs the current template
 - no deployment other than catalog and storefront remains in the namespace
 
 ## Constraints

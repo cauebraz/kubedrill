@@ -15,6 +15,18 @@ checks:
     path: "{.status.readyReplicas}"
     equals: "3"
 
+  - id: sts-rolled-out
+    description: "statefulset redis finished rolling out: every pod runs the current template"
+    why: >-
+      A StatefulSet replaces its pods one at a time; until every pod runs the
+      current revision, part of the redis nodes still run an older template
+      and behave differently on the next restart.
+    depends_on: [sts-ready]
+    rollout:
+      kind: StatefulSet
+      namespace: "{{ .Namespace }}"
+      name: redis
+
   - id: svc-headless
     description: service redis is headless (clusterIP None)
     why: >-

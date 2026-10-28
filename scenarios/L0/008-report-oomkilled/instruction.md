@@ -43,6 +43,7 @@ AVAILABLE in `kubectl get deploy` counts pods that stayed Ready for
 - deployment report exists
 - deployment report has 1 available replica
 - no container of the report pod was last terminated with OOMKilled
+- deployment report finished rolling out: every pod runs the current template
 - container report still loads its 48Mi dataset
 
 ## Constraints

@@ -56,6 +56,18 @@ checks:
       timeout: 30s
     contains: "ACME Docs Portal 3.2.0"
 
+  - id: web-rolled-out
+    description: "deployment web finished rolling out: every pod runs the current template"
+    why: >-
+      Old pods that still pass readiness keep the ready count up while a
+      broken new template crash-loops; only a finished rollout proves every
+      pod runs the current template.
+    depends_on: [web-serves-page]
+    rollout:
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: web
+
   - id: edge-serves-page
     description: service edge serves the ACME Docs Portal 3.2.0 page
     why: >-

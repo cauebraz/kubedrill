@@ -13,7 +13,7 @@ the first page with a ```mermaid block and themes it from the tokens.
 | `js/api.js` | The JSON API, the NDJSON launch stream, the connection listener |
 | `js/dom.js` | `el`, `svg`, `clear`, `toast`, `store` (localStorage), `onLeave` cleanups, `shuffledOrder` (the choice order of a question, seeded by its text), icons |
 | `js/keys.js` | Shortcuts per screen (`bind`), the overlay stack Esc closes, the `?` help |
-| `js/ui.js` | Shared components: stages, rings, dots, mastery meter (clean solves out of 3), status pill and its vocabulary (`statusOf`: not started, in progress, live, complete, mastered), assignment row, `hideFixSection`, skeleton, error state |
+| `js/ui.js` | Shared components: stages, rings, dots, mastery meter (clean solves out of 3), `cleanVariantsText` (distinct variants among the clean solves against the variants mastery needs), status pill and its vocabulary (`statusOf`: not started, in progress, live, complete, mastered), assignment row, `hideFixSection`, skeleton, error state |
 | `js/welcome.js` | The welcome flow (`#/welcome`): the five steps of the loop on a worked ticket, shown once per journal before the workspace opens |
 | `js/mermaid.js` | Renders ```mermaid blocks of scenario markdown with the vendored mermaid, themed from the tokens, redrawn on theme change |
 | `js/home.js`, `js/catalog.js`, `js/exams.js` | The three top-level screens |

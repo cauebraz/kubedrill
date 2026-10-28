@@ -64,8 +64,9 @@ func TestFetchEnableListRemove(t *testing.T) {
 	if st.Manifest.Name != "incidents" || len(st.Scenarios) != 1 || st.Scenarios[0].Meta.ID != "001-storefront-down" {
 		t.Fatalf("staged: got %+v with %d scenarios", st.Manifest, len(st.Scenarios))
 	}
-	if len(st.Scripts) == 0 || !strings.HasSuffix(st.Scripts[0], "solve.sh") {
-		t.Errorf("scripts: got %v, want solve.sh listed", st.Scripts)
+	listed := strings.Join(st.Scripts, " ")
+	if !strings.Contains(listed, "solution/solve.sh") || !strings.Contains(listed, "shortcuts/rollout-restart.sh") {
+		t.Errorf("scripts: got %v, want solve.sh and the shortcuts listed", st.Scripts)
 	}
 	if entries, _ := os.ReadDir(Dir(data)); len(entries) != 1 || !strings.HasPrefix(entries[0].Name(), ".staging-") {
 		t.Errorf("staging: got %v, want one .staging-* directory", entries)

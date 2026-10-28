@@ -30,6 +30,18 @@ checks:
     path: "{.status.readyReplicas}"
     equals: "2"
 
+  - id: api-rolled-out
+    description: "deployment api finished rolling out: every pod runs the current template"
+    why: >-
+      Old pods that still pass readiness keep the ready count up while a
+      broken new template crash-loops; only a finished rollout proves every
+      pod runs the current template.
+    depends_on: [ready-replicas]
+    rollout:
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: api
+
   - id: api-connected
     description: 'the api pods log "api: connected"'
     why: >-

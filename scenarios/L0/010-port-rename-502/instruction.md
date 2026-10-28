@@ -43,6 +43,7 @@ anything.
 - service web has at least one ready endpoint
 - service web endpoints list a port
 - service web serves the ACME Docs Portal 3.2.0 page
+- deployment web finished rolling out: every pod runs the current template
 - service edge serves the ACME Docs Portal 3.2.0 page
 - configmap web-nginx still holds the release 3.2.0 server block
 - deployment web still has a readiness probe

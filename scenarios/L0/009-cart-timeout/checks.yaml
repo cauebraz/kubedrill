@@ -62,6 +62,18 @@ checks:
       timeout: 30s
     contains: "Welcome to nginx!"
 
+  - id: cart-rolled-out
+    description: "deployment cart finished rolling out: every pod runs the current template"
+    why: >-
+      Old pods that still pass readiness keep the ready count up while a
+      broken new template crash-loops; only a finished rollout proves every
+      pod runs the current template.
+    depends_on: [cart-page-served]
+    rollout:
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: cart
+
   - id: selector-matches-template
     description: service cart selects the pods that deployment cart creates
     why: >-

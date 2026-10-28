@@ -84,13 +84,14 @@
               ],
               "id": "001-storefront-down",
               "mastery": {
-                "attempts": 0,
-                "cleanInLast": 0,
-                "last": 0,
+                "attempts": 3,
+                "cleanInLast": 2,
+                "cleanVariants": 2,
+                "last": 3,
                 "mastered": false,
-                "solved": 0,
+                "solved": 2,
                 "variants": 3,
-                "variantsSolved": 0
+                "variantsSolved": 2
               },
               "minutes": 10,
               "progress": {
@@ -129,6 +130,7 @@
               "mastery": {
                 "attempts": 0,
                 "cleanInLast": 0,
+                "cleanVariants": 0,
                 "last": 0,
                 "mastered": false,
                 "solved": 0,
@@ -181,6 +183,7 @@
               "mastery": {
                 "attempts": 0,
                 "cleanInLast": 0,
+                "cleanVariants": 0,
                 "last": 0,
                 "mastered": false,
                 "solved": 0,
@@ -224,6 +227,7 @@
               "mastery": {
                 "attempts": 0,
                 "cleanInLast": 0,
+                "cleanVariants": 0,
                 "last": 0,
                 "mastered": false,
                 "solved": 0,
@@ -286,6 +290,7 @@
               "mastery": {
                 "attempts": 0,
                 "cleanInLast": 0,
+                "cleanVariants": 0,
                 "last": 0,
                 "mastered": false,
                 "solved": 0,

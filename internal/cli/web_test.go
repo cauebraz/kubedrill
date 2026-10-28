@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -415,4 +416,19 @@ func TestWebExamSubmitAndExpiry(t *testing.T) {
 			t.Errorf("session after the deadline: got %+v %v, want no active episode", sess.Active, err)
 		}
 	})
+}
+
+func TestMasteryViewCleanVariants(t *testing.T) {
+	sc := &scenario.Scenario{Meta: scenario.Meta{ID: "001-hello-down", Minutes: 15}, Variants: []scenario.Variant{{Name: "typo-tag"}, {Name: "wrong-repo"}, {Name: "old-registry"}}}
+	t0 := time.Date(2026, 10, 25, 10, 0, 0, 0, time.UTC)
+	solve := func(seed int64, variant string, start time.Duration, hints int) journal.Episode {
+		s := t0.Add(start)
+		end := s.Add(5 * time.Minute)
+		return journal.Episode{ID: strconv.FormatInt(seed, 10), ScenarioID: sc.Meta.ID, Seed: seed, Variant: variant, StartedAt: s, EndedAt: &end, Outcome: journal.OutcomeSolved, HintsUsed: hints}
+	}
+	eps := []journal.Episode{solve(1, "typo-tag", 0, 0), solve(2, "typo-tag", 24*time.Hour, 0), solve(3, "wrong-repo", 48*time.Hour, 2)}
+	got := masteryView(sc, eps)
+	if got.CleanVariants != 1 || got.VariantsSolved != 2 || got.Variants != 3 || got.CleanInLast != 2 {
+		t.Errorf("mastery view: got %+v, want 1 clean variant, 2 variants solved, 3 variants, 2 clean in last", got)
+	}
 }

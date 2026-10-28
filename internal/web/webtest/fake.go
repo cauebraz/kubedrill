@@ -113,6 +113,7 @@ func (f *Fake) Catalog(context.Context) (web.Catalog, error) {
 		card("004-never-ready", "API never becomes Ready", 15, false, []string{"readiness-and-endpoints"}, []string{"CKAD:observability"}),
 	}
 	lifecycle[1].Requires = []string{"003-crashloop"}
+	reading[0].Mastery = web.Mastery{Attempts: 3, Solved: 2, CleanInLast: 2, Last: 3, Variants: 3, VariantsSolved: 2, CleanVariants: 2}
 	operator := []web.AssignmentCard{
 		card("011-rollout-stuck", "Rollout stuck at 1 of 3 new replicas", 20, false, []string{"rollouts"}, []string{"CKAD:deployment"}),
 	}

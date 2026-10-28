@@ -82,6 +82,7 @@ func load(dir string, checkLayout bool) (*Scenario, error) {
 	loadApproaches(abs, s, fail)
 	loadStory(abs, s, fail)
 	loadSimulation(abs, s, fail)
+	loadShortcuts(abs, s, fail)
 
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("load scenario %s: %w", dir, errors.Join(errs...))

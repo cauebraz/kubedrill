@@ -113,7 +113,7 @@ func TestProbeRunsAgainAfterTheSettle(t *testing.T) {
 			f := &fakeKube{objects: map[string]*unstructured.Unstructured{}, probes: map[string]kube.ProbeResult{"img": tc.final}, probeFirst: tc.first}
 			zero := 0
 			rd := &scenario.Rendered{Namespace: "ns", Checks: []scenario.Check{{ID: "p", Probe: &scenario.Probe{Image: "img", Command: []string{"curl"}}, ExitCode: &zero}}}
-			g, err := New(f, WithProbeSettle(tc.settle)).Grade(context.Background(), rd)
+			g, err := New(f, WithSettle(tc.settle)).Grade(context.Background(), rd)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -375,7 +375,7 @@ func TestGradeSingleChecks(t *testing.T) {
 			name:        "no source is an error",
 			check:       scenario.Check{ID: "empty", Equals: str("x")},
 			wantStatus:  StatusError,
-			wantMessage: "check has no source: set resource, probe or script",
+			wantMessage: "check has no source: set resource, probe, script or rollout",
 		},
 		{
 			name:        "exit_code on a resource check is an error",
@@ -430,7 +430,7 @@ func TestGradeSingleChecks(t *testing.T) {
 			if tt.fake != nil {
 				tt.fake(f)
 			}
-			g, err := New(f).Grade(context.Background(), rendered(tt.check))
+			g, err := New(f, WithSettle(time.Millisecond)).Grade(context.Background(), rendered(tt.check))
 			if err != nil {
 				t.Fatalf("Grade: unexpected error %v", err)
 			}
@@ -469,7 +469,7 @@ func TestGradeScript(t *testing.T) {
 		}
 		return 3, "nope", nil
 	}
-	r := New(newFake(), WithScriptRunner(runner), WithEnv([]string{"TASK_NS=lab"}))
+	r := New(newFake(), WithScriptRunner(runner), WithEnv([]string{"TASK_NS=lab"}), WithSettle(time.Millisecond))
 	g, err := r.Grade(context.Background(), rendered(
 		scenario.Check{ID: "ok", Script: "ok", ExitCode: intp(0), Equals: str("fine")},
 		scenario.Check{ID: "bad", Script: "bad", ExitCode: intp(0)},

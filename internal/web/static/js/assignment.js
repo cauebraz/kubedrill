@@ -3,7 +3,7 @@
 import { api } from "./api.js";
 import { el, clear, icons } from "./dom.js";
 import { pushOverlay, bind } from "./keys.js";
-import { stagesFor, masteryMeter, skeleton, errorState } from "./ui.js";
+import { stagesFor, masteryMeter, cleanVariantsText, skeleton, errorState } from "./ui.js";
 import { renderMeeting } from "./meeting.js";
 import { renderQuiz } from "./quiz.js";
 import { renderLearn } from "./learn.js";
@@ -41,7 +41,7 @@ export function showAssignment(app, ctx, id, stageId, extra) {
       a.concepts.length ? el("div", { class: "concepts" },
         el("div", { class: "eyebrow muted", text: "Concepts" }),
         el("div", { class: "chips" }, a.concepts.map((c) => el("button", { class: "chip", title: c.summary || c.title, onclick: () => openConcept(c) }, el("span", { class: "ic", html: icons.book }), c.title)))) : null,
-      el("div", { class: "stepper-mastery" }, el("div", { class: "eyebrow muted", text: "Mastery" }), masteryMeter(a.mastery), el("span", { class: "small muted", text: a.mastery.mastered ? "mastered" : Math.min(a.mastery.cleanInLast, 3) + " of 3 clean solves" })));
+      el("div", { class: "stepper-mastery" }, el("div", { class: "eyebrow muted", text: "Mastery" }), masteryMeter(a.mastery), el("span", { class: "small muted", text: a.mastery.mastered ? "mastered" : Math.min(a.mastery.cleanInLast, 3) + " of 3 clean solves, " + cleanVariantsText(a.mastery) })));
     const stage = el("section", { class: "stage", tabindex: "-1" });
     const lab = stageId === "practice" || stageId === "diy" || stageId === "exam";
     clear(app, el("div", { class: "assign" + (lab ? " lab-mode" : "") }, stepper, stage));

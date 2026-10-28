@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -52,6 +53,14 @@ type AuditEvent struct {
 	// Restart is set when the body is a rollout restart: the
 	// kubectl.kubernetes.io/restartedAt annotation of the pod template.
 	Restart bool
+	// NoChange is set when the audit log holds the response object of a
+	// successful patch or update and it shows the server left the object
+	// as it was, the case kubectl reports as "patched (no change)": no
+	// managedFields entry outside the status subresource carries a time at
+	// or after the second the request arrived, while a write that changes
+	// an object stamps its manager's entry with the time of the write.
+	// Without a response object it is false.
+	NoChange bool
 }
 
 // ShellCommand is one line of the workstation shell log.
@@ -84,6 +93,7 @@ type auditLine struct {
 		Code int `json:"code"`
 	} `json:"responseStatus"`
 	RequestObject            json.RawMessage `json:"requestObject"`
+	ResponseObject           json.RawMessage `json:"responseObject"`
 	RequestReceivedTimestamp time.Time       `json:"requestReceivedTimestamp"`
 	StageTimestamp           time.Time       `json:"stageTimestamp"`
 }
@@ -179,6 +189,7 @@ func readAudit(path string, since, until time.Time, namespace string, fixTargets
 		if (l.Verb == "patch" || l.Verb == "update") && ref.Subresource == "" {
 			e.MetadataOnly = metadataOnly(l.RequestObject)
 			e.Restart = e.MetadataOnly && bytes.Contains(l.RequestObject, []byte("kubectl.kubernetes.io/restartedAt"))
+			e.NoChange = e.Code < 400 && unchanged(l.ResponseObject, at, fieldManager(l.RequestURI))
 		}
 		out = append(out, e)
 	}
@@ -285,9 +296,11 @@ func IsWrite(verb string) bool {
 }
 
 // Summarize builds the episode telemetry. Reads and writes come from the
-// audit events; a write counts only when it succeeded (code below 400) and
-// is not a connection subresource (exec, attach, portforward, proxy), which
-// counts as a read. A get of the same object from the same user agent
+// audit events; a write counts only when it succeeded (code below 400), is
+// not a connection subresource (exec, attach, portforward, proxy), which
+// counts as a read, and changed the object: a no-op write (NoChange, what
+// kubectl reports as "patched (no change)") is not a change and counts
+// neither as a write nor as a read. A get of the same object from the same user agent
 // less than one second before a write is the client's own read before it
 // writes (kubectl set image, edit, patch, scale) and counts neither as a
 // read nor as an observation before the first write. The verdict is
@@ -313,7 +326,7 @@ func Summarize(audit []AuditEvent, auditAvailable bool, shell []ShellCommand, fi
 				at := e.Time
 				firstKubectl = &at
 			}
-			if own[i] {
+			if own[i] || (writeRequest(e) && e.NoChange) {
 				continue
 			}
 			if !countsAsWrite(e) {
@@ -375,9 +388,9 @@ func Target(e AuditEvent) string {
 	return strings.ToLower(group + "/" + e.Resource + "/" + e.Name)
 }
 
-// preWriteReads marks, for every write that counts (countsAsWrite: it
-// succeeded and is not a connection subresource) in events (sorted by
-// time), the
+// preWriteReads marks, for every write request (writeRequest: it succeeded
+// and is not a connection subresource, a no-op write included) in events
+// (sorted by time), the
 // nearest preceding get of the same object by the same user agent less than
 // preWriteWindow before it: the client's own read before it writes. Only
 // that one get is marked; an earlier get within the window is the learner
@@ -385,7 +398,7 @@ func Target(e AuditEvent) string {
 func preWriteReads(events []AuditEvent) map[int]bool {
 	own := map[int]bool{}
 	for i, w := range events {
-		if !countsAsWrite(w) {
+		if !writeRequest(w) {
 			continue
 		}
 		for j := i - 1; j >= 0; j-- {
@@ -418,7 +431,7 @@ func normalizeTarget(s string) string {
 	return group + "/" + resource + "/" + name
 }
 
-func countsAsWrite(e AuditEvent) bool {
+func writeRequest(e AuditEvent) bool {
 	if !IsWrite(e.Verb) || e.Code >= 400 {
 		return false
 	}
@@ -427,6 +440,58 @@ func countsAsWrite(e AuditEvent) bool {
 		return false
 	}
 	return true
+}
+
+func countsAsWrite(e AuditEvent) bool {
+	return writeRequest(e) && !e.NoChange
+}
+
+// unchanged reports whether the response object of a patch or update
+// received at shows the object untouched: it has managedFields and none of
+// the entries that could record this write, outside the status
+// subresource, has a time at or after at truncated to the second
+// (managedFields times have second precision). With the request's field
+// manager known, only that manager's entries count, so an earlier write by
+// another manager in the same second does not hide a no-op. A missing
+// response, a Status response or an object without managedFields is not
+// unchanged, so a write without that evidence keeps counting.
+func unchanged(resp json.RawMessage, at time.Time, manager string) bool {
+	if len(resp) == 0 || string(resp) == "null" {
+		return false
+	}
+	var obj struct {
+		Kind     string `json:"kind"`
+		Metadata struct {
+			ManagedFields []struct {
+				Manager     string     `json:"manager"`
+				Time        *time.Time `json:"time"`
+				Subresource string     `json:"subresource"`
+			} `json:"managedFields"`
+		} `json:"metadata"`
+	}
+	if json.Unmarshal(resp, &obj) != nil || obj.Kind == "Status" || len(obj.Metadata.ManagedFields) == 0 {
+		return false
+	}
+	since := at.Truncate(time.Second)
+	for _, mf := range obj.Metadata.ManagedFields {
+		if mf.Subresource == "status" || manager != "" && mf.Manager != manager {
+			continue
+		}
+		if mf.Time == nil || !mf.Time.Before(since) {
+			return false
+		}
+	}
+	return true
+}
+
+// fieldManager returns the fieldManager query parameter of a request URI,
+// or "" when it has none.
+func fieldManager(uri string) string {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return ""
+	}
+	return u.Query().Get("fieldManager")
 }
 
 func source(audit, shell bool) string {

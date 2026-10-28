@@ -87,26 +87,20 @@ checks:
       set -u
       ip=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
       [ -n "$ip" ] || { echo "no node with an InternalIP found"; exit 1; }
-      attempt=1
-      while :; do
-        pod="kubedrill-qa-laptop-$SEED-$$-$attempt"
-        kubectl -n "$TASK_NS" run "$pod" --restart=Never --image=curlimages/curl:8.14.1@sha256:9a1ed35addb45476afa911696297f8e115993df459278ed036182dd2cd22b67b -- curl -fsS -m 5 "http://$ip:30080/" >/dev/null
-        phase=""
-        i=0
-        while [ "$i" -lt 20 ]; do
-          phase=$(kubectl -n "$TASK_NS" get pod "$pod" -o jsonpath='{.status.phase}')
-          case "$phase" in Succeeded|Failed) break ;; esac
-          sleep 1
-          i=$((i + 1))
-        done
-        echo "GET http://$ip:30080/ from pod $pod on the cluster network: phase $phase after ${i}s (attempt $attempt of 3)"
-        kubectl -n "$TASK_NS" logs "$pod"
-        kubectl -n "$TASK_NS" delete pod "$pod" --wait=false >/dev/null
-        [ "$phase" = Succeeded ] && exit 0
-        [ "$attempt" -ge 3 ] && exit 1
-        attempt=$((attempt + 1))
-        sleep 3
+      pod="kubedrill-qa-laptop-$SEED-$$"
+      kubectl -n "$TASK_NS" run "$pod" --restart=Never --image=curlimages/curl:8.14.1@sha256:9a1ed35addb45476afa911696297f8e115993df459278ed036182dd2cd22b67b -- curl -fsS -m 5 "http://$ip:30080/" >/dev/null
+      phase=""
+      i=0
+      while [ "$i" -lt 20 ]; do
+        phase=$(kubectl -n "$TASK_NS" get pod "$pod" -o jsonpath='{.status.phase}')
+        case "$phase" in Succeeded|Failed) break ;; esac
+        sleep 1
+        i=$((i + 1))
       done
+      echo "GET http://$ip:30080/ from pod $pod on the cluster network: phase $phase after ${i}s"
+      kubectl -n "$TASK_NS" logs "$pod"
+      kubectl -n "$TASK_NS" delete pod "$pod" --wait=false >/dev/null
+      [ "$phase" = Succeeded ]
     contains: "ACME Admin 3.2.0"
 
   - id: deployments-kept

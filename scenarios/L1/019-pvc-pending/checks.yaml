@@ -28,6 +28,18 @@ checks:
     path: "{.status.readyReplicas}"
     equals: "1"
 
+  - id: uploads-rolled-out
+    description: "deployment uploads finished rolling out: every pod runs the current template"
+    why: >-
+      Old pods that still pass readiness keep the ready count up while a
+      broken new template crash-loops; only a finished rollout proves every
+      pod runs the current template.
+    depends_on: [ready-replicas]
+    rollout:
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: uploads
+
   - id: data-writable
     description: the uploads pod writes and reads a file on claim uploads-data mounted at /data
     why: >-

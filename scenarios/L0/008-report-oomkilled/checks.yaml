@@ -46,6 +46,18 @@ checks:
     equals: ""
     spoiler: true
 
+  - id: report-rolled-out
+    description: "deployment report finished rolling out: every pod runs the current template"
+    why: >-
+      A ready count does not say which template a pod runs; only a finished
+      rollout proves every pod runs the current template and no pod of an
+      older one is left.
+    depends_on: [no-oomkill]
+    rollout:
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: report
+
   - id: dataset-kept
     description: container report still loads its 48Mi dataset
     why: >-

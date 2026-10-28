@@ -32,6 +32,7 @@ var templateMarkers = map[string][]string{
 	fileChecks:                               {"# kubedrill-template"},
 	filepath.Join(dirSolution, fileSolution): {"kubedrill-template"},
 	fileSimulation:                           {"# kubedrill-template"},
+	filepath.Join(dirShortcuts, "rollout-restart.sh"): {"kubedrill-template"},
 }
 
 const approachMarker = "kubedrill-template"

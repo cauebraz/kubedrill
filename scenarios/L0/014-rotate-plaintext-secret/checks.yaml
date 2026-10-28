@@ -114,6 +114,18 @@ checks:
       echo "$live of $live running pods see the new token"
     exit_code: 0
 
+  - id: payments-rolled-out
+    description: "deployment payments finished rolling out: every pod runs the current template"
+    why: >-
+      Old pods that still pass readiness keep the ready count up while a
+      broken new template crash-loops; only a finished rollout proves every
+      pod runs the current template.
+    depends_on: [payments-env-new]
+    rollout:
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: payments
+
   - id: worker-env-new
     description: every running payments-worker pod sees the new token
     why: >-
@@ -155,6 +167,18 @@ checks:
       fi
       echo "$live of $live running pods see the new token"
     exit_code: 0
+
+  - id: worker-rolled-out
+    description: "deployment payments-worker finished rolling out: every pod runs the current template"
+    why: >-
+      Old pods that still pass readiness keep the ready count up while a
+      broken new template crash-loops; only a finished rollout proves every
+      pod runs the current template.
+    depends_on: [worker-env-new]
+    rollout:
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: payments-worker
 
   - id: worker-restart-safe
     description: a new payments-worker pod would also start with the new token

@@ -37,6 +37,7 @@ revision you can list with `kubectl rollout history`.
 - deployment checkout has 4 ready replicas
 - deployment checkout has 4 up-to-date replicas
 - deployment checkout reports Progressing with reason NewReplicaSetAvailable
+- deployment checkout finished rolling out: every pod runs the current template
 - service checkout has 4 ready endpoints
 - no checkout pod is stuck in Pending
 

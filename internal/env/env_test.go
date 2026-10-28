@@ -666,7 +666,7 @@ func TestGradeSolvedRecordsTelemetry(t *testing.T) {
 	if ep.Telemetry == nil || ep.Telemetry.Verdict != "root-cause" {
 		t.Errorf("telemetry: got %+v, want the hook result", ep.Telemetry)
 	}
-	want := []string{"labels", "telemetry:" + started.ID, "finish:solved"}
+	want := []string{"labels", "telemetry:" + started.ID, "finish:solved", "delete:" + testNS}
 	if !reflect.DeepEqual(h.calls, want) {
 		t.Errorf("calls: got %v, want %v", h.calls, want)
 	}
@@ -882,10 +882,7 @@ func TestSubmit(t *testing.T) {
 			if ep.Outcome != tc.outcome || len(ep.Grades) != 1 || ep.Telemetry == nil {
 				t.Errorf("episode: got outcome %s grades %d telemetry %v, want %s, 1, set", ep.Outcome, len(ep.Grades), ep.Telemetry, tc.outcome)
 			}
-			want := []string{"labels", "telemetry:" + started.ID, "finish:" + string(tc.outcome)}
-			if tc.outcome != journal.OutcomeSolved {
-				want = append(want, "delete:"+testNS)
-			}
+			want := []string{"labels", "telemetry:" + started.ID, "finish:" + string(tc.outcome), "delete:" + testNS}
 			if !reflect.DeepEqual(h.calls, want) {
 				t.Errorf("calls: got %v, want %v", h.calls, want)
 			}
@@ -1174,7 +1171,7 @@ func TestStartDeletesPreviousNamespace(t *testing.T) {
 	}
 }
 
-func TestStartSkipsGCWhenAnotherStartWon(t *testing.T) {
+func TestStartGCKeepsTheActiveEpisodeOfAnotherStart(t *testing.T) {
 	h := newHarness(t, testScenario(), "", 0)
 	h.journal.afterStart = func() {
 		other := *h.journal.current
@@ -1184,8 +1181,82 @@ func TestStartSkipsGCWhenAnotherStartWon(t *testing.T) {
 	if _, _, err := h.s.Start(context.Background(), "001-hello", StartOptions{Seed: 1}); err != nil {
 		t.Fatal(err)
 	}
+	want := [][2]string{{NamespaceSelector("0123abcd"), "task-hello-other"}}
+	if !reflect.DeepEqual(h.kube.gc, want) {
+		t.Errorf("gc: got %v, want %v (every namespace of this journal but the active episode's)", h.kube.gc, want)
+	}
+}
+
+func TestStartGCSkippedWithoutActiveEpisode(t *testing.T) {
+	h := newHarness(t, testScenario(), "", 0)
+	h.journal.afterStart = func() { h.journal.current = nil }
+	if _, _, err := h.s.Start(context.Background(), "001-hello", StartOptions{Seed: 1}); err != nil {
+		t.Fatal(err)
+	}
 	if len(h.kube.gc) != 0 {
-		t.Errorf("gc: got %v, want none while another episode is current", h.kube.gc)
+		t.Errorf("gc: got %v, want none without an active episode to keep", h.kube.gc)
+	}
+}
+
+func TestEveryEndDeletesTheNamespace(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    journal.Mode
+		passed  bool
+		at      time.Duration
+		end     func(h *harness) (*journal.Episode, error)
+		outcome journal.Outcome
+	}{
+		{name: "solved by check", mode: journal.ModePractice, passed: true, at: 4 * time.Minute, outcome: journal.OutcomeSolved, end: func(h *harness) (*journal.Episode, error) {
+			_, ep, err := h.s.Grade(context.Background())
+			return ep, err
+		}},
+		{name: "surrendered", mode: journal.ModePractice, at: 4 * time.Minute, outcome: journal.OutcomeAbandoned, end: func(h *harness) (*journal.Episode, error) {
+			if _, err := h.s.Diagnose("the image tag is wrong"); err != nil {
+				return nil, err
+			}
+			h.calls = nil
+			if _, err := h.s.Surrender(context.Background()); err != nil {
+				return nil, err
+			}
+			return &h.journal.ended[len(h.journal.ended)-1], nil
+		}},
+		{name: "submitted", mode: journal.ModeExam, passed: true, at: 4 * time.Minute, outcome: journal.OutcomeSolved, end: func(h *harness) (*journal.Episode, error) {
+			_, ep, err := h.s.Submit(context.Background())
+			return ep, err
+		}},
+		{name: "expired", mode: journal.ModeExam, at: time.Hour, outcome: journal.OutcomeTimedOut, end: func(h *harness) (*journal.Episode, error) {
+			return h.s.Expire(context.Background())
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t, testScenario(), "", 0)
+			h.start(t, tc.mode, 1)
+			h.calls = nil
+			h.grader.grade = grader.Grade{Passed: tc.passed}
+			h.now = t0.Add(tc.at)
+			ep, err := tc.end(h)
+			if err != nil {
+				t.Fatalf("end: %v", err)
+			}
+			if ep == nil || ep.Outcome != tc.outcome || ep.Telemetry == nil {
+				t.Fatalf("episode: got %+v, want %s with telemetry", ep, tc.outcome)
+			}
+			deletes := 0
+			for i, c := range h.calls {
+				if c != "delete:"+testNS {
+					continue
+				}
+				deletes++
+				if !slices.Contains(h.calls[:i], "finish:"+string(tc.outcome)) {
+					t.Errorf("calls %v: the namespace is deleted before the episode is recorded as ended", h.calls)
+				}
+			}
+			if deletes != 1 {
+				t.Errorf("calls %v: got %d deletes of %s, want 1", h.calls, deletes, testNS)
+			}
+		})
 	}
 }
 

@@ -27,6 +27,9 @@ scenarios/L0/001-storefront-down/
 |-- solution/
 |   |-- README.md        walkthrough under the seven troubleshooting-loop headings
 |   `-- solve.sh         executable, non-interactive reference fix
+|-- shortcuts/           optional: wrong fixes smoke proves leave a check failing
+|   |-- rollout-restart.sh
+|   `-- service-port.sh
 `-- approaches/          optional, one directory per valid way to fix
     |-- set-image/
     |   |-- snippet.txt  1 to 8 lines, listed after a solve
@@ -372,10 +375,16 @@ command history, so several valid fixes pass.
 - A `critical` check that fails, errors or is skipped forces the score to 0.
 - Every check has a 30 second budget. A probe check gets
   `max(30s, probe.timeout + 30s)`.
-- A probe that exits non-zero runs once more after 3 seconds, when the
-  budget allows: an endpoint that became ready just before the check can
-  refuse connections until kube-proxy syncs, and the second run tells that
-  apart from a Service that is broken. The second result is the one graded.
+- A probe or script check that expects success (no `exit_code`, or
+  `exit_code: 0`) and exits non-zero runs once more after 3 seconds, when
+  at least 6 seconds of its budget remain: an endpoint that became ready
+  just before the check can refuse connections until kube-proxy syncs, and
+  the second run tells that apart from a Service that is broken. The second
+  result is the one graded, unless the second run itself errors (a killed
+  script, an API error), which keeps the first. A check that expects a
+  non-zero exit, exits 0 with the wrong output, or errors on the first run
+  runs once. A script check therefore needs no retry loop of its own for
+  kube-proxy or endpoint propagation.
 - A probe fails at once, without waiting for its timeout, on
   `InvalidImageName`, `ErrImageNeverPull`, `CreateContainerConfigError`
   (with the kubelet message) and on a Forbidden or Unauthorized answer.
@@ -415,7 +424,8 @@ on `image-correct`.
 
 Templated fields: `description`, `resource.namespace`, `resource.name`,
 `resource.selector`, `path`, `equals`, `not_equals`, `matches`, `contains`,
-`gte`, `lte`, `script`, `probe.image` and each `probe.command` element.
+`gte`, `lte`, `script`, `rollout.namespace`, `rollout.name`, `probe.image`
+and each `probe.command` element.
 
 ### Sources
 
@@ -426,6 +436,7 @@ Each check has exactly one source.
 | `resource` | `apiVersion`, `kind`, `namespace`, `name` or `selector` | The object (or List with `selector`), then `path` |
 | `probe` | `image` (pinned `image:tag@sha256:...`), `command`, `timeout` (Go duration, at least 1s, default 60s) | Exit code and combined output of a one-shot pod in the scenario namespace |
 | `script` | A bash command line | Exit code and combined output of the local command |
+| `rollout` | `kind` (`Deployment` or `StatefulSet`), `namespace`, `name` | None: the source is its own assertion and takes no validator |
 
 `resource`:
 
@@ -470,9 +481,45 @@ outcome.
 - Call `kubectl` by name. An absolute path skips the wrapper and the
   requests count as the learner's.
 
+`rollout`: the workload finished rolling out its current pod template.
+
+```yaml
+  - id: api-rolled-out
+    description: "deployment api finished rolling out: every pod runs the current template"
+    why: Old pods that are still healthy keep readyReplicas up while the new template crash-loops; only a finished rollout proves the change runs.
+    depends_on: [api-ready]
+    rollout:
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: api
+```
+
+- Passes when all four hold, read from the `apps/v1` object:
+  `status.observedGeneration >= metadata.generation` (the controller saw
+  the latest template), `status.updatedReplicas`, `status.availableReplicas`
+  and `status.replicas` each equal to `spec.replicas` (default 1). The last
+  one means no pod of an old template is left.
+- Why it exists: a Deployment rolls out a new template by surging new pods
+  before it removes old ones. When the new template is broken (an image tag
+  that does not exist, a crash-looping command), the old pods stay Running
+  and Ready, so `readyReplicas` and the Service endpoints look healthy while
+  the rollout is stuck. A check on `readyReplicas` alone passes after a fix
+  followed by a broken edit; the rollout check does not.
+- A failure reads `expected: 2 updated and available replicas of generation
+  3, 2 in total  actual: 1 updated, 2 available, 3 in total, observed
+  generation 3`. A missing workload is `expected: exists  actual: not
+  found`.
+- An empty `namespace` means the scenario namespace.
+- Fits every scenario whose fix changes a Deployment or StatefulSet pod
+  template. Put it after the ready check with `depends_on` on it, so it
+  adds no information about the variant and fails, or is skipped, right
+  after setup.
+- A StatefulSet with `updateStrategy: OnDelete` never updates its pods on
+  its own, so the check fails until the pods are deleted.
+
 ### Validators
 
-At least one per check. All compare after trimming whitespace.
+At least one per check, except a `rollout` check, which takes none. All compare after trimming whitespace.
 
 | Validator | Passes when | Valid with |
 |-----------|-------------|------------|
@@ -496,8 +543,8 @@ At least one per check. All compare after trimming whitespace.
   actual: 0 matching objects`, and for `exists: false`, `expected: no
   matching objects  actual: N matching objects`.
 - A `checks.yaml` that lint never saw and that combines `exists` with
-  `path`, `probe` or `script` is an `[err ]` result with the same message
-  lint gives.
+  `path`, `probe` or `script`, or a `rollout` check with a validator, is an
+  `[err ]` result with the same message lint gives.
 
 ## setup/ and hook.sh
 
@@ -584,7 +631,7 @@ A hook that needs a node-level fault calls the running binary:
 
 ### Script environment
 
-`hook.sh` and `solution/solve.sh` must be executable. They run with `bash`
+`hook.sh`, `solution/solve.sh` and `shortcuts/*.sh` must be executable. They run with `bash`
 from their own directory through `internal/scriptrun`, the runner script
 checks use, with the same allowlist (`PATH`, `HOME`, `TMPDIR`, `LANG`, `LC_ALL`, `TERM`, `USER`)
 plus:
@@ -595,8 +642,8 @@ plus:
 | `SEED` | The episode seed |
 | `VARIANT` | The variant name |
 | `VAR_<KEY>` | One per `vars` entry, key upper-cased (`VAR_IMAGE`) |
-| `KUBEDRILL_BIN` | `hook.sh`, and `solve.sh` under smoke: the path of the running `kubedrill` binary |
-| `KUBEDRILL_EPISODE` | `hook.sh`, and `solve.sh` under smoke: the id of the episode |
+| `KUBEDRILL_BIN` | `hook.sh`, and `solve.sh` and shortcuts under smoke: the path of the running `kubedrill` binary |
+| `KUBEDRILL_EPISODE` | `hook.sh`, and `solve.sh` and shortcuts under smoke: the id of the episode |
 | `KUBECONFIG` | A pinned kubeconfig holding only the `kind-kubedrill` context, its cluster and its user, at `<cluster state dir>/kubeconfig-scripts` (`cluster.ScriptKubeconfigPath()`, mode 0600) |
 
 - The pinned file is rewritten from the learner's kubeconfig on every
@@ -654,6 +701,44 @@ The reference fix, run by `kubedrill smoke` and CI. It is executable,
 non-interactive and bash 3.2 compatible. It starts with `: "${TASK_NS:?}"
 "${KUBECONFIG:?}"` and makes every check pass for every variant, branching
 on `VARIANT` or `VAR_<KEY>` when the fix differs.
+
+## shortcuts/
+
+Optional. One executable bash script per wrong or symptom-only fix a
+learner would plausibly try, named `<kebab-name>.sh`
+(`rollout-restart.sh`, `remove-liveness-probe.sh`). `kubedrill smoke` runs
+each one on a fresh setup and fails when every check passes afterwards, so
+a check that a later edit weakens shows up before a learner finds the
+bypass.
+
+The comment lines right after the shebang are the header:
+
+```bash
+#!/usr/bin/env bash
+# why: a restart recreates the pods from the same template, which still names an image no node can pull
+# variants: typo-tag
+set -euo pipefail
+
+: "${TASK_NS:?TASK_NS is required}" "${KUBECONFIG:?KUBECONFIG is required}"
+
+kubectl -n "$TASK_NS" rollout restart deployment/storefront
+kubectl -n "$TASK_NS" rollout status deployment/storefront --timeout=20s || true
+```
+
+- `# why:` is required, once, 10 to 200 characters: what the shortcut gets
+  wrong. Smoke prints it when the shortcut passes every check.
+- `# variants:` is optional, at most once: comma-separated variant names
+  from `scenario.toml`. Without it the shortcut runs on every variant.
+  Most shortcuts are wrong for one root cause only (scaling a stale pod to
+  0 and back is the fix of `012-stale-configmap` variant `env-var`), so
+  name the variant the shortcut targets.
+- The header ends at the first line that is not a comment.
+- A shortcut runs like `solve.sh`, with the variables above. It waits for
+  the state it produces (`rollout status`, a fixed sleep the checks need),
+  so a check fails because the fix is wrong, not because the grade came
+  too early. A command that fails is a broken shortcut and fails smoke;
+  append `|| true` to a wait that is expected to time out.
+- `just shellcheck` covers the scripts.
 
 ## approaches/
 
@@ -744,12 +829,18 @@ Files:
 - `checks.yaml`: strict YAML (unknown fields rejected), at least one check,
   the field rules above, `why` of 20 to 400 characters, `depends_on`
   targets that exist and form no cycle, `exists` only on a `resource`
-  without `path`, `exit_code` only on a `probe` or `script`, `matches` a
+  without `path`, `exit_code` only on a `probe` or `script`, no validator
+  on a `rollout`, `rollout.kind` `Deployment` or `StatefulSet` with a
+  `rollout.name`, `matches` a
   valid RE2 regexp, `spoiler` a boolean, `probe.image` pinned by digest,
   `probe.timeout` a Go duration of at least 1s; on every rendered variant,
   `path` parses as a JSONPath and `gte`/`lte` parse as finite numbers
 - `solution/`: `README.md` with the seven sections in order, `solve.sh`
   executable
+- `shortcuts/` (when present): only executable regular files named
+  `<kebab-name>.sh`, each starting with a bash shebang and a header with
+  one `# why:` line of 10 to 200 characters and at most one `# variants:`
+  line naming declared variants, each once
 - `story.md` (when present): the five sections in order; it parses as a
   template
 - `simulation.yaml` (when present): parses as a template and, rendered for
@@ -767,7 +858,8 @@ Files:
   hyphens, holding exactly a 1 to 8 line `snippet.txt` and a non-empty
   `content.md`; both parse as templates
 - template markers (`kubedrill-template`, `Title in the reporter's words`,
-  `namespace = "template"`) absent everywhere except `_template`
+  `namespace = "template"`) absent everywhere except `_template`, including
+  the template's `shortcuts/rollout-restart.sh`
 
 Across the tree:
 
@@ -795,7 +887,16 @@ check-ci` for all). For each scenario and each variant seed it:
 2. asserts that the checks fail right after setup;
 3. runs `solution/solve.sh` with the variables above;
 4. asserts that every check passes;
-5. deletes the namespaces it used.
+5. for each shortcut that applies to the variant, starts another episode,
+   runs the shortcut and asserts that at least one check does not pass,
+   printing the checks that still fail;
+6. deletes the namespaces it used.
+
+A shortcut that passes every check fails the run with
+`shortcut <name> passed every check: <why>`; either the checks miss the
+bypass or the shortcut is a valid fix and belongs in `approaches/`.
+`--no-shortcuts` skips step 5 for a quick local run; CI runs them. Each
+run line ends with its duration, and the summary line with the total.
 
 Smoke uses a throwaway journal with its own journal label, so your episodes
 and their namespaces are untouched. It refuses a scenario you have an active
@@ -805,10 +906,10 @@ episode of, unless `--force`:
 an active episode of <id> runs in namespace <ns>; setup hooks may change cluster-wide state, so finish it (kubedrill reset, or kubedrill diagnose "<cause>" then kubedrill solution --yes) or pass --force
 ```
 
-`solve.sh` output is printed only for failing runs; `-v` prints it for every
-run. CI runs the same command on every pull request. `hook.sh`, `solve.sh`
-and `script` checks run on the machine that runs smoke, so review them in a
-third-party scenario first.
+`solve.sh` and shortcut output is printed only for failing runs; `-v`
+prints it for every run. CI runs the same command on every pull request.
+`hook.sh`, `solve.sh`, shortcuts and `script` checks run on the machine that
+runs smoke, so review them in a third-party scenario first.
 
 ## Concept pages
 

@@ -119,12 +119,16 @@ func validateCheckSource(c Check, cfail checkFail) {
 	if c.Script != "" {
 		sources++
 	}
+	if c.Rollout != nil {
+		sources++
+		validateRollout(*c.Rollout, cfail)
+	}
 	switch sources {
 	case 0:
-		cfail("exactly one source is required: resource, probe or script")
+		cfail("exactly one source is required: resource, probe, script or rollout")
 	case 1:
 	default:
-		cfail("exactly one source is allowed, got %d of resource, probe, script", sources)
+		cfail("exactly one source is allowed, got %d of resource, probe, script, rollout", sources)
 	}
 	if c.Path != "" && c.Resource == nil {
 		cfail("path is only valid with a resource source")
@@ -143,6 +147,19 @@ func validateResource(r ResourceRef, cfail checkFail) {
 	}
 	if r.Name != "" && r.Selector != "" {
 		cfail("resource.name and resource.selector are mutually exclusive")
+	}
+}
+
+func validateRollout(r Rollout, cfail checkFail) {
+	switch r.Kind {
+	case "Deployment", "StatefulSet":
+	case "":
+		cfail("rollout.kind is required: Deployment or StatefulSet")
+	default:
+		cfail("rollout.kind must be Deployment or StatefulSet, got %q", r.Kind)
+	}
+	if r.Name == "" {
+		cfail("rollout.name is required")
 	}
 }
 
@@ -180,6 +197,15 @@ func validateCheckValidators(c Check, cfail checkFail) {
 	set := []bool{
 		c.Exists != nil, c.Equals != nil, c.NotEquals != nil, c.Matches != "", c.Contains != "",
 		c.GTE != nil, c.LTE != nil, c.NotEmpty, c.ExitCode != nil,
+	}
+	if c.Rollout != nil {
+		for _, ok := range set {
+			if ok {
+				cfail("a rollout check is its own assertion and takes no validator")
+				return
+			}
+		}
+		return
 	}
 	for _, ok := range set {
 		if ok {
@@ -223,6 +249,10 @@ func templatedFields(c *Check) map[string]string {
 	add("gte", c.GTE)
 	add("lte", c.LTE)
 	f["script"] = c.Script
+	if c.Rollout != nil {
+		f["rollout.namespace"] = c.Rollout.Namespace
+		f["rollout.name"] = c.Rollout.Name
+	}
 	if c.Probe != nil {
 		f["probe.image"] = c.Probe.Image
 		for i, a := range c.Probe.Command {

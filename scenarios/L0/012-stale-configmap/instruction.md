@@ -39,6 +39,7 @@ anything.
 
 - deployment banner has 2 ready replicas
 - service banner serves the Winter sale 2026 banner
+- deployment banner finished rolling out: every pod runs the current template
 - no running banner pod still serves the Summer sale 2025 banner
 
 ## Constraints

@@ -18,7 +18,7 @@ the cluster profiles and audit policy, the release workflow.
 
 ## What to know before running third-party scenarios
 
-Scenario scripts (`hook.sh`, `solve.sh`, script checks) run on the host
+Scenario scripts (`hook.sh`, `solve.sh`, `shortcuts/*.sh`, script checks) run on the host
 with a reduced environment, not in the cluster. Read them before running a
 scenario you did not write. The same holds for scenario packs:
 `kubedrill pack add` lists every script and inline script check of a pack

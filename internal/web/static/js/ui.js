@@ -81,11 +81,18 @@ export function hideFixSection(root, note) {
 // masteryNeed is how many distinct variants mastery asks for.
 export function masteryNeed(m) { return Math.min(3, m.variants || 1); }
 
+// cleanVariantsText counts the distinct variants among the clean solves of
+// the last attempts against the variants mastery needs.
+export function cleanVariantsText(m) {
+  const need = masteryNeed(m);
+  return Math.min(m.cleanVariants || 0, need) + " of " + need + " variants solved clean";
+}
+
 export function masteryMeter(m) {
   const need = masteryNeed(m);
   const title = m.mastered
     ? "Mastered: 3 clean solves in your last 4 attempts, on " + need + " variants"
-    : "Mastery: " + m.cleanInLast + "/3 clean solves in your last " + (m.last || 4) + " attempts; mastery also needs " + need + " different variants among them. Clean means no hint and within the expected minutes.";
+    : "Mastery: " + m.cleanInLast + "/3 clean solves in your last " + (m.last || 4) + " attempts, " + cleanVariantsText(m) + "; mastery also needs " + need + " different variants among them. Clean means no hint and within the expected minutes.";
   const segs = [];
   for (let i = 0; i < 3; i++) { segs.push(el("i", { class: m.mastered || i < Math.min(m.cleanInLast, 3) ? "on" : "" })); }
   return el("span", { class: "mastery" + (m.mastered ? " done" : ""), title, role: "img", "aria-label": title }, segs);

@@ -53,6 +53,7 @@ statefulset.spec` lists the fields.
 ## Done when
 
 - statefulset redis has 3 ready replicas
+- statefulset redis finished rolling out: every pod runs the current template
 - service redis is headless (clusterIP None)
 - service redis has 3 ready endpoints, redis-0, redis-1 and redis-2
 - redis-2.redis.{{ .Namespace }}.svc.cluster.local resolves and answers PING on port 6379

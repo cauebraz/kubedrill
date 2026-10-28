@@ -262,9 +262,9 @@ func (s *Session) Reset(ctx context.Context, ref string, seed int64) (*journal.E
 // scenario namespace plus "-" and 5 random lowercase alphanumerics), apply
 // the setup manifests, run the hook script, and only then finish the
 // active episode as failed (timed out for an exam past its deadline), so a
-// failed setup leaves it active; then record the new episode and, when it
-// is still the current one, delete this journal's older episode namespaces
-// without waiting. The clock starts once the setup is in place; an exam
+// failed setup leaves it active; then record the new episode and delete,
+// without waiting, every other episode namespace of this journal except
+// the active episode's. The clock starts once the setup is in place; an exam
 // deadline is the start plus the scenario minutes. A seed of 0 draws one;
 // for a scenario with more than one variant the draw is repeated (up to 16
 // times) until the variant differs from the last episode of that scenario.
@@ -309,7 +309,7 @@ func (s *Session) Start(ctx context.Context, ref string, o StartOptions) (*journ
 	if err != nil {
 		return nil, nil, err
 	}
-	s.gc(ctx, ep.Namespace)
+	s.gc(ctx)
 	return ep, rd, nil
 }
 
@@ -428,16 +428,21 @@ func (s *Session) createEpisode(sc *scenario.Scenario, rd *scenario.Rendered, id
 	return &ep, nil
 }
 
-// gc deletes this journal's episode namespaces other than keep, without
-// waiting, but only while keep is still the current episode's: when
-// another process started an episode meanwhile, its cleanup is its own.
-func (s *Session) gc(ctx context.Context, keep string) {
+// gc is the safety net behind finish: it deletes, without waiting, every
+// episode namespace of this journal except the active episode's, which
+// catches a namespace whose delete failed or was cut short when its episode
+// ended. It reads the active episode again rather than trusting started,
+// so a newer episode another process recorded meanwhile keeps its
+// namespace; it deletes nothing when the journal cannot be read or no
+// episode is active. Namespaces of other journals (another learner, a
+// smoke run) are never touched.
+func (s *Session) gc(ctx context.Context) {
 	cur, err := s.d.Journal.Current()
-	if err != nil || cur == nil || cur.Namespace != keep {
+	if err != nil || cur == nil || cur.Namespace == "" {
 		return
 	}
 	selector := NamespaceSelector(s.d.Journal.JournalID())
-	if _, err := s.d.Kube.DeleteNamespaces(ctx, selector, keep); err != nil {
+	if _, err := s.d.Kube.DeleteNamespaces(ctx, selector, cur.Namespace); err != nil {
 		fmt.Fprintf(s.d.Out, "warning: delete old episode namespaces: %v\n", err)
 	}
 }
@@ -671,9 +676,9 @@ func (s *Session) Grade(ctx context.Context) (grader.Grade, *journal.Episode, er
 
 // finish appends g (when not nil) to the stored episode and, for any
 // outcome but active, records telemetry and ends it with outcome at now, in
-// one journal step. An episode that ends abandoned, failed or timed out has
-// its namespace deleted without waiting; a solved one keeps it until the
-// next Start's cleanup.
+// one journal step, then deletes its namespace without waiting. Telemetry
+// reads the audit log and the shell log, and the debrief reads the journal,
+// so neither needs the namespace once the episode is recorded as ended.
 func (s *Session) finish(ctx context.Context, ep *journal.Episode, rd *scenario.Rendered, g *grader.Grade, outcome journal.Outcome, now time.Time) (*journal.Episode, error) {
 	var tel *journal.Telemetry
 	if outcome != journal.OutcomeActive {
@@ -696,7 +701,7 @@ func (s *Session) finish(ctx context.Context, ep *journal.Episode, rd *scenario.
 	if err != nil {
 		return nil, fmt.Errorf("record episode of %s: %w", ep.ScenarioID, err)
 	}
-	if outcome != journal.OutcomeActive && outcome != journal.OutcomeSolved {
+	if outcome != journal.OutcomeActive {
 		s.deleteNamespace(ctx, ep.Namespace)
 	}
 	return done, nil

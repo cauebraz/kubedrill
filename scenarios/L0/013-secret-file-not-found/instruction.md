@@ -40,6 +40,7 @@ describe pod` prints both the Mounts and the Events.
 
 - deployment api exists
 - deployment api has 2 ready replicas
+- deployment api finished rolling out: every pod runs the current template
 - the api pods log "api: connected"
 - deployment api has 2 available replicas
 - the api pods take the password from Secret db-credentials

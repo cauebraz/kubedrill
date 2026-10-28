@@ -125,7 +125,7 @@ func TestLoadRealScenario(t *testing.T) {
 	if got, want := len(s.Hints), 4; got != want {
 		t.Errorf("len(Hints) = %d, want %d", got, want)
 	}
-	if got, want := len(s.Checks), 5; got != want {
+	if got, want := len(s.Checks), 6; got != want {
 		t.Errorf("len(Checks) = %d, want %d", got, want)
 	}
 	if got, want := len(s.SetupFiles), 3; got != want {

@@ -54,6 +54,10 @@ the path from idea to pull request. Every file and field is described in
    loop headings, a `solve.sh` that passes every variant, and optionally
    one directory per valid fix.
    [Format](docs/scenario-format.md#solution).
+   Add `shortcuts/<name>.sh` for the wrong fixes a learner would try (a
+   restart, removing a probe, relabeling a pod), each with a `# why:` line
+   and the `# variants:` it targets; smoke proves each one leaves a check
+   failing. [Format](docs/scenario-format.md#shortcuts).
 8. **`story.md`** (optional, recommended for L0 and for a first object). The
    ticket told from zero for a newcomer, under five fixed headings, true for
    every variant. [Sections](docs/scenario-format.md#storymd).
@@ -84,12 +88,14 @@ the path from idea to pull request. Every file and field is described in
 ```sh
 just check          # gofmt, vet, race tests, build, go mod tidy -diff, shellcheck, kubedrill lint
 ./start.sh up       # once: creates the kind cluster
-just smoke 011      # per variant: checks fail after setup, solve.sh runs, checks pass
+just smoke 011      # per variant: checks fail after setup, pass after solve.sh, fail after each shortcut
 just check-ci       # check, govulncheck and smoke for every scenario, as CI does
 ```
 
 - Contributors need Go (`just check`) and `kubectl` on the host: `hook.sh`,
-  `solve.sh` and script checks run there. Learners need neither.
+  `solve.sh`, shortcuts and script checks run there. Learners need neither.
+- `./bin/kubedrill smoke --no-shortcuts 011` skips the shortcut runs for a
+  quicker loop while editing; CI runs them.
 - Smoke uses a throwaway journal and its own namespaces. It refuses a
   scenario you have an active episode of, unless `--force`.
 - When the change touches shared code, run `./start.sh smoke` with no
@@ -134,7 +140,8 @@ What runs in CI:
 ## Scenario scripts run on your machine
 
 `kubedrill smoke` and `kubedrill start` run `setup/hook.sh`,
-`solution/solve.sh` and `script` checks with your user. They get a pinned
+`solution/solve.sh`, `shortcuts/*.sh` (smoke only) and `script` checks with
+your user. They get a pinned
 copy of your kubeconfig that holds only the `kind-kubedrill` context
 (`<cluster state dir>/kubeconfig-scripts`, mode 0600). Read those files in a
 third-party scenario before the first `smoke` or `start`, as you would any

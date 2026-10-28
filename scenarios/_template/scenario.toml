@@ -15,6 +15,9 @@
 #                      snippet.txt (1 to 8 lines) and content.md (trade-offs,
 #                      a short paragraph); shown after a solve, templated like
 #                      instruction.md (write kubectl -n {{ .Namespace }})
+#   shortcuts/<name>.sh optional, executable: a wrong fix a learner would try;
+#                      smoke proves it leaves a check failing (header
+#                      "# why:" and optional "# variants:")
 
 [scenario]
 # id matches the directory name: three digits, a hyphen, a kebab-case slug.

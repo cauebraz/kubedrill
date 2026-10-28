@@ -35,6 +35,7 @@ the claim and of the pod before changing anything.
 
 - persistentvolumeclaim uploads-data is Bound
 - deployment uploads has 1 ready replica
+- deployment uploads finished rolling out: every pod runs the current template
 - the uploads pod writes and reads a file on claim uploads-data mounted at /data
 
 ## Constraints

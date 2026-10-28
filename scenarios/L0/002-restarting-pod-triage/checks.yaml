@@ -70,6 +70,18 @@ checks:
     path: "{.items[*].status.conditions[?(@.type=='Ready')].status}"
     equals: "True"
 
+  - id: rolled-out
+    description: "the service that was restarting finished rolling out: every pod runs the current template"
+    why: >-
+      Old pods that still pass readiness keep the ready count up while a
+      broken new template crash-loops; only a finished rollout proves every
+      pod runs the current template.
+    depends_on: [restarts-zero]
+    rollout:
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: reviews
+
   - id: liveness-kept
     description: the service that was restarting keeps a liveness probe
     why: >-

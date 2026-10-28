@@ -623,3 +623,101 @@ func TestMetadataOnlyWriteIsNotRootCause(t *testing.T) {
 		}
 	}
 }
+
+func TestUnchanged(t *testing.T) {
+	received := at("10:00:05.400")
+	mf := func(entries ...string) string {
+		return `{"kind":"Deployment","metadata":{"name":"hello","managedFields":[` + strings.Join(entries, ",") + `]}}`
+	}
+	setup := `{"manager":"kubedrill","operation":"Apply","time":"2026-10-25T09:59:00Z"}`
+	status := `{"manager":"kube-controller-manager","operation":"Update","subresource":"status","time":"2026-10-25T10:00:06Z"}`
+	tests := []struct {
+		name    string
+		resp    string
+		manager string
+		want    bool
+	}{
+		{"no response", ``, "", false},
+		{"null response", `null`, "", false},
+		{"status response", `{"kind":"Status","code":422}`, "", false},
+		{"no managedFields", `{"kind":"Deployment","metadata":{"name":"hello"}}`, "", false},
+		{"not json", `{`, "", false},
+		{"no-op: every entry older than the request", mf(setup, `{"manager":"kubectl-patch","operation":"Update","time":"2026-10-25T10:00:01Z"}`), "", true},
+		{"no-op: a status update after it does not count", mf(setup, status), "", true},
+		{"change: the manager's entry has the request second", mf(setup, `{"manager":"kubectl-patch","operation":"Update","time":"2026-10-25T10:00:05Z"}`), "", false},
+		{"change: the manager's entry is newer", mf(setup, `{"manager":"kubectl-set","operation":"Update","time":"2026-10-25T10:00:06Z"}`), "", false},
+		{"entry without a time", mf(setup, `{"manager":"kubectl-edit","operation":"Update"}`), "", false},
+		{"no-op: another manager wrote in the same second", mf(setup, `{"manager":"kubectl-set","operation":"Update","time":"2026-10-25T10:00:05Z"}`), "kubectl-patch", true},
+		{"change: the request's manager is stamped", mf(setup, `{"manager":"kubectl-set","operation":"Update","time":"2026-10-25T10:00:05Z"}`, `{"manager":"kubectl-patch","operation":"Update","time":"2026-10-25T10:00:05Z"}`), "kubectl-patch", false},
+		{"no-op: the request's manager has no entry", mf(setup, status), "kubectl-patch", true},
+	}
+	for _, tc := range tests {
+		if got := unchanged([]byte(tc.resp), received, tc.manager); got != tc.want {
+			t.Errorf("%s: unchanged = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestNoOpWriteIsNotAWrite(t *testing.T) {
+	line := func(clock, verb, resource, name, ua string, code int, resp string) string {
+		l := `{"kind":"Event","apiVersion":"audit.k8s.io/v1","stage":"ResponseComplete","verb":"` + verb + `","user":{"username":"kubernetes-admin"},"userAgent":"` + ua + `","objectRef":{"resource":"` + resource + `","namespace":"` + fixtureNS + `","name":"` + name + `","apiGroup":"apps"},"responseStatus":{"code":` + fmt.Sprint(code) + `},"requestReceivedTimestamp":"2026-10-25T` + clock + `Z"`
+		if verb == "patch" {
+			l += `,"requestObject":{"spec":{"template":{"spec":{"containers":[{"name":"web","image":"nginx"}]}}}}`
+		}
+		if resp != "" {
+			l += `,"responseObject":` + resp
+		}
+		return l + "}"
+	}
+	resp := func(mfTime string) string {
+		return `{"kind":"Deployment","metadata":{"name":"hello","managedFields":[{"manager":"kubedrill","operation":"Apply","time":"2026-10-25T09:59:00Z"},{"manager":"kubectl-patch","operation":"Update","time":"` + mfTime + `"}]}}`
+	}
+	ua := "kubectl/v1.37.0"
+	look := line("10:00:01", "get", "deployments", "hello", "other/1.0", 200, "")
+	ownGet := line("10:00:04.900", "get", "deployments", "hello", ua, 200, "")
+	noop := line("10:00:05", "patch", "deployments", "hello", ua, 200, resp("2026-10-25T09:59:30Z"))
+	change := line("10:00:09", "patch", "deployments", "hello", ua, 200, resp("2026-10-25T10:00:09Z"))
+	noBody := line("10:00:09", "patch", "deployments", "hello", ua, 200, "")
+	otherWrite := line("10:00:07", "patch", "deployments", "web", ua, 200, resp("2026-10-25T10:00:07Z"))
+	tests := []struct {
+		name        string
+		lines       []string
+		wantVerdict journal.Verdict
+		wantWrites  int
+		wantReads   int
+		wantFirst   string
+	}{
+		{"no-op patch on the fix target alone", []string{look, ownGet, noop}, journal.VerdictNoWrites, 0, 1, ""},
+		{"no-op patch then a real one", []string{look, ownGet, noop, change}, journal.VerdictRootCause, 1, 1, "apps/deployments/hello"},
+		{"no-op patch on the fix target, real write elsewhere", []string{noop, otherWrite}, journal.VerdictSymptomOnly, 1, 0, "apps/deployments/web"},
+		{"older cluster without a response body still counts", []string{noBody}, journal.VerdictRootCause, 1, 0, "apps/deployments/hello"},
+	}
+	for _, tc := range tests {
+		path := filepath.Join(t.TempDir(), "audit.log")
+		if err := os.WriteFile(path, []byte(strings.Join(tc.lines, "\n")+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		events, err := ReadAudit(path, at("10:00:00"), at("10:30:00"), fixtureNS, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := Summarize(events, true, nil, []string{"apps/deployments/hello"})
+		if got.Verdict != tc.wantVerdict || got.Writes != tc.wantWrites || got.Reads != tc.wantReads || got.FirstWriteTarget != tc.wantFirst {
+			t.Errorf("%s: got verdict %q writes %d reads %d first write %q, want %q %d %d %q", tc.name, got.Verdict, got.Writes, got.Reads, got.FirstWriteTarget, tc.wantVerdict, tc.wantWrites, tc.wantReads, tc.wantFirst)
+		}
+	}
+}
+
+func TestFieldManager(t *testing.T) {
+	tests := []struct{ uri, want string }{
+		{"/apis/apps/v1/namespaces/shop/deployments/storefront?fieldManager=kubectl-patch", "kubectl-patch"},
+		{"/apis/apps/v1/namespaces/shop/deployments/storefront?fieldManager=kubedrill&force=true&timeout=30s", "kubedrill"},
+		{"/apis/apps/v1/namespaces/shop/deployments/storefront", ""},
+		{"%zz", ""},
+	}
+	for _, tc := range tests {
+		if got := fieldManager(tc.uri); got != tc.want {
+			t.Errorf("fieldManager(%q): got %q, want %q", tc.uri, got, tc.want)
+		}
+	}
+}

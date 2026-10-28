@@ -46,6 +46,18 @@ checks:
     path: "{.status.availableReplicas}"
     equals: "2"
 
+  - id: worker-rolled-out
+    description: "deployment worker finished rolling out: every pod runs the current template"
+    why: >-
+      Old pods that still pass readiness keep the ready count up while a
+      broken new template crash-loops; only a finished rollout proves every
+      pod runs the current template.
+    depends_on: [ready-replicas]
+    rollout:
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: worker
+
   - id: script-unchanged
     description: the worker runs the run.sh the team ships, unchanged
     why: >-

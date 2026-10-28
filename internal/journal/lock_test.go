@@ -227,3 +227,74 @@ func TestUnlockLeavesAnotherOwnersLock(t *testing.T) {
 		t.Errorf("lock file after unlocking a broken lock: got %q, %v, want the other owner's lock kept", got, err)
 	}
 }
+
+func TestUnlockKeepsALockTakenOverDuringRelease(t *testing.T) {
+	s := openTest(t)
+	unlock, err := s.lock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(s.Dir(), lockFile)
+	other := []byte(`{"pid":1,"hostname":"workstation","token":"other"}`)
+	s.lockCfg.beforeRelease = func() {
+		if err := os.Remove(path); err != nil {
+			t.Errorf("break: %v", err)
+		}
+		if ok, err := createExclusive(path, other); !ok || err != nil {
+			t.Errorf("take over: got %v, %v, want the lock", ok, err)
+		}
+	}
+	unlock()
+	if got, err := os.ReadFile(path); err != nil || string(got) != string(other) {
+		t.Errorf("lock file after a takeover during unlock: got %q, %v, want the new owner's lock kept", got, err)
+	}
+	assertNoReleaseLeftovers(t, s.Dir())
+}
+
+func TestBreakKeepsALockRetakenAfterTheStaleCheck(t *testing.T) {
+	s := openTest(t)
+	path := filepath.Join(s.Dir(), lockFile)
+	stale := []byte(fmt.Sprintf(`{"pid":%d,"hostname":%q,"token":"dead"}`, deadPID(t), s.lockCfg.hostname))
+	if err := os.WriteFile(path, stale, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fresh := []byte(fmt.Sprintf(`{"pid":%d,"hostname":%q,"token":"fresh"}`, os.Getpid(), s.lockCfg.hostname))
+	s.lockCfg.beforeRelease = func() {
+		if err := os.Remove(path); err != nil {
+			t.Errorf("owner unlock: %v", err)
+		}
+		if ok, err := createExclusive(path, fresh); !ok || err != nil {
+			t.Errorf("third process lock: got %v, %v, want the lock", ok, err)
+		}
+	}
+	if err := s.breakIfStale(path); err != nil {
+		t.Fatalf("breakIfStale: %v", err)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != string(fresh) {
+		t.Errorf("lock file after breaking a lock retaken meanwhile: got %q, %v, want the fresh lock kept", got, err)
+	}
+	s.lockCfg.beforeRelease = nil
+	if err := os.WriteFile(path, stale, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.breakIfStale(path); err != nil {
+		t.Fatalf("breakIfStale: %v", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("stale lock: got %v, want it removed", err)
+	}
+	assertNoReleaseLeftovers(t, s.Dir())
+}
+
+func assertNoReleaseLeftovers(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.Contains(e.Name(), releaseSuffix) || strings.HasSuffix(e.Name(), breakSuffix) {
+			t.Errorf("leftover file %s", e.Name())
+		}
+	}
+}

@@ -51,7 +51,9 @@ what the cluster stores.
 - secret payments-token carries the label rotated={{ .Vars.rotated }}
 - deployment payments has 2 ready replicas
 - every running payments pod sees the new token in API_TOKEN
+- deployment payments finished rolling out: every pod runs the current template
 - every running payments-worker pod sees the new token
+- deployment payments-worker finished rolling out: every pod runs the current template
 - a new payments-worker pod would also start with the new token
 - secret payments-token-old does not exist
 

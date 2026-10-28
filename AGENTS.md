@@ -23,14 +23,14 @@ stays on the learner's machine.
 
 ```
 cmd/kubedrill/            composition root and main; telemetry reads the cluster audit log and the journal's shell log and recordings
-internal/scenario/        on-disk scenario format: scenario.toml, instruction.md, hints.md, story.md, simulation.yaml, setup/, checks.yaml, solution/, approaches/
+internal/scenario/        on-disk scenario format: scenario.toml, instruction.md, hints.md, story.md, simulation.yaml, setup/, checks.yaml, solution/, approaches/, shortcuts/
 internal/grader/          runs checks.yaml as a DAG against the cluster, produces Grade with Results; script checks get an env allowlist (PATH, HOME, TMPDIR, LANG, LC_ALL, TERM, USER plus TASK_NS, SEED, VARIANT, VAR_*, KUBECONFIG) shared with hook.sh and solve.sh through internal/scriptrun; wrapper.go puts a kubectl tagged kubedrill-check first on PATH for them
 internal/kube/            the Kubernetes API client (dynamic client, server-side apply, probes, namespace GC, APIService health); cluster/ uses clientcmd, grader/ uses client-go jsonpath
 internal/yamldoc/         one YAML document splitter (Split) shared by kube, scenario lint and the addon loader
 internal/cluster/         kind lifecycle (doctor, ensure, delete, kubeconfig, audit check, audit policy drift, profile render, image preload with PullImages), profile templates and addons; the cluster state dir ($XDG_STATE_HOME/kubedrill/kubedrill) holds audit/ (the audit log), bin/ (the kubedrill-check kubectl wrapper and the linux binary), go/ (build caches without host go), kubeconfig-internal, kubeconfig-scripts, audit-policy.sha256 and faults.json
 internal/env/             learner loop and state machine: Start/Observe/Grade/Diagnose/Hint/Surrender/Submit/Expire
 internal/atomicfile/      file writes through a temporary file, a rename and a directory fsync
-internal/scriptrun/       bash runner for script checks, hook.sh and solve.sh: process-group kill after exit and on cancel, output cap, host env allowlist
+internal/scriptrun/       bash runner for script checks, hook.sh, solve.sh and shortcuts: process-group kill after exit and on cancel, output cap, host env allowlist
 internal/journal/         episodes, outcomes, diagnosis, debrief and telemetry under ~/.local/share/kubedrill (XDG_DATA_HOME); a lock file (exclusive create, stale rule) serializes host and container writers
 internal/progress/        pure rules over the journal: clean solve, mastery per scenario and concept, Next, Stats
 internal/telemetry/       reads the audit log and the shell log (drops kubedrill's own requests), summarizes them into journal.Telemetry and a verdict
@@ -117,6 +117,11 @@ CHANGELOG.md              Keep a Changelog, written by hand from the Conventiona
   (one is acceptable for L0) and `solution/solve.sh` must pass the checks for
   every variant; `kubedrill smoke` proves it.
 - Right after setup, the checks must fail; `kubedrill smoke` asserts this.
+- A wrong or symptom-only fix a learner would plausibly try goes in
+  `shortcuts/<name>.sh` (bash, header `# why: <one line>` and optional
+  `# variants: a,b`); `kubedrill smoke` runs each on a fresh setup and fails
+  when it passes every check. A shortcut that passes is a scenario bug: fix
+  the checks, or move it to `approaches/` when it is a valid fix.
 - `## Before you start` in instruction.md is at most 8 lines.
 - Every break-fix variant has a `root_cause` (20-300 characters) and the
   scenario lists `fix_targets` (`group/resource/name`, core group `core`).

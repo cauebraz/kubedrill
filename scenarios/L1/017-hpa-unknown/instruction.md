@@ -37,6 +37,7 @@ the controller's own reason.
 - hpa api has condition ScalingActive True
 - hpa api reports a current metric value
 - hpa api resizes deployment api by the rule the ticket asks for, between 1 and 4 pods
+- deployment api finished rolling out: every pod runs the current template
 
 ## Constraints
 

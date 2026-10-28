@@ -1248,9 +1248,13 @@ func TestSmokeDeletesEveryNamespaceAtTheEnd(t *testing.T) {
 	if n < 3 || f.kube.calls[n-3] != "delete task-dns-abcde" || f.kube.calls[n-2] != "delete task-hello-abcde" || f.kube.calls[n-1] != "gc app.kubernetes.io/managed-by=kubedrill,kubedrill.io/journal=0123abcd keep " {
 		t.Errorf("last kube calls: %v", f.kube.calls)
 	}
-	for _, c := range f.kube.calls[:n-3] {
-		if strings.HasPrefix(c, "delete") {
-			t.Errorf("namespace deleted before the end: %v", f.kube.calls)
+	for i, c := range f.kube.calls[:n-3] {
+		ns, ok := strings.CutPrefix(c, "delete ")
+		if !ok {
+			continue
+		}
+		if i == 0 || f.kube.calls[i-1] != "labels "+ns {
+			t.Errorf("namespace %s deleted before the end other than by the solved episode's end: %v", ns, f.kube.calls)
 		}
 	}
 }
@@ -1333,10 +1337,27 @@ func TestRepoRootInvalid(t *testing.T) {
 	if code != 1 {
 		t.Errorf("exit: got %d, want 1", code)
 	}
-	mustContain(t, errb.String(), "kubedrill: root "+empty+" lacks curriculum.yaml or scenarios/")
+	mustContain(t, errb.String(), "kubedrill: root "+empty+" (from --root) lacks curriculum.yaml or scenarios/; point --root at the kubedrill checkout")
 	if out.Len() != 0 {
 		t.Errorf("stdout: got %q, want empty", out.String())
 	}
+	errb.Reset()
+	code = Main(context.Background(), []string{"check"}, Options{
+		Factories: f.factories(),
+		Stdout:    &out,
+		Stderr:    &errb,
+		Getenv: func(k string) string {
+			if k == "KUBEDRILL_ROOT" {
+				return empty
+			}
+			return ""
+		},
+		Getwd: func() (string, error) { return f.root, nil },
+	})
+	if code != 1 {
+		t.Errorf("KUBEDRILL_ROOT exit: got %d, want 1", code)
+	}
+	mustContain(t, errb.String(), "kubedrill: root "+empty+" (from KUBEDRILL_ROOT) lacks curriculum.yaml or scenarios/; point KUBEDRILL_ROOT at the kubedrill checkout")
 }
 
 func TestSmokeArgs(t *testing.T) {

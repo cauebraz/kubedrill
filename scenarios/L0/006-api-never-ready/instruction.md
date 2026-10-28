@@ -38,6 +38,7 @@ anything.
 
 - deployment api exists
 - deployment api has 2 ready replicas
+- deployment api finished rolling out: every pod runs the current template
 - deployment api keeps a readiness probe that asks nginx on port 80 (HTTP or TCP)
 - service api has at least one ready endpoint
 - service api answers a request with the ACME API 3.2.0 body

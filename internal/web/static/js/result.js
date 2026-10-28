@@ -3,7 +3,7 @@
 import { api } from "./api.js";
 import { el, clear, toast, store, duration } from "./dom.js";
 import { bind } from "./keys.js";
-import { masteryMeter, masteryNeed, skeleton, errorState, isDone } from "./ui.js";
+import { masteryMeter, masteryNeed, cleanVariantsText, skeleton, errorState, isDone } from "./ui.js";
 
 const BADGE = '<svg viewBox="0 0 132 132" aria-hidden="true"><defs><linearGradient id="badge-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5eead4"/><stop offset="1" stop-color="#0f766e"/></linearGradient></defs>' +
   '<circle class="b-ring" cx="66" cy="66" r="64"/><circle class="b-orbit" cx="66" cy="66" r="56"/><circle class="b-core" cx="66" cy="66" r="42"/>' +
@@ -150,6 +150,7 @@ export function renderDone(stage, a) {
       el("p", { class: "small muted", text: "Complete marks that you finished the assignment once, and the plan badge that you finished every assignment of the plan. Mastery is the long game: 3 clean solves (no hint, within " + a.minutes + " min) in your last 4 attempts, across " + masteryNeed(m) + " different variants and at least 2 sessions. kubedrill then brings it back for spaced review." }),
       el("dl", { class: "facts" },
         el("dt", { text: "Clean solves in the last attempts" }), el("dd", { text: m.cleanInLast + " of " + (m.last || 0) + " (3 needed)" }),
+        el("dt", { text: "Variants among the clean solves" }), el("dd", { text: cleanVariantsText(m) }),
         el("dt", { text: "Variants solved, any run" }), el("dd", { text: m.variantsSolved + " of " + m.variants + "; mastery needs " + masteryNeed(m) + " different variants among the clean solves" }),
         el("dt", { text: "Attempts" }), el("dd", { text: m.attempts + ", " + m.solved + " solved" })),
       el("div", { class: "done-actions" },

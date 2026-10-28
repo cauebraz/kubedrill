@@ -245,7 +245,8 @@ func (b *webBackend) state() (webState, error) {
 	return webState{cat: cat, eps: eps, current: current}, nil
 }
 
-// masteryView is the CLI mastery of sc with the distinct variants solved.
+// masteryView is the CLI mastery of sc with the distinct variants solved,
+// in any run and clean.
 func masteryView(sc *scenario.Scenario, eps []journal.Episode) web.Mastery {
 	mine := episodesOf(eps, sc.Meta.ID)
 	m := progress.ScenarioMastery(mine, scenarioInfo(sc))
@@ -262,6 +263,7 @@ func masteryView(sc *scenario.Scenario, eps []journal.Episode) web.Mastery {
 		Last:           m.Last,
 		Variants:       len(sc.Variants),
 		VariantsSolved: len(variants),
+		CleanVariants:  m.CleanVariants,
 		Mastered:       m.Mastered,
 	}
 }

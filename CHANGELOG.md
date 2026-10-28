@@ -32,12 +32,20 @@ All notable changes to kubedrill. The format follows
   counts as a fix in the debrief verdict.
 - Release archives carry the tagged repository with a prebuilt
   `bin/kubedrill`.
+- `rollout` check source: a Deployment or StatefulSet finished rolling out
+  its current template (generation observed, every replica updated and
+  available, no old pod left); scenarios whose fix changes a pod template
+  grade it, so a broken edit after the fix no longer passes on old pods.
+- Scenario shortcuts: `shortcuts/<name>.sh` scripts apply a wrong fix a
+  learner would try; `kubedrill smoke` runs each on a fresh setup and fails
+  when it passes every check (`--no-shortcuts` skips them). 18 scenarios
+  of 001-020 ship 24 of them, taken from the live validation.
 
 ### Changed
 
-- A probe check that expects success and exits non-zero runs once more
-  after 3 seconds, so a Service whose endpoint became ready just before
-  grading is not failed while kube-proxy syncs.
+- A probe or script check that expects success and exits non-zero runs
+  once more after 3 seconds, so a Service whose endpoint became ready just
+  before grading is not failed while kube-proxy syncs.
 - The Learn diagram lays sources next to their children and routes long
   arrows around boxes; bare URLs in scenario text are links.
 - `smoke` without arguments skips pack scenarios.
@@ -94,6 +102,17 @@ All notable changes to kubedrill. The format follows
   `db-credentials`; 010 gains a status checker so the edge log holds the
   502 before anyone requests it; 011's NodePort check retries the
   kube-proxy rule race.
+- An episode's namespace is deleted when the episode ends, solved or not,
+  instead of at the next start; the start-time sweep removes every other
+  namespace of the same journal.
+- A no-op write (`patched (no change)`) is no longer the first write or
+  the root-cause write in the debrief: the audit policy records response
+  bodies for writes to fix targets and the request's field manager entry
+  shows whether the object changed. Needs a new cluster.
+- The page shows mastery as distinct variants solved clean.
+- A wrong `--root` or `KUBEDRILL_ROOT` names which one is wrong.
+- Releasing the journal lock no longer removes a lock another process
+  took over in the meantime.
 - The debrief verdict counts a pod template label change as a fix; only
   annotations under the template are metadata-only.
 - Concept pages: Pending with no event points at the claim, OOMKilled

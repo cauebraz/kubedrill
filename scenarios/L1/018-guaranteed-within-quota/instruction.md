@@ -41,6 +41,9 @@ when every container sets CPU and memory requests equal to its limits.
 - deployment catalog has 2 ready replicas
 - deployment cart has 1 ready replica
 - every shop pod has QoS class Guaranteed
+- deployment storefront finished rolling out: every pod runs the current template
+- deployment catalog finished rolling out: every pod runs the current template
+- deployment cart finished rolling out: every pod runs the current template
 - no shop pod is Pending
 - resourcequota shop counts the CPU limits of the running pods
 - resourcequota shop still caps requests and limits at {{ .Vars.cpu }} CPU and {{ .Vars.memory }} memory

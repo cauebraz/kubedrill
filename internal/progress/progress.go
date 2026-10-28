@@ -43,22 +43,25 @@ type ScenarioInfo struct {
 
 // Mastery summarises the finished attempts of one scenario or one concept.
 // Last is the number of attempts in the window (at most 4) and CleanInLast
-// the clean ones among them. Sessions counts the distinct sessions among the
+// the clean ones among them. CleanVariants counts the distinct variants
+// among those clean attempts, the count mastery holds against the variants
+// offered. Sessions counts the distinct sessions among the
 // clean attempts of the window; a session starts after a 3 hour gap.
 // Mastered means at least 3 clean attempts in the last 4, on distinct seeds
 // and on distinct variants (as many as the scenarios offer, up to 3), across
 // at least 2 sessions. A hinted or failed attempt takes a slot in the
 // window instead of resetting the count.
 type Mastery struct {
-	Attempts    int
-	Solved      int
-	Clean       int
-	Last        int
-	CleanInLast int
-	Sessions    int
-	Mastered    bool
-	LastSolved  *time.Time
-	MedianSolve time.Duration
+	Attempts      int
+	Solved        int
+	Clean         int
+	Last          int
+	CleanInLast   int
+	CleanVariants int
+	Sessions      int
+	Mastered      bool
+	LastSolved    *time.Time
+	MedianSolve   time.Duration
 }
 
 // Recommendation is the scenario Next proposes, with the seed to run and
@@ -428,9 +431,10 @@ func mastery(eps []journal.Episode, minutes func(journal.Episode) int, variants 
 		}
 	}
 	m.CleanInLast = len(clean)
+	m.CleanVariants = len(causes)
 	m.Sessions = sessions(clean)
 	m.Mastered = m.CleanInLast >= masteryClean && len(seeds) >= masteryClean &&
-		len(causes) >= min(masteryClean, variants) && m.Sessions >= 2
+		m.CleanVariants >= min(masteryClean, variants) && m.Sessions >= 2
 	return m
 }
 

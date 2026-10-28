@@ -87,7 +87,7 @@ func TestScenarioMastery(t *testing.T) {
 		{
 			name: "three clean on distinct seeds over two sessions",
 			eps:  []journal.Episode{ep("s", 1, 0), ep("s", 2, time.Hour), ep("s", 3, day)},
-			want: Mastery{Attempts: 3, Solved: 3, Clean: 3, Last: 3, CleanInLast: 3, Sessions: 2, Mastered: true},
+			want: Mastery{Attempts: 3, Solved: 3, Clean: 3, Last: 3, CleanInLast: 3, CleanVariants: 3, Sessions: 2, Mastered: true},
 		},
 		{
 			name: "guided runs are solves but not clean",
@@ -98,32 +98,32 @@ func TestScenarioMastery(t *testing.T) {
 				}
 				return eps
 			}(),
-			want: Mastery{Attempts: 3, Solved: 3, Clean: 0, Last: 3, CleanInLast: 0, Sessions: 0, Mastered: false},
+			want: Mastery{Attempts: 3, Solved: 3, Clean: 0, Last: 3, CleanInLast: 0, CleanVariants: 0, Sessions: 0, Mastered: false},
 		},
 		{
 			name: "same session is not enough",
 			eps:  []journal.Episode{ep("s", 1, 0), ep("s", 2, time.Hour), ep("s", 3, 2*time.Hour)},
-			want: Mastery{Attempts: 3, Solved: 3, Clean: 3, Last: 3, CleanInLast: 3, Sessions: 1},
+			want: Mastery{Attempts: 3, Solved: 3, Clean: 3, Last: 3, CleanInLast: 3, CleanVariants: 3, Sessions: 1},
 		},
 		{
 			name: "a gap just under 3h stays in the session",
 			eps:  []journal.Episode{ep("s", 1, 0), ep("s", 2, 3*time.Hour), ep("s", 3, 6*time.Hour)},
-			want: Mastery{Attempts: 3, Solved: 3, Clean: 3, Last: 3, CleanInLast: 3, Sessions: 1},
+			want: Mastery{Attempts: 3, Solved: 3, Clean: 3, Last: 3, CleanInLast: 3, CleanVariants: 3, Sessions: 1},
 		},
 		{
 			name: "a gap of exactly 3h after the previous end starts a session",
 			eps:  []journal.Episode{ep("s", 1, 0), ep("s", 2, 3*time.Hour+5*time.Minute), ep("s", 3, 3*time.Hour+10*time.Minute)},
-			want: Mastery{Attempts: 3, Solved: 3, Clean: 3, Last: 3, CleanInLast: 3, Sessions: 2, Mastered: true},
+			want: Mastery{Attempts: 3, Solved: 3, Clean: 3, Last: 3, CleanInLast: 3, CleanVariants: 3, Sessions: 2, Mastered: true},
 		},
 		{
 			name: "repeated seed does not count twice",
 			eps:  []journal.Episode{ep("s", 1, 0), ep("s", 1, day), ep("s", 2, 2*day)},
-			want: Mastery{Attempts: 3, Solved: 3, Clean: 3, Last: 3, CleanInLast: 3, Sessions: 3},
+			want: Mastery{Attempts: 3, Solved: 3, Clean: 3, Last: 3, CleanInLast: 3, CleanVariants: 2, Sessions: 3},
 		},
 		{
 			name: "a hinted attempt counts against without resetting",
 			eps:  []journal.Episode{ep("s", 1, 0), ep("s", 2, day), ep("s", 3, 2*day, hints(2)), ep("s", 4, 3*day)},
-			want: Mastery{Attempts: 4, Solved: 4, Clean: 3, Last: 4, CleanInLast: 3, Sessions: 3, Mastered: true},
+			want: Mastery{Attempts: 4, Solved: 4, Clean: 3, Last: 4, CleanInLast: 3, CleanVariants: 3, Sessions: 3, Mastered: true},
 		},
 		{
 			name: "two misses in the window block mastery",
@@ -131,7 +131,7 @@ func TestScenarioMastery(t *testing.T) {
 				ep("s", 1, 0), ep("s", 2, day), ep("s", 3, 2*day, hints(1)),
 				ep("s", 4, 3*day, outcome(journal.OutcomeFailed)), ep("s", 5, 4*day),
 			},
-			want: Mastery{Attempts: 5, Solved: 4, Clean: 3, Last: 4, CleanInLast: 2, Sessions: 2},
+			want: Mastery{Attempts: 5, Solved: 4, Clean: 3, Last: 4, CleanInLast: 2, CleanVariants: 2, Sessions: 2},
 		},
 		{
 			name: "old clean solves leave the window",
@@ -139,22 +139,22 @@ func TestScenarioMastery(t *testing.T) {
 				ep("s", 1, 0), ep("s", 2, day), ep("s", 3, 2*day),
 				ep("s", 4, 3*day, outcome(journal.OutcomeAbandoned)), ep("s", 5, 4*day, outcome(journal.OutcomeTimedOut)),
 			},
-			want: Mastery{Attempts: 5, Solved: 3, Clean: 3, Last: 4, CleanInLast: 2, Sessions: 2},
+			want: Mastery{Attempts: 5, Solved: 3, Clean: 3, Last: 4, CleanInLast: 2, CleanVariants: 2, Sessions: 2},
 		},
 		{
 			name: "active episode is ignored",
 			eps:  []journal.Episode{ep("s", 1, 0), ep("s", 2, day, active())},
-			want: Mastery{Attempts: 1, Solved: 1, Clean: 1, Last: 1, CleanInLast: 1, Sessions: 1},
+			want: Mastery{Attempts: 1, Solved: 1, Clean: 1, Last: 1, CleanInLast: 1, CleanVariants: 1, Sessions: 1},
 		},
 		{
 			name: "telemetry write-first solves are not clean",
 			eps:  []journal.Episode{ep("s", 1, 0, tele(2, 0, 1, "root-cause")), ep("s", 2, day), ep("s", 3, 2*day), ep("s", 4, 3*day)},
-			want: Mastery{Attempts: 4, Solved: 4, Clean: 3, Last: 4, CleanInLast: 3, Sessions: 3, Mastered: true},
+			want: Mastery{Attempts: 4, Solved: 4, Clean: 3, Last: 4, CleanInLast: 3, CleanVariants: 3, Sessions: 3, Mastered: true},
 		},
 		{
 			name: "unordered input is sorted by start",
 			eps:  []journal.Episode{ep("s", 3, 2*day), ep("s", 1, 0, outcome(journal.OutcomeFailed)), ep("s", 2, day)},
-			want: Mastery{Attempts: 3, Solved: 2, Clean: 2, Last: 3, CleanInLast: 2, Sessions: 2},
+			want: Mastery{Attempts: 3, Solved: 2, Clean: 2, Last: 3, CleanInLast: 2, CleanVariants: 2, Sessions: 2},
 		},
 		{name: "no episodes", want: Mastery{}},
 	}
@@ -575,5 +575,23 @@ func TestNextReviewTieBreaksByConcept(t *testing.T) {
 		if !ok || !strings.HasPrefix(r.Reason, "review: concept alpha ") {
 			t.Fatalf("nextReview with equal overdue: got %+v, %v, want concept alpha (lowest id)", r, ok)
 		}
+	}
+}
+
+func TestCleanVariantsCountsDistinctVariantsOfTheCleanSolves(t *testing.T) {
+	day := 24 * time.Hour
+	named := func(e journal.Episode, v string) journal.Episode {
+		e.Variant = v
+		return e
+	}
+	eps := []journal.Episode{
+		named(ep("s", 1, 0), "typo-tag"),
+		named(ep("s", 2, day), "typo-tag"),
+		named(ep("s", 3, 2*day, hints(1)), "wrong-repo"),
+		named(ep("s", 4, 3*day), "old-registry"),
+	}
+	got := ScenarioMastery(eps, ScenarioInfo{Minutes: 10, Variants: 3})
+	if got.CleanInLast != 3 || got.CleanVariants != 2 || got.Mastered {
+		t.Errorf("mastery: got clean %d, clean variants %d, mastered %v, want 3, 2 (the hinted wrong-repo does not count), false", got.CleanInLast, got.CleanVariants, got.Mastered)
 	}
 }

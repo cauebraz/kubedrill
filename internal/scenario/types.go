@@ -1,6 +1,7 @@
 // Package scenario owns the on-disk format of a training scenario: the
 // scenario.toml metadata, instruction.md, hints.md, story.md, the setup
-// templates and the checks.yaml grading specification. Other packages consume the parsed
+// templates, the checks.yaml grading specification and the shortcuts/
+// scripts. Other packages consume the parsed
 // Scenario value and never read the directory themselves.
 package scenario
 
@@ -98,10 +99,21 @@ type Probe struct {
 	Timeout string   `yaml:"timeout,omitempty" json:"timeout,omitempty"`
 }
 
+// Rollout names a Deployment or StatefulSet whose current pod template must
+// be fully rolled out: the controller observed the latest generation and
+// every replica is updated and available, with no old pod left.
+type Rollout struct {
+	Kind      string `yaml:"kind" json:"kind"`
+	Namespace string `yaml:"namespace,omitempty" json:"namespace,omitempty"`
+	Name      string `yaml:"name" json:"name"`
+}
+
 // Check is one entry of checks.yaml. Exactly one source is set: Resource
-// (read an object or list), Probe (run a pod) or Script (run a local command
-// with kubectl on PATH; escape hatch). Validators apply to the extracted value:
-// the JSONPath result for a Resource, the output for a Probe or Script.
+// (read an object or list), Probe (run a pod), Script (run a local command
+// with kubectl on PATH; escape hatch) or Rollout (a workload finished rolling
+// out). Validators apply to the extracted value: the JSONPath result for a
+// Resource, the output for a Probe or Script; a Rollout is its own assertion
+// and takes no validator.
 // Fields are strings so templates such as {{ .Vars.image }} render before
 // comparison. Why is learner-facing prose, 20 to 400 characters, stating what
 // the check proves and why it matters in production; it is not templated.
@@ -121,6 +133,7 @@ type Check struct {
 	Path     string       `yaml:"path,omitempty" json:"path,omitempty"`
 	Probe    *Probe       `yaml:"probe,omitempty" json:"probe,omitempty"`
 	Script   string       `yaml:"script,omitempty" json:"script,omitempty"`
+	Rollout  *Rollout     `yaml:"rollout,omitempty" json:"rollout,omitempty"`
 
 	Exists    *bool   `yaml:"exists,omitempty" json:"exists,omitempty"`
 	Equals    *string `yaml:"equals,omitempty" json:"equals,omitempty"`
@@ -149,6 +162,9 @@ type Scenario struct {
 	SolveScript string
 	HookScript  string
 	Approaches  []Approach
+	// Shortcuts are the scripts of shortcuts/, sorted by name: wrong fixes
+	// smoke proves leave a check failing.
+	Shortcuts []Shortcut
 	// Story is the raw story.md, empty when the scenario has none: the
 	// ticket told from zero for a learner new to the objects it involves.
 	Story string

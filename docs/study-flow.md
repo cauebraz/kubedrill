@@ -266,8 +266,13 @@ Every episode ends with one outcome:
 | `failed` | You left without solving: another `start`, a `reset`, or a failing `submit` |
 | `timed out` | An exam time box ran out without a passing grade (`timed_out` in the journal file) |
 
-A failed, abandoned or timed-out episode has its namespace deleted at once.
-A solved one keeps it until your next `start`, so you can still look around.
+Every episode has its namespace deleted, without waiting, the moment it
+ends with any of these outcomes. The debrief, the telemetry and
+`kubedrill solution` read the journal and the audit log, not the
+namespace, so they work after it is gone. To look at the same broken setup
+again, run `kubedrill start <id> --seed <seed>` with the seed `kubedrill
+journal` lists. The next `start` also deletes any namespace of your
+journal that an earlier end could not delete.
 
 A **clean solve** has zero hints, fits the expected minutes and was not a
 guided practice run of the browser workspace (the guide shows the fix; the
@@ -330,7 +335,7 @@ makes several), the target of that first write, and a verdict:
 
 | Verdict | Meaning |
 |---------|---------|
-| `root-cause` | A successful write changed more than the labels or annotations of an object the scenario names as a fix target |
+| `root-cause` | A successful write changed more than the labels or annotations of an object the scenario names as a fix target; a write that left the object as it was (`patched (no change)`) is not a change |
 | `symptom-only` | You wrote, but only to other objects, for example deleting pods instead of fixing the Deployment |
 | `no-writes` | No successful write in the episode namespace |
 | `unknown` | No audit log for this episode |

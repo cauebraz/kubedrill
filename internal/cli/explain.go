@@ -19,6 +19,9 @@ func assertion(c scenario.Check) string {
 	if c.Spoiler {
 		validators = []string{"has the expected value (" + render.SpoilerHidden + ")"}
 	}
+	if len(validators) == 0 && c.Rollout != nil {
+		return subject + " finished rolling out: every pod runs the current template"
+	}
 	if len(validators) == 0 {
 		validators = []string{"is read without error"}
 	}
@@ -53,6 +56,12 @@ func checkSubject(c scenario.Check) string {
 		s := "probe pod running " + strconv.Quote(strings.Join(c.Probe.Command, " "))
 		if c.Probe.Image != "" {
 			s += " (image " + c.Probe.Image + ")"
+		}
+		return s
+	case c.Rollout != nil:
+		s := c.Rollout.Kind + " " + c.Rollout.Name
+		if c.Rollout.Namespace != "" {
+			s += " in namespace " + c.Rollout.Namespace
 		}
 		return s
 	case c.Script != "":

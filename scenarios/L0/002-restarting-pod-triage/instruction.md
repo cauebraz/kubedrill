@@ -41,6 +41,7 @@ dashboards and selectors filter by it.
 - the pod labeled triage=yes is a pod of the service that was restarting
 - the service that was restarting runs one pod with 0 restarts that has stayed up at least 45 seconds
 - the service that was restarting has its pod Running and Ready
+- the service that was restarting finished rolling out: every pod runs the current template
 - the service that was restarting keeps a liveness probe
 - the service that was restarting keeps a memory limit
 - every deployment in the namespace has all its replicas available (14 deployments, 40 pods)

@@ -39,6 +39,7 @@ mounts it runs with. Read what it is waiting for before changing anything.
 - deployment db has 1 ready replica
 - service db exposes port 5432
 - deployment api has 2 ready replicas
+- deployment api finished rolling out: every pod runs the current template
 - every api pod runs the migrate init container to completion
 - service api has at least one ready endpoint
 - service api answers 200 to an in-cluster request

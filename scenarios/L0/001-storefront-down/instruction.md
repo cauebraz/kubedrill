@@ -35,6 +35,7 @@ wrote about it. Read the Events before changing anything.
 
 - deployment storefront exists
 - deployment storefront has 3 ready replicas
+- deployment storefront finished rolling out: every pod runs the current template
 - deployment storefront runs the image every other environment runs
 - service storefront has at least one ready endpoint
 - service storefront serves the ACME Storefront 2.14.0 page

@@ -366,6 +366,12 @@ func renderCheck(c Check, data templateData) (Check, error) {
 		r.Selector = field("resource.selector", c.Resource.Selector)
 		out.Resource = &r
 	}
+	if c.Rollout != nil {
+		ro := *c.Rollout
+		ro.Namespace = field("rollout.namespace", c.Rollout.Namespace)
+		ro.Name = field("rollout.name", c.Rollout.Name)
+		out.Rollout = &ro
+	}
 	if c.Probe != nil {
 		p := *c.Probe
 		p.Image = field("probe.image", c.Probe.Image)

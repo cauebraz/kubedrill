@@ -143,8 +143,9 @@ type AssignmentCard struct {
 }
 
 // Mastery is the CLI's mastery rule for one assignment: clean solves among
-// the last attempts and the distinct variants solved, against what mastery
-// needs.
+// the last attempts, the distinct variants among those clean solves
+// (CleanVariants, progress.Mastery.CleanVariants) and the distinct variants
+// solved in any run, against what mastery needs.
 type Mastery struct {
 	Attempts       int  `json:"attempts"`
 	Solved         int  `json:"solved"`
@@ -152,6 +153,7 @@ type Mastery struct {
 	Last           int  `json:"last"`
 	Variants       int  `json:"variants"`
 	VariantsSolved int  `json:"variantsSolved"`
+	CleanVariants  int  `json:"cleanVariants"`
 	Mastered       bool `json:"mastered"`
 }
 

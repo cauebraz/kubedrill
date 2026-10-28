@@ -335,17 +335,17 @@ func (a *app) repoRoot() (string, error) {
 	if a.root != "" {
 		return a.root, nil
 	}
-	candidates := []string{a.rootFlag, a.getenv("KUBEDRILL_ROOT")}
+	candidates := []struct{ source, dir string }{{"--root", a.rootFlag}, {"KUBEDRILL_ROOT", a.getenv("KUBEDRILL_ROOT")}}
 	for _, c := range candidates {
-		if c == "" {
+		if c.dir == "" {
 			continue
 		}
-		abs, err := filepath.Abs(c)
+		abs, err := filepath.Abs(c.dir)
 		if err != nil {
-			return "", fmt.Errorf("resolve root %s: %w", c, err)
+			return "", fmt.Errorf("resolve root %s from %s: %w", c.dir, c.source, err)
 		}
 		if !isRepoRoot(abs) {
-			return "", fmt.Errorf("root %s lacks curriculum.yaml or scenarios/", abs)
+			return "", fmt.Errorf("root %s (from %s) lacks curriculum.yaml or scenarios/; point %s at the kubedrill checkout", abs, c.source, c.source)
 		}
 		a.root = abs
 		return abs, nil

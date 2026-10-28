@@ -33,6 +33,12 @@ Conventions shared by every command:
 
 - Every command accepts the global flag `--root <dir>`, the repository root
   (see `KUBEDRILL_ROOT` in [Environment variables](#environment-variables)).
+  A command that reads scenarios, run outside the checkout without either,
+  exits 1 with `repository root not found from <dir> (a directory with
+  curriculum.yaml and scenarios/); run inside the checkout or set --root or
+  KUBEDRILL_ROOT`; a `--root` or `KUBEDRILL_ROOT` that is not a checkout
+  exits 1 with `root <dir> (from --root) lacks curriculum.yaml or
+  scenarios/; point --root at the kubedrill checkout`.
 - `<ref>` is a scenario id (`001-storefront-down`), its numeric prefix (`001`) or
   any id prefix that matches one scenario.
 - `kubedrill <command> --help` prints a short description (two to eight lines) for
@@ -137,7 +143,7 @@ Screens:
 | Home | A Continue card (the live run with its namespace and elapsed time, or the assignment `kubedrill list` recommends with its reason, or "all caught up"), the plans in progress, and links to the catalog, the exams and the GitHub repository. A profile line counts completed assignments, plan badges, reviews due and planned assignments |
 | Catalog | Every level and plan, with search (title, id, plan, concept) and filters for level, status (not started, in progress, live, complete, mastered; complete means the Do it yourself run passed, the rule the plan rings use), exam domain (only domains with an assignment, with their count) and concept (by title). The filters live in the URL. A level with nothing written yet collapses to one line with its planned count. An assignment whose `requires` are not solved shows a lock and stays open |
 | Exams | Each exam domain with its weight, the assignments that train it and how many are complete (Do it yourself passed, as in the plans) |
-| Assignment | The stages below, with the concept pages as chips (each opens in a drawer) and the mastery meter |
+| Assignment | The stages below, with the concept pages as chips (each opens in a drawer) and the mastery meter with the clean solves and the distinct variants among them, for example `2 of 3 clean solves, 2 of 3 variants solved clean` |
 
 An assignment walks through six stages, plus the exam rehearsal:
 
@@ -149,7 +155,7 @@ An assignment walks through six stages, plus the exam rehearsal:
 | Guided practice | `start` on the first variant, recorded `"guided": true`; the steps beside a terminal into the workstation, the live checks and a timer. A guided solve is never a clean solve | passed |
 | Do it yourself | `start` on another variant at random, the ticket and the story (its fix section closed until the run ends or hint 4) instead of the steps, the mentor | passed |
 | Exam rehearsal | `start` on a random variant in a time box, the ticket and a terminal, no hints, guide or live checks; one Submit grades it (see [Exam mode](#exam-mode)) | passed |
-| Result | Assignment complete or not, the plan badge (locked until every assignment of the plan is complete), the stage results with redo links, and the mastery rule with the learner's numbers | - |
+| Result | Assignment complete or not, the plan badge (locked until every assignment of the plan is complete), the stage results with redo links, and the mastery rule with the learner's numbers: clean solves in the last attempts, variants among the clean solves (`cleanVariants`, `2 of 3 variants solved clean`; the denominator is the variants mastery needs, at most 3) and variants solved in any run | - |
 
 Launching a run:
 
@@ -257,7 +263,9 @@ Flags:
 Namespace and progress:
 
 - The namespace is `<scenario namespace>-<5 random characters>`.
-- Older episode namespaces of this journal are deleted without waiting.
+- Every other episode namespace of this journal except the active
+  episode's is deleted without waiting: the safety net behind the delete at
+  the end of each episode. Namespaces of other journals are not touched.
 - Progress goes to stderr as `creating namespace <ns>... done (1.2s)`.
 - The output of `setup/hook.sh` is not printed; when the hook fails, the
   error ends with `its output ends with:` and the last 4 KiB of it.
@@ -358,6 +366,9 @@ Grades once, prints one line per check and records the grade.
   min with 0 hints (variant <name>)`), the `Recommended:` lines, `Next:
   kubedrill solution <id> (compare with the reference) | kubedrill list` and
   the debrief (see [Diagnosis and debrief](#diagnosis-and-debrief)).
+- A pass ends the episode and deletes its namespace without waiting, as
+  `solution`, `submit`, an expired exam and another `start` do; the debrief
+  reads the journal, not the namespace.
 - When another terminal ended the episode meanwhile, it prints the grade and
   `the episode of <id> already ended as <outcome> in another terminal;
   kubedrill debrief shows it`.
@@ -1042,11 +1053,24 @@ need. Titles read `Observe: kubectl get pods`, `Change one thing: ...`,
 ### smoke
 
 ```
-kubedrill smoke [refs...] [--force] [--verbose|-v]
+kubedrill smoke [refs...] [--force] [--no-shortcuts] [--verbose|-v]
 ```
 
 For each scenario and each variant seed: reset, assert the checks fail, run
-`solution/solve.sh`, assert they pass.
+`solution/solve.sh`, assert they pass. Then, for each `shortcuts/<name>.sh`
+that applies to the variant ([scenario-format.md](scenario-format.md#shortcuts)):
+reset again, run the shortcut, assert that at least one check does not pass.
+
+- Each run prints one line ending with its duration: `ok   <id> seed <n>
+  (variant <v>)` for the solve run, `ok   <id> seed <n> (variant <v>)
+  shortcut <name>: still failing <check ids>` for a shortcut, `FAIL ...:
+  <reason>` otherwise. The last line is `smoke: <n> runs passed in
+  <duration>`, or the error `smoke: <k> of <n> runs failed in <duration>`.
+- A shortcut that passes every check fails with `shortcut <name> passed
+  every check: <why>`; a shortcut script that exits non-zero fails with
+  `shortcut <name>: <error>` and its output.
+- `--no-shortcuts`: skip the shortcut runs; only the setup and `solve.sh`
+  proofs run. CI runs the shortcuts.
 
 - Episodes go to a throwaway journal and to namespaces of their own
   (scenario namespace plus a random suffix), so the learner's episode is
@@ -1064,7 +1088,8 @@ For each scenario and each variant seed: reset, assert the checks fail, run
   failed reset: the cleanup runs detached from the cancelled command for up
   to 30 s and also sweeps the namespaces labeled with its throwaway
   journal.
-- `solve.sh` output is shown for failing runs, or for every run with `-v`.
+- `solve.sh` and shortcut output is shown for failing runs, or for every
+  run with `-v`.
 
 ### profile render
 
@@ -1292,27 +1317,38 @@ How it is computed:
   warning.
 - The shell log and the recordings need the workstation: the terminal of
   `kubedrill web`.
-- The audit policy records the request body of the learner's `patch` and
-  `update` on workloads, pods, services, ConfigMaps, PVCs, service accounts,
-  Ingresses and NetworkPolicies (user group `kubeadm:cluster-admins`), never
-  of Secrets. A write whose body changes only labels or annotations, of the
+- The audit policy records the request and response bodies of the
+  learner's `patch` and `update` on workloads, pods, services, ConfigMaps,
+  PVCs, service accounts, Ingresses and NetworkPolicies (user group
+  `kubeadm:cluster-admins`), never of Secrets. A write whose body changes only labels or annotations, of the
   object or of its pod template (`kubectl annotate`, `label`, `rollout
   restart`), does not make the verdict `root-cause`, and the debrief says
   `a fix target, but only its labels or annotations changed`. On a cluster
   created with the older policy no body is recorded and every write to a
   fix target counts.
+- The same rule records the response body. A no-op write is not a change:
+  a `patch` or `update` that the server answers with the object as it was
+  (`kubectl patch` prints `patched (no change)`) counts neither as a write
+  nor as a read, so it is never the first write and never makes the
+  verdict `root-cause`. The response shows it: the `managedFields` entry
+  of the request's field manager (the `fieldManager` the client sends,
+  `kubectl-patch` for `kubectl patch`) is missing or older than the second
+  the request arrived, outside the status subresource. A request without a
+  field manager is judged on every entry. On a cluster created before the policy recorded
+  response bodies, a no-op write counts like any other write until
+  `kubedrill down --yes && kubedrill up`.
 - A get by the same client less than a second before a write that counts
   is the client's own read and is left out. A rejected write (code 400 or
   more) or an `exec` keeps that get as an observation.
 
 ## Scripts
 
-Scripts run by the CLI are `setup/hook.sh`, `solution/solve.sh` and script
-checks.
+Scripts run by the CLI are `setup/hook.sh`, `solution/solve.sh`, the
+`shortcuts/*.sh` of a scenario (under `smoke`) and script checks.
 
 - All of them receive `TASK_NS`, `SEED`, `VARIANT`, one `VAR_<KEY>` per
   variant variable and `KUBECONFIG`.
-- `setup/hook.sh` and, under `smoke`, `solution/solve.sh` also receive
+- `setup/hook.sh` and, under `smoke`, `solution/solve.sh` and the shortcuts also receive
   `KUBEDRILL_BIN`, the path of the running `kubedrill` binary, so a setup
   hook can call `"$KUBEDRILL_BIN" fault pause worker`, and
   `KUBEDRILL_EPISODE`, the id of the episode being set up or solved.

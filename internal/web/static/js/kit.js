@@ -7,7 +7,7 @@ import { ring, statusPill, masteryMeter, stageDots, assignmentRow, skeleton, err
 
 export function showKit(app, ctx) {
   ctx.crumbs([{ href: "#/", text: "Home" }, { text: "Component kit" }]);
-  const card = { id: "000-example", title: "Example assignment title in the reporter's words", minutes: 12, simulation: true, status: "solved", requires: [], progress: { meeting: { done: true }, quiz: { done: true }, learn: { done: true }, practice: { done: false }, diy: { done: false } }, mastery: { variants: 3, variantsSolved: 1, cleanInLast: 1, last: 2, mastered: false } };
+  const card = { id: "000-example", title: "Example assignment title in the reporter's words", minutes: 12, simulation: true, status: "solved", requires: [], progress: { meeting: { done: true }, quiz: { done: true }, learn: { done: true }, practice: { done: false }, diy: { done: false } }, mastery: { variants: 3, variantsSolved: 1, cleanVariants: 1, cleanInLast: 1, last: 2, mastered: false } };
   const section = (title, ...body) => el("section", { class: "kit-section" }, el("div", { class: "eyebrow muted", text: title }), el("div", { class: "kit-row" }, body));
   clear(app, el("div", { class: "page" }, el("div", { class: "page-inner" },
     el("header", { class: "page-head" }, el("div", { class: "eyebrow", text: "Design system" }), el("h1", { text: "Component kit" }),
@@ -19,7 +19,7 @@ export function showKit(app, ctx) {
       el("button", { class: "btn small", text: "Small" }), el("button", { class: "btn", disabled: true, text: "Disabled" }),
       el("button", { class: "btn", text: "Toast", onclick: () => toast("A toast message") }), el("button", { class: "btn", text: "Error toast", onclick: () => toast("An error toast", true) })),
     section("Pills", statusPill({ status: "todo" }), statusPill({ status: "solved" }), statusPill({ status: "active" }), statusPill({ status: "solved", progress: { diy: { done: true } } }), statusPill({ status: "mastered" }), el("span", { class: "pill bad", text: "fail" }), el("span", { class: "pill good live", text: "In meeting" })),
-    section("Progress", ring(0, 3), ring(2, 3), ring(3, 3, true), stageDots(card.progress, true), masteryMeter(card.mastery), masteryMeter({ variants: 3, variantsSolved: 3, mastered: true, cleanInLast: 3, last: 4 }),
+    section("Progress", ring(0, 3), ring(2, 3), ring(3, 3, true), stageDots(card.progress, true), masteryMeter(card.mastery), masteryMeter({ variants: 3, variantsSolved: 3, cleanVariants: 3, mastered: true, cleanInLast: 3, last: 4 }),
       el("div", { class: "meter", style: "width:160px" }, el("div", { style: "width:60%" }))),
     section("Keyboard", el("kbd", { class: "kbd", text: "1" }), el("kbd", { class: "kbd", text: "Enter" }), el("kbd", { class: "kbd", text: "Cmd Enter" })),
     section("Callouts", el("div", { class: "callout", text: "A warning callout: something the learner should know before acting." }), el("div", { class: "callout info", text: "An info callout: context that helps." })),

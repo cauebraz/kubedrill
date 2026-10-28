@@ -221,7 +221,7 @@ func TestSmokeCleansUpAfterCancelAndFailedReset(t *testing.T) {
 			}
 			var out strings.Builder
 			a := newApp(Options{Factories: fs, Stdout: &out, Stderr: &out, Getenv: func(string) string { return "" }, Getwd: func() (string, error) { return f.root, nil }, NamespaceSuffix: func() string { return "abcde" }})
-			err := a.runSmoke(ctx, []string{"001"}, true, false)
+			err := a.runSmoke(ctx, []string{"001"}, smokeOptions{force: true})
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Errorf("runSmoke: got %v, want error containing %q", err, tt.wantErr)
 			}

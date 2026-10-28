@@ -26,7 +26,7 @@ rules:
     verbs: ["get", "list", "watch"]
   - level: None
     nonResourceURLs: ["/healthz*", "/livez*", "/readyz*", "/version", "/openapi*", "/api*"]
-  - level: Request
+  - level: RequestResponse
     userGroups: ["kubeadm:cluster-admins", "system:masters"]
     verbs: ["patch", "update"]
     resources:

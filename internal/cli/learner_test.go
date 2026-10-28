@@ -48,6 +48,7 @@ func TestAssertion(t *testing.T) {
 		{"script", scenario.Check{Script: "checks/dns.sh", Contains: "ok"}, `script "checks/dns.sh": contains "ok"`},
 		{"spoiler keeps the expected value back", scenario.Check{Resource: &scenario.ResourceRef{Kind: "Deployment", Name: "hello"}, Path: "{.spec.template.spec.containers[0].image}", Matches: "^nginx:1\\.27$", Spoiler: true}, "Deployment hello: {.spec.template.spec.containers[0].image} has the expected value (" + render.SpoilerHidden + ")"},
 		{"no validator", scenario.Check{ID: "x", Resource: &scenario.ResourceRef{Kind: "ConfigMap", Name: "cfg"}}, "ConfigMap cfg: is read without error"},
+		{"rollout", scenario.Check{ID: "r", Rollout: &scenario.Rollout{Kind: "Deployment", Name: "api"}}, "Deployment api finished rolling out: every pod runs the current template"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

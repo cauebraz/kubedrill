@@ -14,6 +14,7 @@ import (
 
 const (
 	breakSuffix    = ".break"
+	releaseSuffix  = ".release-"
 	lockStaleAfter = 2 * time.Minute
 	lockWait       = 150 * time.Second
 	lockPollMin    = time.Millisecond
@@ -29,11 +30,12 @@ type lockOwner struct {
 }
 
 type lockConfig struct {
-	staleAfter time.Duration
-	wait       time.Duration
-	hostname   string
-	pidNS      string
-	pid        int
+	staleAfter    time.Duration
+	wait          time.Duration
+	hostname      string
+	pidNS         string
+	pid           int
+	beforeRelease func()
 }
 
 func defaultLockConfig() lockConfig {
@@ -83,9 +85,43 @@ func (s *Store) lock() (func(), error) {
 }
 
 func (s *Store) unlock(path string, content []byte) {
-	if got, err := os.ReadFile(path); err == nil && bytes.Equal(got, content) {
-		_ = os.Remove(path)
+	_, _ = s.release(path, content)
+}
+
+// release removes the lock at path when it holds want and reports whether it
+// did. A read followed by a remove would race with a takeover: between the
+// two, a waiter may break the lock as stale and a third process take it, and
+// the remove would delete the new owner's lock. So the lock is first renamed
+// to a path unique to this call, which takes exactly the file the check then
+// reads; a file that is not want is put back with an exclusive create, which
+// never overwrites a lock created meanwhile.
+func (s *Store) release(path string, want []byte) (bool, error) {
+	if s.lockCfg.beforeRelease != nil {
+		s.lockCfg.beforeRelease()
 	}
+	suffix := make([]byte, 8)
+	if _, err := rand.Read(suffix); err != nil {
+		return false, fmt.Errorf("release lock %s: %w", path, err)
+	}
+	taken := path + releaseSuffix + hex.EncodeToString(suffix)
+	if err := os.Rename(path, taken); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("release lock %s: %w", path, err)
+	}
+	defer os.Remove(taken)
+	got, err := os.ReadFile(taken)
+	if err != nil {
+		return false, fmt.Errorf("release lock %s: %w", path, err)
+	}
+	if bytes.Equal(got, want) {
+		return true, nil
+	}
+	if _, err := createExclusive(path, got); err != nil {
+		return false, fmt.Errorf("release lock %s: put back the lock of another owner: %w", path, err)
+	}
+	return false, nil
 }
 
 // createExclusive creates path with content when it does not exist. It
@@ -108,8 +144,9 @@ func createExclusive(path string, content []byte) (bool, error) {
 }
 
 // breakIfStale removes the lock at path when it is stale. The removal runs
-// under a second exclusive file, <path>.break, after the lock is read again,
-// so two waiters never remove a lock that a third one just took.
+// under a second exclusive file, <path>.break, and through release with the
+// content judged stale, so neither two waiters nor an owner that unlocks
+// and a third process that locks meanwhile lose a lock just taken.
 func (s *Store) breakIfStale(path string) error {
 	seen, info, err := readLock(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -133,17 +170,7 @@ func (s *Store) breakIfStale(path string) error {
 		return nil
 	}
 	defer os.Remove(breaker)
-	again, _, err := readLock(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(again, seen) {
-		return nil
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if _, err := s.release(path, seen); err != nil {
 		return fmt.Errorf("break stale lock: %w", err)
 	}
 	return nil

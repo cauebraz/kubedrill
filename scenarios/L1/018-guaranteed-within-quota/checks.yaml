@@ -59,6 +59,42 @@ checks:
     path: "{.items[*].status.qosClass}"
     matches: "^Guaranteed( Guaranteed)*$"
 
+  - id: storefront-rolled-out
+    description: "deployment storefront finished rolling out: every pod runs the current template"
+    why: >-
+      Old pods that still pass readiness keep the ready count up while a
+      broken new template crash-loops; only a finished rollout proves every
+      pod runs the current template.
+    depends_on: [all-guaranteed]
+    rollout:
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: storefront
+
+  - id: catalog-rolled-out
+    description: "deployment catalog finished rolling out: every pod runs the current template"
+    why: >-
+      Old pods that still pass readiness keep the ready count up while a
+      broken new template crash-loops; only a finished rollout proves every
+      pod runs the current template.
+    depends_on: [all-guaranteed]
+    rollout:
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: catalog
+
+  - id: cart-rolled-out
+    description: "deployment cart finished rolling out: every pod runs the current template"
+    why: >-
+      Old pods that still pass readiness keep the ready count up while a
+      broken new template crash-loops; only a finished rollout proves every
+      pod runs the current template.
+    depends_on: [all-guaranteed]
+    rollout:
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: cart
+
   - id: none-pending
     description: no shop pod is Pending
     why: >-
