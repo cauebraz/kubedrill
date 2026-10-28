@@ -1,3 +1,4 @@
 kubectl -n {{ .Namespace }} get deploy web -o jsonpath='{.spec.template.spec.containers[0].ports}{"\n"}'
-kubectl -n {{ .Namespace }} patch service web --type=json -p '[{"op":"replace","path":"/spec/ports/0/targetPort","value":"http"}]'
+name=$(kubectl -n {{ .Namespace }} get deploy web -o jsonpath='{.spec.template.spec.containers[0].ports[0].name}')
+kubectl -n {{ .Namespace }} patch service web --type=json -p "[{\"op\":\"replace\",\"path\":\"/spec/ports/0/targetPort\",\"value\":\"$name\"}]"
 kubectl -n {{ .Namespace }} get endpointslices -l kubernetes.io/service-name=web

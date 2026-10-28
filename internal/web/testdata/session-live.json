@@ -48,8 +48,8 @@
     },
     {
       "description": "deployment storefront runs the image every other environment runs",
-      "expected": "nginx:1.27-alpine",
       "id": "image-correct",
+      "message": "expected and actual values hidden until the run ends",
       "status": "fail",
       "why": "The image reference decides whether the node can pull it."
     },

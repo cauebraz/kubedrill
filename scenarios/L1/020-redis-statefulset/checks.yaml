@@ -84,9 +84,11 @@ checks:
       else
         rc=0
         for pod in redis-0 redis-1 redis-2; do
+          f=$(kubectl -n "$TASK_NS" exec "$pod" -- redis-cli info server 2>&1 | tr -d '\r' | sed -n 's/^config_file://p')
           v=$(kubectl -n "$TASK_NS" exec "$pod" -- redis-cli config get maxmemory-policy 2>&1 | tail -n 1)
-          echo "$pod maxmemory-policy: $v"
-          [ "$v" = allkeys-lru ] || rc=1
+          a=$(kubectl -n "$TASK_NS" exec "$pod" -- redis-cli config get appendonly 2>&1 | tail -n 1)
+          echo "$pod config_file: ${f:-<none>}, maxmemory-policy: $v, appendonly: $a"
+          [ "$f" = /usr/local/etc/redis/redis.conf ] && [ "$v" = allkeys-lru ] && [ "$a" = yes ] || rc=1
         done
         exit "$rc"
       fi

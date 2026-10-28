@@ -273,7 +273,7 @@ func (a *app) writeDebriefSummary(p render.Printer, ep *journal.Episode, sc *sce
 	case t == nil || t.Source == "" || t.Source == "none":
 		detail(p, "  telemetry: none recorded (no audit log or shell log for this episode)")
 	default:
-		detail(p, fmt.Sprintf("  observations before the first write: %d (telemetry: %s)", t.ReadsBeforeFirstWrite, t.Source))
+		detail(p, fmt.Sprintf("  API reads before the first write: %d (telemetry: %s)", t.ReadsBeforeFirstWrite, t.Source))
 		switch {
 		case t.FirstWriteTarget == "":
 			detail(p, "  first write: none recorded")
@@ -332,7 +332,7 @@ func (a *app) debriefCommand() *cobra.Command {
 		Use:   "debrief [episode-id]",
 		Short: "Show the debrief of an ended episode, or answer it again",
 		Long: "debrief prints the summary of the most recent ended episode (or the one named):\n" +
-			"duration, hints, observations before the first write, the first write target,\n" +
+			"duration, hints, API reads before the first write, the first write target,\n" +
 			"the verdict, your diagnosis next to the root cause and the answers recorded.\n" +
 			"On a terminal it asks the questions when none are recorded, or with --redo.",
 		Args: cobra.MaximumNArgs(1),

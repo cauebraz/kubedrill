@@ -22,10 +22,10 @@ Scenario scripts (`hook.sh`, `solve.sh`, script checks) run on the host
 with a reduced environment, not in the cluster. Read them before running a
 scenario you did not write. The same holds for scenario packs:
 `kubedrill pack add` lists every script and inline script check of a pack
-and asks before enabling it; read them. Setup manifests cannot create
-cluster-scoped objects or escape the pod sandbox unless `scenario.toml`
-sets `allow_privileged = true`, which needs maintainer review in this
-repository.
+and asks before enabling it; read them. Setup manifests can never create
+cluster-scoped objects, and they cannot escape the pod sandbox unless
+`scenario.toml` sets `allow_privileged = true`, which needs maintainer
+review in this repository.
 
 ## Supported versions
 

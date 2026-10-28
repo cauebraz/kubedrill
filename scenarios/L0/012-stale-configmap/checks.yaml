@@ -37,9 +37,14 @@ checks:
     spoiler: true
     script: |
       stale=""
+      unread=""
       for p in $(kubectl -n {{ .Namespace }} get pods -l app.kubernetes.io/name=banner -o jsonpath='{range .items[?(@.status.phase=="Running")]}{.metadata.name}{" "}{.metadata.deletionTimestamp}{"\n"}{end}' | awk 'NF==1 {print $1}'); do
-        body=$(kubectl -n {{ .Namespace }} exec "$p" -c web -- wget -qO- http://127.0.0.1/ 2>/dev/null || true)
+        if ! body=$(kubectl -n {{ .Namespace }} exec "$p" -c web -- wget -qO- http://127.0.0.1/ 2>/dev/null); then
+          unread="$unread $p"
+          continue
+        fi
         case "$body" in *"Summer sale 2025"*) stale="$stale $p" ;; esac
       done
-      if [ -z "$stale" ]; then echo "stale pods: none"; else echo "stale pods:$stale"; fi
+      if [ -z "$stale" ] && [ -z "$unread" ]; then echo "stale pods: none"; exit 0; fi
+      echo "stale pods:${stale:- none}; pods that did not answer on port 80:${unread:- none}"
     equals: "stale pods: none"

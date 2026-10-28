@@ -5,9 +5,9 @@
 The admin team built a new version of their back-office page, release
 3.2.0, and deployed it to the cluster. Deployed here means one thing only: a
 pod runs, and inside it an nginx web server serves the page. Ken from QA
-has to sign the build off from her laptop, which can reach the cluster's
-nodes but has no `kubectl`. The platform team told her the page would be
-on port 30080 of any node. She opens `http://<node-ip>:30080/` and gets
+has to sign the build off from a laptop that can reach the cluster's
+nodes but has no `kubectl`. The platform team told Ken the page would be
+on port 30080 of any node. Ken opens `http://<node-ip>:30080/` and gets
 connection refused, on every node.
 
 Nothing is broken. The pod runs and the page is there. What is missing is

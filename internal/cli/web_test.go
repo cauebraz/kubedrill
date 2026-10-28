@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -81,8 +82,11 @@ func TestWebBackendEpisodeFlow(t *testing.T) {
 		t.Fatalf("started: got %+v", sess.Active)
 	}
 	cur, _ := f.journal.Current()
-	if cur.Variant != "image" {
-		t.Errorf("practice variant: got %q, want the first variant, image", cur.Variant)
+	if cur.Variant != "image" || !cur.Guided {
+		t.Errorf("practice episode: got variant %q guided %v, want the first variant, image, guided", cur.Variant, cur.Guided)
+	}
+	if !strings.Contains(sess.Active.Story, "Point the image at a tag that exists.") {
+		t.Errorf("guided practice story: got %q, want the fix section", sess.Active.Story)
 	}
 	if _, err := b.Start(ctx, "001", web.StageDIY, false, nil); !errors.Is(err, web.ErrActiveElsewhere) {
 		t.Errorf("Start over an active episode: got %v, want ErrActiveElsewhere", err)
@@ -119,8 +123,21 @@ func TestWebBackendEpisodeFlow(t *testing.T) {
 		t.Fatalf("Start DIY: %v", err)
 	}
 	cur, _ = f.journal.Current()
-	if cur.Variant != "probe" {
-		t.Errorf("DIY variant: got %q, want another variant than practice's, probe", cur.Variant)
+	if cur.Variant != "probe" || cur.Guided {
+		t.Errorf("DIY episode: got variant %q guided %v, want another variant than practice's, probe, unguided", cur.Variant, cur.Guided)
+	}
+	diy, err := b.Session(ctx, false)
+	if err != nil {
+		t.Fatalf("Session of the DIY run: %v", err)
+	}
+	asg, err := b.Assignment(ctx, "001")
+	if err != nil {
+		t.Fatalf("Assignment during the DIY run: %v", err)
+	}
+	for name, story := range map[string]string{"session": diy.Active.Story, "assignment": asg.Story} {
+		if strings.Contains(story, "Point the image at a tag that exists.") || !strings.Contains(story, storyFixClosed) {
+			t.Errorf("%s story during the DIY run: got %q, want the fix section closed", name, story)
+		}
 	}
 }
 
@@ -165,6 +182,7 @@ func TestStageSeed(t *testing.T) {
 
 func TestWebBackendNextDebriefAndExams(t *testing.T) {
 	f := newFixture(t)
+	f.curr.Levels[0].Modules[0].Exam = []string{"CKA:workloads"}
 	withWorkstation(f)
 	f.grader.grades = []grader.Grade{{Passed: true, Score: 1, Results: []grader.Result{{ID: "ready", Status: grader.StatusPass}}}}
 	b := f.webBackend(t)
@@ -224,6 +242,21 @@ func TestWebBackendNextDebriefAndExams(t *testing.T) {
 	}
 	if _, err := b.Debrief(ctx, "nope"); err == nil {
 		t.Error("Debrief of an unknown episode: got nil error")
+	}
+
+	c, _ = b.Catalog(ctx)
+	if got := c.Exams[0].Domains[0]; !slices.Contains(got.Assignments, "001-hello-down") || got.Solved != 0 {
+		t.Errorf("exam domain after a guided solve: got %+v, want 001-hello-down listed and 0 solved", got)
+	}
+	if _, err := b.Start(ctx, "001", web.StageDIY, false, nil); err != nil {
+		t.Fatalf("Start DIY: %v", err)
+	}
+	if v, err := b.Validate(ctx); err != nil || !v.Passed {
+		t.Fatalf("Validate DIY: %+v %v", v, err)
+	}
+	c, _ = b.Catalog(ctx)
+	if got := c.Exams[0].Domains[0]; got.Solved != 1 {
+		t.Errorf("exam domain after a DIY solve: got %+v, want 1 solved", got)
 	}
 }
 

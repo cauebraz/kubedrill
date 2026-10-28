@@ -103,7 +103,7 @@ meeting:
           feedback: >-
             The right fact, the wrong source: the cluster answers this
             precisely (the container port in the Deployment), the customer
-            can only guess. Ask her what only she knows.
+            can only guess. Ask Ken what only Ken knows.
     - prompt: Agree on what done means before you touch anything.
       choices:
         - say: What does done look like for you, and what must I not change?

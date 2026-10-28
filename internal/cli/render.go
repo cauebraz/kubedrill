@@ -16,7 +16,8 @@ func (a *app) printer() render.Printer {
 }
 
 // writeGrade prints every result and the summary line; hide keeps the
-// actual value of spoiler checks back (see render.SpoilerHidden).
+// expected and actual values of spoiler checks back (see
+// render.SpoilerHidden).
 func (a *app) writeGrade(w io.Writer, g grader.Grade, hide bool) {
 	p := a.printer()
 	for _, r := range g.Results {

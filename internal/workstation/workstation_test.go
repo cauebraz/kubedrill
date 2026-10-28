@@ -683,6 +683,22 @@ func TestNodeShell(t *testing.T) {
 	})
 }
 
+func TestRemoveContainers(t *testing.T) {
+	root := writeRepo(t)
+	fr := &fakeRunner{scripts: map[string]string{"docker ps -aq --filter name=^kubedrill-web-": "printf 'aaa\\nbbb\\n'"}}
+	n, err := New(root, t.TempDir(), WithRunner(fr.run)).RemoveContainers(context.Background(), "kubedrill-web-")
+	if err != nil || n != 2 {
+		t.Fatalf("RemoveContainers: got %d, %v, want 2, nil", n, err)
+	}
+	if got := fr.joined(); len(got) != 2 || got[1] != "docker rm -f aaa bbb" {
+		t.Errorf("calls: got %v, want the ps then docker rm -f aaa bbb", got)
+	}
+	fr = &fakeRunner{}
+	if n, err := New(root, t.TempDir(), WithRunner(fr.run)).RemoveContainers(context.Background(), "kubedrill-web-"); err != nil || n != 0 || len(fr.joined()) != 1 {
+		t.Errorf("nothing to remove: got %d, %v, calls %v", n, err, fr.joined())
+	}
+}
+
 func TestDockerAvailable(t *testing.T) {
 	root := writeRepo(t)
 	fr := &fakeRunner{}

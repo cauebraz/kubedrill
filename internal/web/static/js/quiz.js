@@ -1,7 +1,7 @@
 // Stage 2: the mentor's quiz, one question at a time, resumable.
 
 import { api } from "./api.js";
-import { el, clear, store, toast } from "./dom.js";
+import { el, clear, store, toast, shuffledOrder } from "./dom.js";
 import { bind } from "./keys.js";
 import { stageHead } from "./meeting.js";
 
@@ -25,6 +25,7 @@ export function renderQuiz(stage, a, next) {
   function draw() {
     clear(card);
     buttons = [];
+    draw.answer = null;
     if (st.i >= sim.quiz.length) {
       const btn = el("button", { class: "btn", text: "Continue to Learn", onclick: finish });
       advance = finish;
@@ -43,9 +44,12 @@ export function renderQuiz(stage, a, next) {
       el("div", { class: "eyebrow muted", text: "Question " + (st.i + 1) + " of " + sim.quiz.length }),
       el("div", { class: "q", text: q.question }));
     const wrongHere = st.wrong[st.i] || [];
-    q.choices.forEach((c, ci) => {
-      const b = el("button", { class: "choice" + (wrongHere.includes(ci) ? " wrong" : ""), disabled: wrongHere.includes(ci), onclick: () => answer(ci) }, el("kbd", { class: "kbd", text: String(ci + 1) }), el("span", { text: c.text }));
-      buttons.push(b);
+    const shown = shuffledOrder(q.choices.length, a.id + "\n" + q.question + "\n" + q.choices.map((c) => c.text).join("\n"));
+    buttons = new Array(q.choices.length);
+    shown.forEach((ci, pos) => {
+      const c = q.choices[ci];
+      const b = el("button", { class: "choice" + (wrongHere.includes(ci) ? " wrong" : ""), disabled: wrongHere.includes(ci), onclick: () => answer(ci) }, el("kbd", { class: "kbd", text: String(pos + 1) }), el("span", { text: c.text }));
+      buttons[ci] = b;
       card.appendChild(b);
     });
     card.append(explain, el("div", { class: "quiz-actions" }, nextBtn));
@@ -77,7 +81,7 @@ export function renderQuiz(stage, a, next) {
       store(key, st);
     }
     function goNext() { st.i++; st.ok = -1; store(key, st); draw(); }
-    draw.answer = answer;
+    draw.answer = (pos) => { if (pos < shown.length) { answer(shown[pos]); } };
   }
   for (let n = 1; n <= 9; n++) { bind(String(n), n === 1 ? "Pick an answer (1 to 9)" : "", () => draw.answer && draw.answer(n - 1)); }
   bind("Enter", "Next question or continue", () => { if (advance) { advance(); } });

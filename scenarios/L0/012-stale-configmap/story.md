@@ -9,9 +9,9 @@ Kubernetes object that holds configuration values, so the team can change
 it without rebuilding anything.
 
 This morning Eva changed the banner from `Summer sale 2025` to `Winter
-sale 2026`. She did it the way the runbook says, and when she asked the
-cluster for the ConfigMap afterwards, the cluster printed the new text. She
-took that as success. Twenty minutes later the page still showed the summer
+sale 2026`. Eva did it the way the runbook says, and when Eva asked the
+cluster for the ConfigMap afterwards, the cluster printed the new text. That
+looked like success. Twenty minutes later the page still showed the summer
 text.
 
 The cluster printing the new text only means the edit was saved. Saving a
@@ -25,7 +25,9 @@ Kubernetes keeps the cluster looking like the objects you gave it. The
 objects in this ticket, from the top down:
 
 - ConfigMap `{{ .Vars.edited }}`: a dictionary of keys and values. The key
-  `banner` holds the text of the banner. This is the object Eva edited.
+  `banner` holds the text of the banner. This is the object Eva edited. The
+  pods read whichever ConfigMap their blueprint names, so first check that
+  it is this one.
 - Deployment `banner`: the wish "keep 2 copies of this pod running". Its
   `spec.template` is the blueprint of every copy, and the blueprint says how
   the container gets the banner text: as an environment variable, or as a
@@ -38,11 +40,13 @@ objects in this ticket, from the top down:
 
 ```mermaid
 flowchart TD
-  C["<b>ConfigMap</b><br/>key banner: the text"]
-  D["<b>Deployment banner</b><br/>the pod template says how: env var,<br/>or file mounted from a volume"]
+  E["<b>Eva's edit</b><br/>key banner of ConfigMap {{ .Vars.edited }}<br/>set to Winter sale 2026"]
+  C["<b>ConfigMap the pod template names</b><br/>key banner: the text the pods read"]
+  D["<b>Deployment banner</b><br/>the pod template says which ConfigMap<br/>and how: env var or mounted file"]
   P["<b>Pod x2</b><br/>container web, nginx<br/>serves /usr/share/nginx/html/index.html"]
   S["<b>Service banner</b><br/>sends each request to one pod"]
   V(["<b>visitors</b>"])
+  E -.->|reaches the pods only<br/>if it is the same object| C
   D --> P
   C -->|env var or file| P
   P --> S

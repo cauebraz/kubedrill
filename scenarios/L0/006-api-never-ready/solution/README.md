@@ -54,7 +54,7 @@ variant (measured on kind v1.37):
 - missing-ready-file: `Readiness probe failed: cat: can't open
   '/tmp/ready': No such file or directory`. The probe is an `exec` command
   and the file it reads never exists in the image, and nothing in the pod
-  creates it; with `failureThreshold: 1` the first attempt is final.
+  creates it, so every attempt fails however long the pod runs.
 
 ```sh
 kubectl -n {{ .Namespace }} get pod <pod-name> -o jsonpath='{.spec.containers[0].readinessProbe}{"\n"}{.spec.containers[0].ports}{"\n"}'
@@ -90,8 +90,10 @@ a second route keeps the probe and makes the server answer it: add a
 `healthz` key to ConfigMap `api-html`; the kubelet syncs the volume within
 about a minute and nginx serves `/healthz` with 200. Removing the probe
 also makes the pods Ready, but it removes the signal that would catch the
-next real outage, so the ticket's constraints forbid it and a check reads
-that the probe is still there.
+next real outage, so the ticket's constraints forbid it. So does an `exec`
+probe that creates its own file (`touch /tmp/ready`) or always succeeds:
+it tests nothing about nginx. A check reads that the probe is an HTTP or
+TCP probe on port 80 (`80` or the named port `http`).
 
 ## Verify
 

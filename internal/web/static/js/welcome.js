@@ -3,11 +3,11 @@
 // reachable again from Home.
 
 import { api } from "./api.js";
-import { el, clear, store, toast } from "./dom.js";
+import { el, clear, store, toast, shuffledOrder } from "./dom.js";
 import { bind } from "./keys.js";
 import { REPO } from "./ui.js";
 
-const TICKET = "From: Priya (payments team)\nPriority: high\n\nSince the 09:10 deploy the checkout page shows \"payment unavailable\". The gateway logs 502 for /api/pay. Nothing changed on our side, can platform take a look?";
+const TICKET = "From: Priya (payments team)\nPriority: high\n\nSince the 09:10 deploy the checkout page shows \"payment unavailable\". Our dashboard shows the payments deployment at 0/2 ready, and the gateway logs 502 for /api/pay. Nothing changed on our side, can platform take a look?";
 
 const STEPS = [
   {
@@ -56,16 +56,16 @@ const STEPS = [
     example: { kind: "shell", text: "$ kubectl get secret payments-db -o jsonpath='{.data}' | jq keys\n[\n  \"DATABASE_URL\"\n]" },
     prompt: "The Secret has DATABASE_URL; the app reads DB_URL. What do you change?",
     choices: [
-      { say: "Add the DB_URL key to the Secret, or roll the Deployment back to the previous revision. Nothing else.", right: true, feedback: "One change that removes one cause. If the symptom stays, you know the cause was elsewhere; if it goes, you know what fixed it." },
+      { say: "Add the DB_URL key to the Secret and restart the rollout so the pods read it, or roll the Deployment back to the previous revision. Nothing else.", right: true, feedback: "One change that removes one cause; the restart only applies it, because a container reads a Secret into its environment when it starts. If the symptom stays, you know the cause was elsewhere; if it goes, you know what fixed it." },
       { say: "Add the key, raise replicas to 4 and bump the memory limit while you are there", feedback: "Three changes. If it works you cannot say which one did it; if the new limit breaks something you cannot say which change broke it." },
-      { say: "Delete the pods so they pick up whatever is there now", feedback: "The Secret still lacks the key, so the new pods fail the same way, and the previous logs are gone." }
+      { say: "Delete the pods and leave the Secret as it is", feedback: "The Secret still lacks the key, so the new pods fail the same way, and the previous logs are gone. A restart applies a fix; on its own it is not one." }
     ],
     where: "The debrief shows whether your first change hit an object the fix belongs to. It comes from the audit log and never touches the grade."
   },
   {
     title: "Verify against the symptom, not the change",
     why: ["\"The Secret is updated\" is a fact about your change. The symptom was 0/2 ready and 502 at the gateway.",
-      "A Deployment does not restart its pods when a Secret changes, so the change can be correct and the outage continue until something restarts them."],
+      "A container reads a Secret into its environment only when it starts, and a Deployment does not restart its pods when a Secret changes. That is why the change of step 4 includes the restart: without it the change can be correct and the outage continue."],
     prompt: "Which observation closes the ticket?",
     choices: [
       { say: "kubectl get deployment payments shows READY 2/2, and a request through the gateway returns 200 for /api/pay", right: true, feedback: "The two lines from step one, observed again. That is the only check that means the customer is served." },
@@ -134,7 +134,9 @@ export function showWelcome(app, ctx, onDone) {
     const feedback = el("div", { class: "feedback-slot", "aria-live": "polite" });
     const reveal = el("div", { class: "reveal" });
     const cont = el("button", { class: "btn primary", text: i < STEPS.length ? "Next step" : "See where this lives", hidden: true, onclick: () => go(i + 1) });
-    const buttons = s.choices.map((c, ci) => el("button", { class: "choice", onclick: () => pick(ci) }, el("kbd", { class: "kbd", text: String(ci + 1) }), el("span", { text: c.say })));
+    const shown = shuffledOrder(s.choices.length, "welcome\n" + s.title + "\n" + s.prompt);
+    const buttons = new Array(s.choices.length);
+    shown.forEach((ci, pos) => { buttons[ci] = el("button", { class: "choice", onclick: () => pick(ci) }, el("kbd", { class: "kbd", text: String(pos + 1) }), el("span", { text: s.choices[ci].say })); });
     function pick(ci) {
       const c = s.choices[ci];
       if (solved || tried.includes(ci)) { return; }
@@ -153,7 +155,7 @@ export function showWelcome(app, ctx, onDone) {
         clear(feedback, el("div", { class: "feedback retry" }, el("div", null, el("b", { text: "Not this one" }), c.feedback)));
       }
     }
-    current = pick;
+    current = (pos) => { if (pos < shown.length) { pick(shown[pos]); } };
     const title = el("h1", { text: s.title, tabindex: "-1" });
     clear(inner, top(),
       el("div", { class: "step-num", text: "Step " + i + " of " + STEPS.length }),
@@ -162,7 +164,7 @@ export function showWelcome(app, ctx, onDone) {
       example(s.example),
       el("div", { class: "pick", role: "group", "aria-label": s.prompt },
         el("div", { class: "prompt", text: s.prompt }),
-        buttons),
+        shown.map((ci) => buttons[ci])),
       feedback, reveal,
       el("div", { class: "where" }, el("b", { text: "In kubedrill" }), s.where),
       el("div", { class: "welcome-actions" },

@@ -43,7 +43,7 @@ meeting:
           feedback: >-
             The scanner does not change the task. Ask what the inventory
             must contain.
-    - prompt: You need to know what "running" means to her. What do you ask?
+    - prompt: You need to know what "running" means to Marco. What do you ask?
       choices:
         - say: Do init containers and Deployments scaled to zero count as running?
           reply: >-
@@ -67,7 +67,7 @@ meeting:
             rollouts. I need what runs in shop now.
           feedback: >-
             The node cache is wider than the namespace. Ask what counts as
-            running in her terms.
+            running in Marco's terms.
     - prompt: The audit compares strings. What do you ask?
       choices:
         - say: Which spelling of the image do they compare, the manifest's or the runtime's?
@@ -191,21 +191,24 @@ quiz:
         explain: >-
           An init container ran before the main ones and exited. The READY
           numbers do not include it, and neither does the inventory.
-  - question: The spec says redis:7.4-alpine@sha256:6ba1... and kubectl describe shows Image sha256:c90c.... Which goes into the inventory?
+  - question: The spec says redis:7.4-alpine@sha256:6ba1... and kubectl describe shows Image ID docker.io/library/redis@sha256:.... Which goes into the inventory?
     choices:
       - text: The spec string, digest included, because the audit compares strings with the manifest.
         correct: true
         explain: >-
-          status and describe show the runtime's spelling of the same image.
+          The Image ID line of describe and status.containerStatuses show the
+          runtime's spelling of the same image; the Image line of describe
+          prints the spec string.
           The audit matches spec.containers[].image, so copy that.
       - text: The short tag redis:7.4-alpine, because the digest is noise.
         explain: >-
           The digest is part of the reference the kubelet pulled. Dropping
           it makes the string differ from the manifest.
-      - text: The sha256 from describe, because that is what really runs.
+      - text: The Image ID from describe, because that is what really runs.
         explain: >-
-          That is the image config digest the runtime reports. It does not
-          match the manifest string the audit compares against.
+          That is the repo digest the node resolved, with the registry
+          prefix. It does not match the manifest string the audit compares
+          against.
 
 guide:
   - title: List the Deployments

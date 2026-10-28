@@ -1,4 +1,21 @@
 {
+  "concepts": [
+    {
+      "id": "image-pull",
+      "summary": "",
+      "title": "Image pull"
+    },
+    {
+      "id": "pod-lifecycle",
+      "summary": "",
+      "title": "Pod lifecycle"
+    },
+    {
+      "id": "readiness-and-endpoints",
+      "summary": "",
+      "title": "Readiness and endpoints"
+    }
+  ],
   "exams": [
     {
       "domains": [

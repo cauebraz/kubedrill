@@ -24,10 +24,11 @@ with `0/0` READY has no pod, so its image runs nowhere and stays out of the
 list. An init container's image ran once and exited (`kubectl describe pod`
 shows it under `Init Containers` with `State: Terminated`), so it is not
 running either. An image written with `@sha256:` must be copied with the
-digest: the audit compares strings, and `kubectl describe` or
-`status.containerStatuses` shows a different form of the same image
-(`docker.io/library/...` or `sha256:...`), so read `spec.containers`, not
-the status.
+digest: the audit compares strings. `status.containerStatuses` can show
+a different form of the same image (`docker.io/library/...`, often without
+the digest), and the `Image ID:` line of `kubectl describe` is the digest
+the node resolved; the `Image:` line of `describe` prints the spec string.
+Read `spec.containers`, not the status.
 
 ## Hint 4: what to change
 

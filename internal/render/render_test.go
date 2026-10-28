@@ -169,3 +169,13 @@ func mustContain(t *testing.T, got string, wants ...string) {
 		}
 	}
 }
+
+func TestInlineCodeStyleIsNeutral(t *testing.T) {
+	c := markdownStyle().Code
+	if c.BackgroundColor != nil {
+		t.Errorf("inline code background: got %q, want none", *c.BackgroundColor)
+	}
+	if c.Color == nil || *c.Color != "6" {
+		t.Errorf("inline code color: got %v, want the terminal's cyan, 6", c.Color)
+	}
+}

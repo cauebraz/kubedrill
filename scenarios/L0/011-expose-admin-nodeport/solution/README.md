@@ -97,8 +97,11 @@ kubectl -n {{ .Namespace }} patch service admin --type=json -p '[{"op":"replace"
 ```
 
 The checks read the Service's type, `nodePort`, the names of its ready
-endpoints and the page served through a node, so any route that produces
-that end state passes. The Deployment and the ConfigMaps need no change.
+endpoints, the page served through a node and the replica count of every
+admin Deployment, so any route that produces that end state passes.
+Scaling `admin-canary` to 0 or removing it to keep it out of the selector
+fails the last check: the admin team owns it. The Deployments and the
+ConfigMaps need no change.
 
 ## Verify
 

@@ -270,27 +270,48 @@ guide:
       rollout restart changes a timestamp in each pod template, so both
       Deployments create new pods that read the Secret again.
     command: kubectl rollout restart deployment/payments deployment/payments-worker
-  - title: Wait for the new pods
+  - title: Wait for the new API pods
     body: >-
       rollout status waits until the new pods are ready and the old ones are
       gone.
     command: kubectl rollout status deployment/payments
     check: payments-ready
-  - title: Prove the pods have the new value
+  - title: Wait for the new worker pod
+    body: >-
+      The same restart replaced the worker; wait for its new pod too, so the
+      next reads come from pods that started after the rotation.
+    command: kubectl rollout status deployment/payments-worker
+  - title: Prove the API pods have the new value
     body: >-
       The same command as step 3, now against a new pod. It prints the new
-      token. Run it for payments-worker too.
+      token.
     command: kubectl exec deploy/payments -- printenv API_TOKEN
     check: payments-env-new
-  - title: Delete Tom's copy and the file
+  - title: Prove the worker has the new value
     body: >-
-      Last, because nothing reads the copy any more. Then remove token.txt;
-      the value should live only in the Secret.
+      The same read in the worker's new pod. It prints the new token, because
+      its template names payments-token, the Secret you rotated.
+    command: kubectl exec deploy/payments-worker -- printenv API_TOKEN
+    check: worker-env-new
+  - title: Confirm both templates name the rotated Secret
+    body: >-
+      The running pods are right; the templates decide what the next pods
+      read. Both lines must say payments-token, so a crash or a drain cannot
+      bring the old token back.
+    command: kubectl get deployment payments payments-worker -o jsonpath='{range .items[*]}{.metadata.name}{" reads "}{.spec.template.spec.containers[0].env[0].valueFrom.secretKeyRef.name}{"\n"}{end}'
+    check: worker-restart-safe
+  - title: Delete Tom's copy
+    body: >-
+      Last, because no template names the copy any more.
     command: kubectl delete secret payments-token-old
     check: old-copy-gone
+  - title: Delete the token file
+    body: >-
+      The value should live only in the Secret, not in a file on disk.
+    command: rm token.txt
   - title: Confirm the Secret list
     body: >-
       One Secret named payments-token with the rotated label and no
       payments-token-old. Then press Validate to grade the assignment.
     command: kubectl get secrets --show-labels
-    check: worker-env-new
+    check: secret-labeled

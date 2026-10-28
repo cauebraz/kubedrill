@@ -18,12 +18,12 @@ export function showKit(app, ctx) {
       el("button", { class: "btn primary", text: "Primary" }), el("button", { class: "btn", text: "Default" }), el("button", { class: "btn ghost", text: "Ghost" }),
       el("button", { class: "btn small", text: "Small" }), el("button", { class: "btn", disabled: true, text: "Disabled" }),
       el("button", { class: "btn", text: "Toast", onclick: () => toast("A toast message") }), el("button", { class: "btn", text: "Error toast", onclick: () => toast("An error toast", true) })),
-    section("Pills", statusPill("todo"), statusPill("active"), statusPill("solved"), statusPill("mastered"), el("span", { class: "pill bad", text: "fail" }), el("span", { class: "pill good live", text: "In meeting" })),
+    section("Pills", statusPill({ status: "todo" }), statusPill({ status: "solved" }), statusPill({ status: "active" }), statusPill({ status: "solved", progress: { diy: { done: true } } }), statusPill({ status: "mastered" }), el("span", { class: "pill bad", text: "fail" }), el("span", { class: "pill good live", text: "In meeting" })),
     section("Progress", ring(0, 3), ring(2, 3), ring(3, 3, true), stageDots(card.progress, true), masteryMeter(card.mastery), masteryMeter({ variants: 3, variantsSolved: 3, mastered: true, cleanInLast: 3, last: 4 }),
       el("div", { class: "meter", style: "width:160px" }, el("div", { style: "width:60%" }))),
     section("Keyboard", el("kbd", { class: "kbd", text: "1" }), el("kbd", { class: "kbd", text: "Enter" }), el("kbd", { class: "kbd", text: "Cmd Enter" })),
     section("Callouts", el("div", { class: "callout", text: "A warning callout: something the learner should know before acting." }), el("div", { class: "callout info", text: "An info callout: context that helps." })),
-    section("Checks", ["pass", "fail", "skipped", "error"].map((s) => el("span", { class: "chk " + s }, el("span", { text: "check " + s })))),
+    section("Checks", el("div", { class: "checks" }, el("button", { class: "chk-sum" }, el("span", { class: "sum", text: "Checks 1/4" })), ["pass", "fail", "skipped", "error"].map((s) => el("button", { class: "chk " + s, title: "check " + s, "aria-label": "check " + s })), el("span", { class: "chk-next", text: "next: the first check that does not pass" }))),
     section("Assignment row", el("div", { class: "card module", style: "width:100%" }, el("div", { class: "assign-list" }, assignmentRow(card, {}), assignmentRow(Object.assign({}, card, { title: "Locked: needs another first", status: "todo", requires: ["999-missing"] }), { "999-missing": { status: "todo" } }, true)))),
     section("Loading and errors", el("div", { style: "width:100%" }, skeleton(3)), el("div", { style: "width:100%" }, errorState("The message of the failure, as the API returned it.", () => toast("retry")))))));
 }

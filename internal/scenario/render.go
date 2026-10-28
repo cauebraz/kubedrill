@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -399,6 +400,7 @@ func execute(name, text string, data templateData) (string, error) {
 		return "", err
 	}
 	t.Funcs(template.FuncMap{stepFunc: newStepBudget(maxRenderSteps)})
+	t.Funcs(textFuncs(maxRenderBytes))
 	w := &cappedBuilder{limit: maxRenderBytes}
 	if err := t.Execute(w, data); err != nil {
 		if errors.Is(err, errRenderTooLarge) {
@@ -425,7 +427,7 @@ func (w *cappedBuilder) Write(p []byte) (int, error) {
 }
 
 func parseTemplate(name, text string) (*template.Template, error) {
-	t, err := template.New(name).Option("missingkey=error").Funcs(template.FuncMap{stepFunc: newStepBudget(0)}).Parse(text)
+	t, err := template.New(name).Option("missingkey=error").Funcs(template.FuncMap{stepFunc: newStepBudget(0)}).Funcs(textFuncs(0)).Parse(text)
 	if err != nil {
 		return nil, err
 	}
@@ -439,6 +441,30 @@ func parseTemplate(name, text string) (*template.Template, error) {
 		guardSteps(tt.Tree.Root)
 	}
 	return t, nil
+}
+
+// textFuncs replaces the text/template builtins that build strings (print,
+// printf, println, html, js, urlquery) with versions that charge every
+// result to one byte budget per execution: the output cap alone cannot stop
+// a template that doubles a variable in a loop and never writes it.
+func textFuncs(budget int) template.FuncMap {
+	left := budget
+	charge := func(out string) (string, error) {
+		if len(out) > left {
+			left = 0
+			return "", errRenderTooLarge
+		}
+		left -= len(out)
+		return out, nil
+	}
+	return template.FuncMap{
+		"print":    func(args ...any) (string, error) { return charge(fmt.Sprint(args...)) },
+		"printf":   func(format string, args ...any) (string, error) { return charge(fmt.Sprintf(format, args...)) },
+		"println":  func(args ...any) (string, error) { return charge(fmt.Sprintln(args...)) },
+		"html":     func(args ...any) (string, error) { return charge(template.HTMLEscapeString(fmt.Sprint(args...))) },
+		"js":       func(args ...any) (string, error) { return charge(template.JSEscapeString(fmt.Sprint(args...))) },
+		"urlquery": func(args ...any) (string, error) { return charge(url.QueryEscape(fmt.Sprint(args...))) },
+	}
 }
 
 // newStepBudget returns the function guardSteps wires into every range

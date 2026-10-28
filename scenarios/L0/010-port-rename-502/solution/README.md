@@ -3,11 +3,12 @@
 ## Symptom
 
 `http://edge.{{ .Namespace }}.svc/` answers `502 Bad Gateway` on every
-request since release 3.2.0 of `web` rolled out. The rollout finished and
-the pods show `Running`, which is why the deploy looked fine: a rollout
-only proves that the pods started and, where the probe still points at a
-port that answers, that they passed it. Neither says that the Service in
-front of them reaches the port nginx now listens on.
+request since release 3.2.0 of `web` was deployed. Both pods show
+`Running`, which is why the deploy looked fine at a glance: `Running` only
+proves that the containers started. It says nothing about whether they pass
+their readiness probe (READY `0/1` when the probe asks a port nobody
+listens on, and then the rollout never completes), nor whether the Service
+in front of them reaches the port nginx now listens on.
 
 ## Candidate causes
 

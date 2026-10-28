@@ -90,7 +90,7 @@ meeting:
             CronJob still scheduled, nothing interrupted. That rules out
             fixes that just stop the export.
           best: true
-          fact: "Done: at most one export active, never killed mid-run; CronJob invoice keeps running every minute; keep the namespace."
+          fact: "Done: at most one export active, never killed mid-run; CronJob invoice keeps its every-minute schedule, not suspended; keep the namespace."
         - say: Can I just suspend the export until the script has a lock?
           reply: >-
             Then finance has no file at all tomorrow. The export has to keep

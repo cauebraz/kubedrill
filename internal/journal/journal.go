@@ -156,7 +156,8 @@ type Telemetry struct {
 // Episode is one attempt at a scenario. Grades holds every grading run in
 // order; the last one decides the outcome. Namespace is the episode's own
 // namespace (empty for episodes recorded before per-episode namespaces);
-// Deadline is set for exam episodes.
+// Deadline is set for exam episodes. Guided marks a practice episode run
+// with the step-by-step guide of the browser workspace, which shows the fix.
 type Episode struct {
 	ID          string         `json:"id"`
 	ScenarioID  string         `json:"scenario_id"`
@@ -169,6 +170,7 @@ type Episode struct {
 	Grades      []grader.Grade `json:"grades,omitempty"`
 	Namespace   string         `json:"namespace"`
 	Mode        Mode           `json:"mode"`
+	Guided      bool           `json:"guided,omitempty"`
 	HintReveals []time.Time    `json:"hint_reveals,omitempty"`
 	Diagnosis   *Diagnosis     `json:"diagnosis,omitempty"`
 	Debrief     *Debrief       `json:"debrief,omitempty"`

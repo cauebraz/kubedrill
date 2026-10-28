@@ -224,6 +224,17 @@ func (b *browser) key(key string, mods int) {
 	b.call("Input.dispatchKeyEvent", map[string]any{"type": "keyUp", "key": key, "modifiers": mods, "windowsVirtualKeyCode": code})
 }
 
+// pick presses the number key of the choice among sel whose text contains
+// s; choices are shown in a shuffled order.
+func (b *browser) pick(sel, s string) {
+	b.t.Helper()
+	n := b.eval(fmt.Sprintf("String([...document.querySelectorAll(%q)].findIndex((e) => e.textContent.includes(%q)) + 1)", sel, s))
+	if n == "0" || n == "" {
+		b.t.Fatalf("pick %q: no choice among %s\npage: %s", s, sel, b.text("#app"))
+	}
+	b.key(n, 0)
+}
+
 func (b *browser) go_(hash string) { b.eval(fmt.Sprintf("location.hash = %q", hash)) }
 
 func (b *browser) shot(name string) {
@@ -269,23 +280,31 @@ func TestBrowser(t *testing.T) {
 	b.shot("00-welcome")
 	b.key("Enter", 0)
 	b.wait("step 1", "document.querySelector('.step-num') && document.querySelector('.step-num').textContent === 'Step 1 of 5'")
-	b.key("1", 0)
+	b.pick(".pick .choice", "The gateway is broken again")
 	b.wait("retry feedback", "document.querySelector('.feedback.retry')")
 	if v := b.eval("String(!!document.querySelector('.welcome-actions .btn.primary').hidden)"); v != "true" {
 		t.Errorf("next step offered after a wrong pick: hidden=%s, want true", v)
 	}
-	b.key("2", 0)
+	b.pick(".pick .choice", "0/2 ready since 09:10")
 	b.wait("good feedback", "document.querySelector('.feedback.good') && !document.querySelector('.welcome-actions .btn.primary').hidden")
 	b.shot("00b-welcome-step1")
-	for n, right := range []string{"1", "1", "1", "1"} {
+	rights := []string{"The process exits on start (runtime)", "kubectl describe pod payments", "Add the DB_URL key", "READY 2/2"}
+	firstRight := 0
+	for n, right := range rights {
 		b.key("Enter", 0)
 		b.wait(fmt.Sprintf("step %d", n+2), fmt.Sprintf("document.querySelector('.step-num') && document.querySelector('.step-num').textContent === 'Step %d of 5'", n+2))
-		b.key(right, 0)
+		if strings.Contains(b.eval("document.querySelector('.pick .choice').textContent"), right) {
+			firstRight++
+		}
+		b.pick(".pick .choice", right)
 		b.wait("good feedback", "document.querySelector('.feedback.good')")
 		if n == 1 {
 			b.wait("reveal", "document.querySelector('.reveal pre')")
 			b.shot("00c-welcome-step3")
 		}
+	}
+	if firstRight == len(rights) {
+		t.Error("welcome: the right answer is the first choice of every step; want a shuffled order")
 	}
 	b.key("Enter", 0)
 	b.wait("close", "document.querySelector('.welcome .map')")
@@ -341,11 +360,11 @@ func TestBrowser(t *testing.T) {
 		b.go_("#/a/001-storefront-down/meeting")
 		b.wait("meeting", "document.querySelectorAll('.choices .choice').length === 2")
 		b.shot("04-meeting")
-		b.key("2", 0)
+		b.pick(".choices .choice", "Can you restart the pods")
 		b.wait("retry feedback", "document.querySelector('.feedback.retry')")
-		b.key("1", 0)
+		b.pick(".choices .choice", "What changed right before")
 		b.wait("turn 2", "document.querySelector('.board li:not(.empty)')")
-		b.key("2", 0)
+		b.pick(".choices .choice", "What does fixed look like")
 		b.wait("meeting complete", "document.querySelector('.choices').textContent.includes('Meeting complete: 1 of 2')")
 		b.key("Enter", 0)
 		b.wait("quiz", "location.hash.endsWith('/quiz')")
@@ -353,15 +372,19 @@ func TestBrowser(t *testing.T) {
 
 	sub("quiz resumes after a reload", func(t *testing.T) {
 		b.wait("question 1", "document.querySelectorAll('.quiz-card .choice').length === 2")
-		b.key("2", 0)
+		order := b.eval("[...document.querySelectorAll('.quiz-card .choice')].map((e) => e.textContent).join('|')")
+		b.pick(".quiz-card .choice", "Nothing.")
 		b.wait("wrong", "document.querySelector('.choice.wrong')")
-		b.key("1", 0)
+		b.pick(".quiz-card .choice", "A crash or a failing probe")
 		b.wait("right", "document.querySelector('.choice.right')")
 		b.eval("location.reload()")
 		b.wait("restored answer", "document.querySelector('.choice.right')")
+		if got := b.eval("[...document.querySelectorAll('.quiz-card .choice')].map((e) => e.textContent).join('|')"); got != order {
+			t.Errorf("choice order after a reload: got %q, want %q", got, order)
+		}
 		b.key("Enter", 0)
 		b.wait("question 2", "document.querySelector('.quiz-card .q').textContent.includes('Where does the fix')")
-		b.key("2", 0)
+		b.pick(".quiz-card .choice", "In the Deployment's pod template")
 		b.key("Enter", 0)
 		b.wait("quiz complete", "document.querySelector('.quiz-card').textContent.includes('1 of 2 right')")
 		b.shot("05-quiz-done")
@@ -395,11 +418,31 @@ func TestBrowser(t *testing.T) {
 		b.key("-", modKey())
 		b.wait("terminal zoom back", "localStorage.getItem('kd:term-font') === '13'")
 		b.click(".checks button.chk.fail")
-		b.wait("check popover", "document.querySelector('.popover') && document.querySelector('.popover').textContent.includes('expected')")
+		b.wait("check popover", "document.querySelector('.popover') && document.querySelector('.popover').textContent.includes('hidden until the run ends')")
+		if got := b.text(".popover"); strings.Contains(got, "nginx") || strings.Contains(got, "old-dc") {
+			t.Errorf("spoiler check popover shows a value: %q", got)
+		}
+		b.eval("document.querySelector('.xterm-helper-textarea').focus()")
+		b.eval("window.kdEsc = 0; document.querySelector('.xterm-helper-textarea').addEventListener('keydown', (e) => { if (e.key === 'Escape') { window.kdEsc++; } })")
 		b.key("Escape", 0)
 		b.wait("popover closed", "!document.querySelector('.popover')")
+		if got := b.eval("String(window.kdEsc)"); got != "0" {
+			t.Errorf("Escape that closed the popover reached the terminal %s times, want 0", got)
+		}
+		b.click(".chk-sum")
+		b.wait("check list", "document.querySelectorAll('.popover .check-list button').length === 3")
+		b.shot("08b-check-list")
+		b.click(".popover .check-list li:nth-child(3) button")
+		b.wait("plain check popover", "document.querySelector('.popover') && document.querySelector('.popover code')")
+		b.key("Escape", 0)
+		b.wait("popover closed", "!document.querySelector('.popover')")
+		cols := b.eval("String(document.querySelector('.xterm-rows').offsetWidth)")
 		b.key(".", modKey())
 		b.wait("mentor", "document.querySelector('.drawer .mentor-msg.note')")
+		if b.eval("String(!!document.querySelector('.lab > .drawer.docked') && !document.querySelector('.drawer-back'))") != "true" {
+			t.Error("mentor at 1440px: want a docked panel in the lab, not an overlay")
+		}
+		b.wait("terminal refits beside the mentor", "String(document.querySelector('.xterm-rows').offsetWidth) !== '"+cols+"'")
 		b.clickText("Ask for hint 1")
 		b.wait("hint", "document.querySelectorAll('.drawer .mentor-msg').length === 3")
 		b.shot("09-mentor")
@@ -443,7 +486,10 @@ func TestBrowser(t *testing.T) {
 		b.key("Enter", modKey())
 		b.wait("debrief", "location.hash.includes('/debrief/')")
 		b.clickText("Skip for now")
-		b.wait("result", "document.querySelector('.done-card .badge:not(.locked)')")
+		b.wait("result", "document.querySelector('.done-card .eyebrow').textContent === 'Assignment complete' && document.querySelector('.plan-line').textContent.includes('1 of 2')")
+		if b.eval("String(!!document.querySelector('.done-card .badge.locked'))") != "true" {
+			t.Error("plan badge shown as earned with 1 of 2 assignments of the plan complete")
+		}
 		b.shot("12-result")
 		b.go_("#/")
 		b.wait("home updated", "document.querySelector('.profile').textContent.includes('1 of 5')")
@@ -565,6 +611,23 @@ func TestBrowser(t *testing.T) {
 			b.go_("#/catalog")
 			b.wait("catalog", "document.querySelector('.filters')")
 			b.shot(fmt.Sprintf("15-catalog-%dpx", w))
+			b.go_("#/a/001-storefront-down/learn")
+			b.wait("learn", "document.querySelector('.diagram-wrap svg')")
+			if h := b.eval("String(Math.round(document.querySelector('.stepper').getBoundingClientRect().height))"); len(h) > 2 {
+				t.Errorf("stepper at %dpx: %spx tall, want under 100", w, h)
+			}
+			b.shot(fmt.Sprintf("15-learn-%dpx", w))
+			b.go_("#/a/001-storefront-down/practice")
+			b.wait("practice launch", "document.querySelector('.launch')")
+			b.key("Enter", 0)
+			b.wait("workspace", "document.querySelector('.lab .xterm') && document.querySelector('.checks .sum')")
+			clipped := b.eval(`[...document.querySelectorAll('.lab-foot button, .side-tabs, .checks')].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.right > window.innerWidth + 1; }).map((e) => e.className).join(', ')`)
+			if clipped != "" {
+				t.Errorf("lab at %dpx: elements past the right edge: %s", w, clipped)
+			}
+			b.shot(fmt.Sprintf("15-lab-%dpx", w))
+			fake.Finish()
+			b.wait("debrief", "location.hash.includes('/debrief/')")
 		}
 		b.call("Emulation.clearDeviceMetricsOverride", nil)
 	})

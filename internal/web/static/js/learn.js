@@ -5,6 +5,7 @@ import { api } from "./api.js";
 import { el, svg, clear, toast } from "./dom.js";
 import { bind } from "./keys.js";
 import { stageHead } from "./meeting.js";
+import { hideFixSection } from "./ui.js";
 
 // diagramSVG draws the object diagram in layers. A node sits one layer below
 // its deepest parent; a source with no parent sits one layer above its
@@ -114,8 +115,7 @@ export function diagramSVG(d) {
     ins.forEach((it) => { inPorts[it.c.e.from + ">" + it.c.e.to] = n[it.key]; });
   }
 
-  const wide = Math.max(...layers.map((l) => l.filter((it) => !it.dummy).length)) > 4;
-  const root = svg("svg", { viewBox: "0 0 " + width + " " + height, width: "100%", style: "max-width:" + width + "px; min-width:" + (wide ? width : Math.min(width, 560)) + "px; color: var(--fg-3)", role: "img", "aria-label": "Object diagram: " + d.nodes.map((n) => n.label).join(", ") },
+  const root = svg("svg", { viewBox: "0 0 " + width + " " + height, width: "100%", style: "max-width:" + width + "px; min-width:" + Math.round(width * 0.8) + "px; color: var(--fg-3)", role: "img", "aria-label": "Object diagram: " + d.nodes.map((n) => n.label).join(", ") },
     svg("defs", null, svg("marker", { id: "arrow", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" }, svg("path", { d: "M0 0 L10 5 L0 10 z", fill: "currentColor" }))));
   const labels = [];
   for (const c of chains) {
@@ -180,7 +180,9 @@ export function renderLearn(stage, a, next) {
   function show(pid) {
     clear(tabs, pages.map((p) => el("button", { class: "tab" + (p.id === pid ? " on" : ""), role: "tab", "aria-selected": p.id === pid ? "true" : "false", text: p.label, onclick: () => show(p.id) })));
     view.innerHTML = pages.find((x) => x.id === pid).html;
+    if (pid === "story" && diyOpen) { hideFixSection(view, "Hidden until your Do it yourself run ends: it would name the fix before you look for the cause."); }
   }
+  const diyOpen = !!(a.progress.practice && a.progress.practice.done && !(a.progress.diy && a.progress.diy.done));
   const finish = () => api.post("/api/progress", { id: a.id, stage: "learn", score: 1, total: 1 }).then(next).catch((e) => toast(e.message, true));
   bind("Enter", "Done reading: go to the lab", finish);
   stage.appendChild(el("div", { class: "stage-inner" },

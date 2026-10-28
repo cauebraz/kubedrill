@@ -116,9 +116,12 @@ meeting:
 
 diagram:
   nodes:
-    - id: configmap
+    - id: edit
       label: ConfigMap {{ .Vars.edited }}
-      note: key banner holds the text; this is the object the team edited
+      note: the object the team edited; key banner says Winter sale 2026
+    - id: configmap
+      label: ConfigMap in the pod template
+      note: the object the pods read key banner from
     - id: deploy
       label: Deployment banner
       note: the pod template says how the container gets the value
@@ -132,6 +135,9 @@ diagram:
       label: Visitors
       note: read whatever the pod they hit holds
   edges:
+    - from: edit
+      to: configmap
+      label: same object?
     - from: configmap
       to: pods
       label: env var, volume or subPath

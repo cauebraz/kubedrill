@@ -59,7 +59,7 @@ exists. Then each assignment runs in the browser, in six stages:
 4. **Guided practice.** A live namespace with the problem planted, a
    terminal into the workstation in the page, step-by-step instructions and
    checks that turn green as you fix things.
-5. **Do it yourself.** The same ticket with a different planted cause, no
+5. **Do it yourself.** The same ticket on another variant, no
    guide, and a mentor that gives hints one step at a time.
 6. **Debrief and badge.** After each passed run the debrief puts your
    diagnosis next to the real cause and shows your trajectory: how much you

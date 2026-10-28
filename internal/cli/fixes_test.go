@@ -159,20 +159,33 @@ func spoilerGrade() grader.Grade {
 	}}
 }
 
-func TestCheckHidesSpoilerUntilDiagnosis(t *testing.T) {
+func TestCheckHidesSpoilerUntilTheRunEnds(t *testing.T) {
 	f := newFixture(t)
 	f.grader.grades = []grader.Grade{spoilerGrade()}
 	if code, _, errOut := f.run(t, "", "start", "001", "--seed", "1"); code != 0 {
 		t.Fatalf("start: %s", errOut)
 	}
 	_, out, _ := f.run(t, "", "check")
-	mustContain(t, out, "expected: nginx:1.27  actual: "+render.SpoilerHidden)
-	mustNotContain(t, out, "nginx:1.2x")
+	mustContain(t, out, render.DetailIndent+render.SpoilerHidden)
+	mustNotContain(t, out, "nginx:1.2x", "nginx:1.27")
 	if code, _, errOut := f.run(t, "", "diagnose", "the image tag is wrong"); code != 0 {
 		t.Fatalf("diagnose: %s", errOut)
 	}
 	_, out, _ = f.run(t, "", "check")
-	mustContain(t, out, "expected: nginx:1.27  actual: nginx:1.2x")
+	mustContain(t, out, render.SpoilerHidden)
+	mustNotContain(t, out, "nginx:1.2x", "nginx:1.27")
+}
+
+func TestCheckViewsHideSpoilers(t *testing.T) {
+	g := spoilerGrade()
+	hidden := checkViews(g, true)
+	if c := hidden[0]; c.Expected != "" || c.Actual != "" || c.Message != render.SpoilerHidden {
+		t.Errorf("hidden view: got %+v, want no values and the hidden message", c)
+	}
+	shown := checkViews(g, false)
+	if c := shown[0]; c.Expected != "nginx:1.27" || c.Actual != "nginx:1.2x" || c.Message != "" {
+		t.Errorf("view after the run: got %+v, want both values", c)
+	}
 }
 
 func TestExplainErrors(t *testing.T) {

@@ -113,7 +113,9 @@ whole map and gives the same result. The same result comes from
 selector in `cart/service.yaml` on the release branch and applying it,
 which is the route that survives the next deploy. Relabeling the pods
 through the Deployment template works for an extra selector key but rolls
-the pods for a bug that lives in the Service.
+the pods for a bug that lives in the Service. Labeling the running pods
+by hand fails the last check: the pods the next rollout creates do not
+carry those labels.
 {{- else -}}
 Change one thing: `spec.selector` of Service `cart`, so that every key and
 value in it is a label the cart pods carry. Here the `app` value is the
@@ -130,7 +132,9 @@ the same result here. The same result comes from
 selector in `cart/service.yaml` on the release branch and applying it,
 which is the route that survives the next deploy. Relabeling the pods
 through the Deployment template works for an extra selector key but rolls
-the pods for a bug that lives in the Service.
+the pods for a bug that lives in the Service. Labeling the running pods
+by hand fails the last check: the pods the next rollout creates do not
+carry those labels.
 {{- end }}
 
 ## Verify

@@ -20,9 +20,10 @@ import (
 // startOptions are the flags of kubedrill start; exam is set by the
 // browser workspace's exam rehearsal, never by a flag.
 type startOptions struct {
-	seed int64
-	yes  bool
-	exam bool
+	seed   int64
+	yes    bool
+	exam   bool
+	guided bool
 }
 
 func (a *app) startCommand() *cobra.Command {
@@ -127,7 +128,7 @@ func (a *app) startEpisode(ctx context.Context, j Journal, ref string, o startOp
 		a.progress.Finish()
 		a.printf("leaving the episode of %s (recorded as failed)\n", prev.ScenarioID)
 	}
-	ep, rd, err := s.Start(ctx, ref, env.StartOptions{Seed: o.seed, Mode: mode})
+	ep, rd, err := s.Start(ctx, ref, env.StartOptions{Seed: o.seed, Mode: mode, Guided: o.guided})
 	if err != nil {
 		a.progress.End("")
 		a.keptAfterFailedStart(j, prev)
@@ -443,7 +444,7 @@ func (a *app) checkCommand() *cobra.Command {
 			if ep != nil && ep.EndedAt != nil && (!g.Passed || ep.Outcome != journal.OutcomeSolved) {
 				return a.endedElsewhere(g, ep)
 			}
-			a.writeGrade(a.stdout, g, !g.Passed && !revealsSpoilers(cur))
+			a.writeGrade(a.stdout, g, !g.Passed)
 			if !g.Passed {
 				a.println("Next: fix what the failing checks name, then kubedrill check again | kubedrill hint")
 				return ErrChecksFailed
@@ -976,10 +977,4 @@ func (a *app) submitCommand() *cobra.Command {
 			return err
 		},
 	}
-}
-
-// revealsSpoilers reports whether ep has taken a hint or recorded a
-// diagnosis, after which check prints the actual values of spoiler checks.
-func revealsSpoilers(ep *journal.Episode) bool {
-	return ep != nil && (ep.HintsUsed > 0 || ep.Diagnosis != nil)
 }

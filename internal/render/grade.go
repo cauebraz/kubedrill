@@ -31,14 +31,16 @@ const DetailIndent = "       "
 // WhyWidth is the column the why text wraps at when no pane width is known.
 const WhyWidth = 78
 
-// SpoilerHidden stands for the actual value of a spoiler check (one whose
-// value names the root cause) until the episode has a hint or a diagnosis.
-const SpoilerHidden = "hidden until your first hint or diagnosis"
+// SpoilerHidden stands for the expected and actual values of a spoiler
+// check (one whose values name the root cause or the fix) until the run
+// ends.
+const SpoilerHidden = "expected and actual values hidden until the run ends"
 
 // ResultLines formats one check result: the tag and description, then an
 // indented expected/actual line for anything that did not pass and, when
 // withWhy is set, the check's why text under a failed or errored check.
-// hide replaces the actual value of a spoiler check with SpoilerHidden.
+// hide replaces the expected/actual line of a spoiler check with
+// SpoilerHidden.
 func ResultLines(r grader.Result, tag string, withWhy, hide bool) []string {
 	return ResultLinesAt(r, tag, withWhy, hide, WhyWidth)
 }
@@ -55,13 +57,12 @@ func ResultLinesAt(r grader.Result, tag string, withWhy, hide bool, width int) [
 		return lines
 	}
 	var detail []string
-	if r.Expected != "" || r.Actual != "" {
-		actual := r.Actual
-		if hide && r.Spoiler {
-			actual = SpoilerHidden
-		}
+	switch {
+	case hide && r.Spoiler && (r.Expected != "" || r.Actual != ""):
+		detail = append(detail, SpoilerHidden)
+	case r.Expected != "" || r.Actual != "":
 		expected := "expected: " + OrDash(r.Expected)
-		got := "actual: " + OrDash(actual)
+		got := "actual: " + OrDash(r.Actual)
 		if pair := expected + "  " + got; width > 0 && len(DetailIndent)+lipgloss.Width(pair) > width {
 			detail = append(detail, expected, got)
 		} else {

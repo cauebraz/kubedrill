@@ -17,6 +17,7 @@ const pill = document.getElementById("session-pill");
 const banner = document.getElementById("banner");
 const nav = document.getElementById("nav");
 let meta = { preview: "", dev: false, onboarded: true };
+let section = "";
 
 const ctx = {
   crumbs(parts) {
@@ -76,6 +77,8 @@ onConnection((ok) => {
 });
 
 function navLinks(current) {
+  if (current !== null) { section = current; }
+  current = section;
   const links = [["#/", "Home", "home"], ["#/catalog", "Catalog", "catalog"], ["#/exams", "Exams", "exams"]];
   if (meta.dev) { links.push(["#/kit", "Kit", "kit"]); }
   clear(nav, links.map(([href, text, id]) => el("a", { href, class: id === current ? "on" : "", "aria-current": id === current ? "page" : null, text })));
@@ -102,7 +105,7 @@ function route() {
         location.replace(next && next.startsWith("#/") ? next : "#/");
       });
     case "a":
-      navLinks("catalog");
+      navLinks(null);
       if (parts[1]) { return showAssignment(app, ctx, decodeURIComponent(parts[1]), parts[2], parts[3] && decodeURIComponent(parts[3])); }
       break;
     case "catalog":

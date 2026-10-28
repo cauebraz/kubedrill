@@ -12,7 +12,8 @@
 > so it misbehaves within two minutes. The export takes longer some nights,
 > and we moved it to this CronJob from an older setup last month. The export
 > script itself has not changed in a year. Please make sure only one export
-> can write the file at a time.
+> can write the file at a time, and that a run that starts gets to finish:
+> a half-written file is as bad as a mixed one.
 
 ## Before you start
 
@@ -33,11 +34,11 @@ anything.
 
 ## Done when
 
-- cronjob invoice still runs the export every minute
-- invoice exports never run at the same time, even when one run is slow
-- at most one invoice export Job is active
+- cronjob invoice keeps its every-minute schedule and is not suspended
+- invoice exports never run at the same time, and a slow run is never cut short
+- at most one export Job is active in the namespace
 
 ## Constraints
 
-- Keep CronJob `invoice` and its schedule; it must keep running every minute
+- Keep CronJob `invoice` with its `*/1 * * * *` schedule, not suspended
 - Do not delete the namespace

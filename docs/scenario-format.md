@@ -248,7 +248,7 @@ meeting:
     The storefront has been down since this morning.
   turns:             # at least 2
     - prompt: What do you ask first?
-      choices:       # at least 2, exactly one best: true
+      choices:       # at least 2, exactly one best: true; the page shuffles them
         - say: What changed right before it stopped working?
           reply: We moved it to the new cluster this morning.
           feedback: A failure that starts after a change usually comes from it.
@@ -395,7 +395,7 @@ command history, so several valid fixes pass.
 | `depends_on` | Optional list of existing check ids; no self reference, no cycles |
 | `weight` | Optional, default 1, never negative |
 | `critical` | Optional; when it does not pass, the score is 0 |
-| `spoiler` | Optional boolean; `true` when the actual value names the root cause |
+| `spoiler` | Optional boolean; `true` when the expected or actual value names the root cause or the fix |
 
 `why` is printed under the check in `kubedrill check` and in the live checks
 of the page while it fails. Write it as the sentence under a failing production alert:
@@ -404,10 +404,14 @@ connection`), one or two sentences, never the root cause of a variant. It
 starts with a capital letter unless the first word is a field name
 (`readyReplicas counts ...`). It is printed verbatim, not templated.
 
-`spoiler: true` fits a check whose actual value names the root cause, such
-as an image reference or a selector value. The grader copies the flag into
-the result; `check` hides the actual value until the first hint or a
-recorded diagnosis, and the page never shows it. `001-storefront-down` sets it on `image-correct`.
+`spoiler: true` fits a check whose expected or actual value names the root
+cause or the fix, such as an image reference, a selector value or the regex
+the fix must match. The grader copies the flag into the result; while the
+run goes on, `check` prints `expected and actual values hidden until the run
+ends` in place of both values, `check --explain` hides the validators, and
+the page's live checks and failing Validate receive neither value. The
+grade of a submitted or expired exam shows both. `001-storefront-down` sets it
+on `image-correct`.
 
 Templated fields: `description`, `resource.namespace`, `resource.name`,
 `resource.selector`, `path`, `equals`, `not_equals`, `matches`, `contains`,
@@ -505,7 +509,9 @@ On every start, kubedrill:
 1. creates a new episode namespace (`<namespace>-<suffix>`);
 2. applies the rendered manifests in file-name order with server-side apply
    (field manager `kubedrill`);
-3. runs `hook.sh` when present;
+3. runs `hook.sh` when present; its output is not printed (the learner's
+   terminal and the `kubedrill web` server log stay clean), and a failed
+   hook's error ends with the last 4 KiB of it;
 4. deletes the previous episode namespaces of the same journal without
    waiting, so the learner never waits for a namespace to terminate.
 
@@ -537,7 +543,10 @@ Rules for manifests:
   declares a PersistentVolume with `spec.local`, or names `docker.sock` in
   any string. A scenario that needs one of these, such as a node-level
   drill, sets the key and gets a maintainer review, because smoke applies
-  the setup on the contributor's cluster.
+  the setup on the contributor's cluster. `start` repeats the check on the
+  rendered manifests and labels the episode namespace with the Pod
+  Security `baseline` level (`pod-security.kubernetes.io/enforce`), so a
+  pod the learner creates there is held to the same sandbox.
 
 The sandbox error reads:
 
@@ -779,7 +788,7 @@ Across the tree:
   scenario) under the module its `scenario.module` names, and every `id:`
   in `curriculum.yaml` has a scenario directory
 
-`kubedrill smoke [refs...]` needs the cluster (`just smoke 000`, or `just
+`kubedrill smoke [refs...]` needs the cluster (`just smoke 001`, or `just
 check-ci` for all). For each scenario and each variant seed it:
 
 1. starts an episode in a fresh namespace;

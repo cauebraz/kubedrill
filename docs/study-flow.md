@@ -114,7 +114,9 @@ before. A first attempt that takes three times longer is normal.
 If Kubernetes itself is new, start with `kubedrill story` (or the Story
 tab) when the ticket names it: it tells this ticket from
 zero, explains each object as it appears and walks the read-only commands
-that follow the trail. If only the vocabulary is new, `kubedrill learn`
+that follow the trail. During a DIY run or a terminal `start` its `## The
+fix and why it works` section stays closed until the run ends or you reveal
+the fourth hint; the guided practice shows it. If only the vocabulary is new, `kubedrill learn`
 prints the concept pages this scenario uses. Otherwise read them after the solve, to name what you did.
 `kubedrill concepts` lists every page.
 
@@ -142,15 +144,17 @@ Each check prints what it expected and what it found:
   checks divided by the total weight.
 - **Critical checks:** if a critical check fails, errors or is skipped, the
   score is 0.
-- **Spoiler checks:** some actual values would name the root cause. Those
-  stay hidden until you take a hint or record a diagnosis.
+- **Spoiler checks:** some expected or actual values would name the root
+  cause or the fix. Both stay hidden until the run ends; `check --explain`
+  hides the expected value too.
 
 `kubedrill check --explain` lists every check with its assertion,
 dependencies and `why`, without grading anything.
 
 ## Live checks or check
 
-The page re-grades every 5 seconds while the tab is visible; each check
+The page re-grades every 5 seconds while the tab is visible (every 15
+after a minute without change, back to 5 on terminal input); each check
 opens with its `why`, the expected value and the actual one. Validate (or
 Cmd/Ctrl+Enter) grades now and, on a pass, opens the debrief.
 
@@ -203,7 +207,7 @@ When every check passes, the debrief prints a summary:
 ```
 Debrief: 001-storefront-down (episode <id>, solved)
   duration 4.1 min, 0 hints
-  observations before the first write: 5 (telemetry: audit+shell)
+  API reads before the first write: 5 (telemetry: audit+shell)
   first write: apps/deployments/storefront (a fix target)
   verdict: root-cause
   your diagnosis: <your text>
@@ -265,9 +269,13 @@ Every episode ends with one outcome:
 A failed, abandoned or timed-out episode has its namespace deleted at once.
 A solved one keeps it until your next `start`, so you can still look around.
 
-A **clean solve** has zero hints and fits the expected minutes. When the
-audit log covers the episode, a clean solve also has at least one read
-before the first write.
+A **clean solve** has zero hints, fits the expected minutes and was not a
+guided practice run of the browser workspace (the guide shows the fix; the
+journal marks that episode `"guided": true`). When the audit log covers the
+episode, a clean solve also has at least one read before the first write.
+A guided solve still counts as a solve in `ATTEMPTS`/`SOLVED`, but not
+toward `kubedrill path`, `kubedrill exam` or the page's exam coverage, which
+count only solves without the guide.
 
 A scenario, or a concept, is **mastered** after 3 clean solves among your
 last 4 attempts. Those solves must use 3 different seeds, cover 3 different
@@ -292,7 +300,7 @@ behind the same ticket. The seed picks the variant. Repeating a scenario
 usually gives you a different variant. To replay one, pass its seed:
 
 ```sh
-kubedrill start 000 --seed 3
+kubedrill start 001 --seed 3
 ```
 
 ### Where your data lives
@@ -316,8 +324,9 @@ Commands typed on the host, outside the workstation, are not logged.
 kubedrill's own grading requests are left out, so grading never counts as
 your reads.
 
-From these files the debrief derives the reads before your first write, the
-target of that first write, and a verdict:
+From these files the debrief derives the API reads before your first write
+(read requests in the audit log, not commands typed: one `kubectl describe`
+makes several), the target of that first write, and a verdict:
 
 | Verdict | Meaning |
 |---------|---------|

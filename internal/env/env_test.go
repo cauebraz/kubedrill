@@ -336,6 +336,9 @@ func TestStartHappyPath(t *testing.T) {
 		"kubedrill.io/scenario":        "001-hello",
 		"kubedrill.io/seed":            "3",
 		"kubedrill.io/journal":         "0123abcd",
+
+		"pod-security.kubernetes.io/enforce":         "baseline",
+		"pod-security.kubernetes.io/enforce-version": "latest",
 	}
 	if !reflect.DeepEqual(h.kube.labels, wantLabels) {
 		t.Errorf("labels: got %v, want %v", h.kube.labels, wantLabels)
@@ -359,6 +362,18 @@ func TestStartHappyPath(t *testing.T) {
 	}
 	if h.out.Len() != 0 {
 		t.Errorf("output: got %q, want none", h.out.String())
+	}
+}
+
+func TestStartRecordsGuided(t *testing.T) {
+	h := newHarness(t, testScenario(), "", 0)
+	ep, _, err := h.s.Start(context.Background(), "001-hello", StartOptions{Seed: 1, Guided: true})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	cur, _ := h.journal.Current()
+	if !ep.Guided || cur == nil || !cur.Guided || cur.Mode != journal.ModePractice {
+		t.Errorf("guided start: got episode %+v, current %+v, want a guided practice episode", ep, cur)
 	}
 }
 
@@ -462,6 +477,10 @@ func TestStartRefusals(t *testing.T) {
 		{
 			name: "unknown mode", ref: "001-hello", opts: StartOptions{Seed: 1, Mode: "race"},
 			wantText: `unknown mode "race"`, wantCalls: nil,
+		},
+		{
+			name: "guided exam", ref: "001-hello", opts: StartOptions{Seed: 1, Mode: journal.ModeExam, Guided: true},
+			wantText: "an exam cannot be guided", wantCalls: nil,
 		},
 		{
 			name: "exam without minutes", ref: "001-hello", opts: StartOptions{Seed: 1, Mode: journal.ModeExam},

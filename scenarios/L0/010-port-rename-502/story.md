@@ -10,8 +10,8 @@ answer.
 
 Yesterday the docs team shipped release 3.2.0. Part of that release was a
 cleanup of the nginx setup, and the release notes say it changed the HTTP
-port of the `web` container. The rollout finished, both pods show
-`Running`, and the page works on a laptop. Yet every request to the edge
+port of the `web` container. Both pods show `Running`, and the page
+works on a laptop. Yet every request to the edge
 answers `502 Bad Gateway`.
 
 `Running` means the program started. `502` means the edge asked the next

@@ -93,11 +93,12 @@ func IsReviewSeed(seed int64) bool {
 	return seed > PracticeSeedMax && seed <= ReviewSeedMax
 }
 
-// IsClean reports whether e is a clean solve: solved (practice or exam),
-// zero hints, within minutes (no limit when minutes <= 0) and, when the
-// audit telemetry is known, at least one read before the first write.
+// IsClean reports whether e is a clean solve: solved without the guide of
+// the browser workspace (a guided practice run shows the fix), zero hints,
+// within minutes (no limit when minutes <= 0) and, when the audit telemetry
+// is known, at least one read before the first write.
 func IsClean(e journal.Episode, minutes int) bool {
-	if e.Outcome != journal.OutcomeSolved || e.HintsUsed > 0 || e.EndedAt == nil {
+	if e.Outcome != journal.OutcomeSolved || e.Guided || e.HintsUsed > 0 || e.EndedAt == nil {
 		return false
 	}
 	if minutes > 0 && e.EndedAt.Sub(e.StartedAt) > time.Duration(minutes)*time.Minute {

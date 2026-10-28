@@ -69,10 +69,13 @@ type Backend interface {
 }
 
 // Catalog is the curriculum as the home page shows it, with the exam
-// domains the assignments map to.
+// domains the assignments map to and the titles of the concepts the
+// assignments carry (the catalog filter shows them; an id without one
+// shows as the id).
 type Catalog struct {
-	Levels []Level `json:"levels"`
-	Exams  []Exam  `json:"exams"`
+	Levels   []Level   `json:"levels"`
+	Exams    []Exam    `json:"exams"`
+	Concepts []Concept `json:"concepts,omitempty"`
 }
 
 // Exam is one certification and the learner's coverage of its domains.
@@ -210,8 +213,8 @@ type Active struct {
 	Diagnosis  string               `json:"diagnosis"`
 }
 
-// Check is one check result as the page shows it; a spoiler check never
-// carries its actual value.
+// Check is one check result as the page shows it; while the episode runs,
+// a failing spoiler check carries neither its expected nor its actual value.
 type Check struct {
 	ID          string `json:"id"`
 	Description string `json:"description"`
@@ -295,10 +298,16 @@ type Deps struct {
 
 // Server serves the workspace. The zero value is not usable; use New.
 type Server struct {
-	d        Deps
-	mu       sync.Mutex
+	d Deps
+	// busy serializes the calls into the backend; a waiter whose request
+	// ends (the tab closed) leaves the queue instead of running late.
+	busy     chan struct{}
 	progress *progressStore
 	static   http.Handler
+
+	terms     sync.WaitGroup
+	termsCtx  context.Context
+	stopTerms context.CancelFunc
 }
 
 // New returns a Server over d.
@@ -316,10 +325,14 @@ func New(d Deps) *Server {
 			panic(err)
 		}
 	}
+	termsCtx, stopTerms := context.WithCancel(context.Background())
 	return &Server{
-		d:        d,
-		progress: &progressStore{path: d.ProgressPath, now: d.Now},
-		static:   http.FileServer(http.FS(sub)),
+		d:         d,
+		busy:      make(chan struct{}, 1),
+		progress:  &progressStore{path: d.ProgressPath, now: d.Now},
+		static:    http.FileServer(http.FS(sub)),
+		termsCtx:  termsCtx,
+		stopTerms: stopTerms,
 	}
 }
 
@@ -336,7 +349,22 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 		defer cancel()
 		_ = srv.Shutdown(sctx)
 		<-errc
+		s.closeTerminals(15 * time.Second)
 		return nil
+	}
+}
+
+// closeTerminals ends every open terminal (Shutdown does not track the
+// hijacked websockets) and waits up to limit for their cleanup, which
+// removes the workstation containers.
+func (s *Server) closeTerminals(limit time.Duration) {
+	s.stopTerms()
+	done := make(chan struct{})
+	go func() { s.terms.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(limit):
+		fmt.Fprintln(s.d.Log, "web: terminals still closing after", limit)
 	}
 }
 
@@ -398,6 +426,11 @@ func (s *Server) guard(next http.Handler) http.Handler {
 		} else {
 			w.Header().Set("Cache-Control", "no-store")
 		}
+		if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
+			http.Error(w, "kubedrill web answers only its own page", http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Security-Policy", contentSecurityPolicy)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		next.ServeHTTP(w, r)
@@ -407,6 +440,11 @@ func (s *Server) guard(next http.Handler) http.Handler {
 func (s *Server) tokenOK(t string) bool {
 	return s.d.Token != "" && subtle.ConstantTimeCompare([]byte(t), []byte(s.d.Token)) == 1
 }
+
+// contentSecurityPolicy keeps scripts to the page's own files, so a gap in
+// the markdown or diagram sanitizers cannot run code that reaches the
+// terminal. Styles allow inline attributes: xterm.js and mermaid set them.
+const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
 
 // loopbackHost reports whether the Host header names the loopback
 // interface, which keeps a DNS-rebinding page from reaching the server.
@@ -438,13 +476,27 @@ func badRequest(format string, args ...any) error {
 	return &httpError{status: http.StatusBadRequest, err: fmt.Errorf(format, args...)}
 }
 
+// acquire waits for the backend; it reports false when ctx ends first.
+func (s *Server) acquire(ctx context.Context) bool {
+	select {
+	case s.busy <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (s *Server) release() { <-s.busy }
+
 // api serializes the calls into the backend and encodes the result or the
 // error as JSON ({"error": "..."}).
 func (s *Server) api(fn apiFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		s.mu.Lock()
+		if !s.acquire(r.Context()) {
+			return
+		}
 		v, err := fn(r)
-		s.mu.Unlock()
+		s.release()
 		w.Header().Set("Content-Type", "application/json")
 		if err != nil {
 			status := http.StatusInternalServerError
@@ -568,8 +620,10 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadRequest, fmt.Errorf("stage %q does not run an episode; want practice, diy or exam", req.Stage))
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if !s.acquire(r.Context()) {
+		return
+	}
+	defer s.release()
 	w.WriteHeader(http.StatusOK)
 	flush()
 	var wmu sync.Mutex

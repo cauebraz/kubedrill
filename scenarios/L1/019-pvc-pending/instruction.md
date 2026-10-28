@@ -35,7 +35,7 @@ the claim and of the pod before changing anything.
 
 - persistentvolumeclaim uploads-data is Bound
 - deployment uploads has 1 ready replica
-- the uploads pod writes and reads a file on the volume mounted at /data
+- the uploads pod writes and reads a file on claim uploads-data mounted at /data
 
 ## Constraints
 

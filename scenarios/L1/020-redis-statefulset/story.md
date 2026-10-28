@@ -104,7 +104,7 @@ kubectl apply -f redis.yaml
 kubectl rollout status statefulset/redis
 ```
 
-Why this works: the StatefulSet creates `redis-0` first, files the claim
+Why this works: the StatefulSet creates `redis-0`, files the claim
 `data-redis-0`, the disk is made when the pod lands on a node, redis starts,
 `redis-cli ping` answers `PONG`, the pod turns Ready, and its address joins
 the Service's endpoint list. Because the Service is headless and the

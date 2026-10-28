@@ -10,7 +10,7 @@ export const STAGES = [
   { id: "quiz", label: "Check understanding", sub: "Answer the mentor" },
   { id: "learn", label: "Learn the pieces", sub: "Diagram, story, concepts" },
   { id: "practice", label: "Guided practice", sub: "Step by step, live cluster" },
-  { id: "diy", label: "Do it yourself", sub: "A new cause, no guide" },
+  { id: "diy", label: "Do it yourself", sub: "Another variant, no guide" },
   { id: "done", label: "Result", sub: "Badge and mastery" },
   { id: "exam", label: "Exam rehearsal", sub: "Timed, no help, one submit" }
 ];
@@ -42,10 +42,40 @@ export function ring(done, total, earned, size) {
     el("span", { class: "lbl", text: earned ? "\u2713" : done + "/" + total }));
 }
 
-const STATUS_CLASS = { active: "warn", solved: "good", mastered: "brand", todo: "" };
+export const STATUS_WORDS = [["todo", "not started"], ["started", "in progress"], ["live", "live"], ["complete", "complete"], ["mastered", "mastered"]];
+const STATUS_CLASS = { todo: "", started: "info", live: "warn", complete: "good", mastered: "brand" };
+const STATUS_TITLES = {
+  todo: "No stage done yet",
+  started: "Some stages done; the assignment is complete when the Do it yourself run passes",
+  live: "A run of this assignment is active now",
+  complete: "The Do it yourself run passed; it counts toward the plan badge",
+  mastered: "3 clean solves on different variants; kubedrill brings it back for review"
+};
 
-export function statusPill(status) {
-  return el("span", { class: "pill " + (STATUS_CLASS[status] || ""), text: status });
+export function statusOf(a) {
+  if (a.status === "active") { return "live"; }
+  if (a.status === "mastered") { return "mastered"; }
+  if (isDone(a)) { return "complete"; }
+  if (a.status === "solved" || stagesDone(a.progress) > 0) { return "started"; }
+  return "todo";
+}
+
+export function statusPill(a) {
+  const s = statusOf(a);
+  return el("span", { class: "pill " + STATUS_CLASS[s], title: STATUS_TITLES[s], text: Object.fromEntries(STATUS_WORDS)[s] });
+}
+
+export function hideFixSection(root, note) {
+  const h = [...root.querySelectorAll("h2")].find((x) => x.textContent.trim().toLowerCase() === "the fix and why it works");
+  if (!h) { return false; }
+  let n = h.nextSibling;
+  while (n && !(n.nodeType === 1 && /^H[12]$/.test(n.tagName))) {
+    const after = n.nextSibling;
+    n.remove();
+    n = after;
+  }
+  h.after(el("div", { class: "callout info fix-hidden" }, el("div", { text: note })));
+  return true;
 }
 
 // masteryNeed is how many distinct variants mastery asks for.
@@ -55,9 +85,9 @@ export function masteryMeter(m) {
   const need = masteryNeed(m);
   const title = m.mastered
     ? "Mastered: 3 clean solves in your last 4 attempts, on " + need + " variants"
-    : "Mastery: " + m.cleanInLast + "/3 clean solves in your last " + (m.last || 4) + " attempts, " + m.variantsSolved + "/" + need + " variants solved. Clean means no hint and within the expected minutes.";
+    : "Mastery: " + m.cleanInLast + "/3 clean solves in your last " + (m.last || 4) + " attempts; mastery also needs " + need + " different variants among them. Clean means no hint and within the expected minutes.";
   const segs = [];
-  for (let i = 0; i < need; i++) { segs.push(el("i", { class: i < Math.min(m.variantsSolved, need) ? "on" : "" })); }
+  for (let i = 0; i < 3; i++) { segs.push(el("i", { class: m.mastered || i < Math.min(m.cleanInLast, 3) ? "on" : "" })); }
   return el("span", { class: "mastery" + (m.mastered ? " done" : ""), title, role: "img", "aria-label": title }, segs);
 }
 
@@ -83,7 +113,7 @@ export function assignmentRow(a, byID, compact) {
       a.simulation ? null : el("span", { class: "tag", text: "lab only" }),
       stageDots(a.progress, a.simulation),
       a.mastery ? masteryMeter(a.mastery) : null),
-    el("div", { class: "right" }, statusPill(a.status), el("span", { class: "arrow", html: icons.arrow })));
+    el("div", { class: "right" }, statusPill(a), el("span", { class: "arrow", html: icons.arrow })));
 }
 
 // flatten lists every assignment card of a catalog with its level and

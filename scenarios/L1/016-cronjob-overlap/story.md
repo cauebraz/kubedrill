@@ -129,10 +129,11 @@ kubectl get jobs --watch
 ```
 
 Only `invoice` shows SUSPEND `False`, and over the next ticks at most one Job
-is `Running` at a time. To run the export once on demand from the same
-template, `kubectl create job invoice-manual --from=cronjob/invoice` creates
-a Job outside the schedule; the policy does not cover it, so start it only
-when no run is active. The checks below the terminal turn green, and
+is `Running` at a time. When a run lasts longer than a minute, the next
+tick is skipped and the export starts every other minute; that is `Forbid`
+doing its job. Do not start an extra run by hand to test it: a Job created with
+`kubectl create job --from=cronjob/invoice` is outside the policy and
+becomes a second writer. The checks below the terminal turn green, and
 `kubedrill check` grades once from the shell.
 
 The habit to keep from this ticket: when something ran twice, count the

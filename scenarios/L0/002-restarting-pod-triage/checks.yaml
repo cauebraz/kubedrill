@@ -70,6 +70,36 @@ checks:
     path: "{.items[*].status.conditions[?(@.type=='Ready')].status}"
     equals: "True"
 
+  - id: liveness-kept
+    description: the service that was restarting keeps a liveness probe
+    why: >-
+      Without a liveness probe the kubelet never restarts a reviews
+      container that hangs while still running; the restarts stop, but a
+      stuck process then keeps its pod until someone notices.
+    depends_on: [restarts-zero]
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: reviews
+    path: '{.spec.template.spec.containers[?(@.name=="web")].livenessProbe}'
+    not_empty: true
+
+  - id: memory-limit-kept
+    description: the service that was restarting keeps a memory limit
+    why: >-
+      Without a memory limit a reviews container that leaks takes memory
+      from the 39 other pods on the node until the kernel kills one of
+      them; every service in the namespace runs with a limit.
+    depends_on: [restarts-zero]
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: reviews
+    path: '{.spec.template.spec.containers[?(@.name=="web")].resources.limits.memory}'
+    not_empty: true
+
   - id: fleet-healthy
     description: every deployment in the namespace has all its replicas available (14 deployments, 40 pods)
     why: >-

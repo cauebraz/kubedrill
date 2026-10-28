@@ -94,7 +94,7 @@ func TestRealScenarioSimulation(t *testing.T) {
 			t.Fatalf("Render seed %d: %v", seed, err)
 		}
 		sim := rd.Simulation
-		if sim == nil || len(sim.Meeting.Turns) != 4 || len(sim.Guide) != 6 || sim.Customer.Name != "Dana" {
+		if sim == nil || len(sim.Meeting.Turns) != 4 || len(sim.Guide) != 7 || sim.Customer.Name != "Dana" {
 			t.Fatalf("seed %d simulation: got %+v", seed, sim)
 		}
 	}

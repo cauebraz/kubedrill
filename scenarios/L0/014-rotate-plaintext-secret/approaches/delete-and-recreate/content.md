@@ -7,8 +7,8 @@ not an annotation with the old data in it.
 Choose it when the old Secret may carry more than the one key you are
 rotating, or when you want the new object to be a clean record of what was
 created. The checks read the Secret's `data.token`, its `rotated` label,
-and the value inside new pods of both Deployments, so this path passes the
-same way as the apply path.
+the value inside new pods of both Deployments and the Secret the worker's
+pod template names, so this path passes the same way as the apply path.
 
 The trade-off is the gap. Between the `delete` and the `create` the Secret
 does not exist; running pods are unaffected, because their environment was

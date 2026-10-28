@@ -1,6 +1,7 @@
 package scenario
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -48,5 +49,28 @@ func TestExecuteBoundsOutput(t *testing.T) {
 				t.Errorf("execute: got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestExecuteChargesBuiltStrings(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+	}{
+		{"printf doubling", `{{ $x := "aaaaaaaaaaaaaaaa" }}{{ range 40 }}{{ $x = printf "%s%s" $x $x }}{{ end }}done`},
+		{"print doubling", `{{ $x := "aaaaaaaaaaaaaaaa" }}{{ range 40 }}{{ $x = print $x $x }}{{ end }}done`},
+		{"html growth", `{{ $x := "<<<<<<<<<<<<<<<<" }}{{ range 40 }}{{ $x = html $x $x }}{{ end }}done`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := execute("f.yaml", tt.text, templateData{Variant: "v1"})
+			if !errors.Is(err, errRenderTooLarge) {
+				t.Errorf("execute: got %v, want errRenderTooLarge", err)
+			}
+		})
+	}
+	got, err := execute("f.yaml", `{{ printf "%s-%d" .Variant 3 }}`, templateData{Variant: "v1"})
+	if err != nil || got != "v1-3" {
+		t.Errorf("printf in budget: got %q, %v, want v1-3", got, err)
 	}
 }

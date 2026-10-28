@@ -5,8 +5,8 @@ metadata:
   namespace: {{ .Namespace }}
   labels:
     app.kubernetes.io/name: report
-    app.kubernetes.io/part-of: finance
-    team: finance
+    app.kubernetes.io/part-of: billing
+    team: billing
 spec:
   replicas: 1
   minReadySeconds: 10
@@ -19,8 +19,8 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: report
-        app.kubernetes.io/part-of: finance
-        team: finance
+        app.kubernetes.io/part-of: billing
+        team: billing
     spec:
       terminationGracePeriodSeconds: 1
       containers:

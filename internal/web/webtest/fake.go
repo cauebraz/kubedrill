@@ -146,6 +146,11 @@ func (f *Fake) Catalog(context.Context) (web.Catalog, error) {
 				{ID: "deployment", Title: "Application deployment", Weight: 20, Assignments: []string{"011-rollout-stuck"}},
 			}},
 		},
+		Concepts: []web.Concept{
+			{ID: "image-pull", Title: "Image pull"},
+			{ID: "pod-lifecycle", Title: "Pod lifecycle"},
+			{ID: "readiness-and-endpoints", Title: "Readiness and endpoints"},
+		},
 	}, nil
 }
 
@@ -226,7 +231,7 @@ func (f *Fake) checks(fixed bool) []web.Check {
 	}
 	return []web.Check{
 		{ID: "deploy-exists", Description: "deployment storefront exists", Why: "The Deployment is the object the team owns.", Status: "pass"},
-		{ID: "image-correct", Description: "deployment storefront runs the image every other environment runs", Why: "The image reference decides whether the node can pull it.", Status: status, Expected: "nginx:1.27-alpine"},
+		{ID: "image-correct", Description: "deployment storefront runs the image every other environment runs", Why: "The image reference decides whether the node can pull it.", Status: status, Expected: map[bool]string{true: "nginx:1.27-alpine"}[fixed], Message: map[bool]string{false: "expected and actual values hidden until the run ends"}[fixed]},
 		{ID: "ready-replicas", Description: "deployment storefront has 3 ready replicas", Why: "Ready pods are what the Service routes to.", Status: status, Expected: "3", Actual: map[bool]string{true: "3", false: "no value at {.status.readyReplicas}"}[fixed]},
 	}
 }

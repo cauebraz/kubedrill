@@ -162,8 +162,9 @@ id, title, intro and the four sections. The reviewer also checks:
 - Every number, field, flag and default is checked against the
   kubernetes.io page for v1.37 cited in `Go deeper`. A claim from another
   source cites it; a claim you could not check is left out.
-- The page is in the table of `docs/concepts/README.md` and at least one
-  scenario lists it in `concepts`.
+- The page is in the table of `docs/concepts/README.md`, and at least one
+  scenario lists it in `concepts` once a scenario for it exists
+  (`control-plane-signals` waits for the L2 control-plane scenarios).
 
 ## Conventions
 

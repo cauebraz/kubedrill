@@ -36,9 +36,14 @@ deploy.
 Mitigate first: put the Deployment back on the last revision that worked
 (the `rollout` subcommand has a verb for it) and wait for
 `rollout status` to report success. If the rollback stalls too, read the
-Events of its new pod: revision 1 depends on a ConfigMap key the 2.5.0
-deploy may have removed from `checkout-config`. Then fix forward instead:
-change only the one field of container `web` in Deployment `checkout` that
-differs between revision 1 and revision 2 and is neither the version label
-nor the ConfigMap key. Deleting the stuck pods does not help; the
-ReplicaSet recreates them from the same template.
+Events of its new pod: revision 1 reads a ConfigMap key the 2.5.0 deploy
+may have removed from `checkout-config`. A stalled rollback has two ways
+out. Give revision 1 what it reads: put the missing key back in the
+ConfigMap with the URL the new key holds, and the waiting pod starts on
+its next retry. Or fix forward from the 2.5.0 template: the current
+template is now revision 1's, so changing the broken field there changes
+nothing; return to the previous revision first (an undo without a target
+goes to it, and it is now 2.5.0), then change only the one field of
+container `web` that differs between revision 1 and revision 2 and is
+neither the version label nor the ConfigMap key. Deleting the stuck pods
+does not help; the ReplicaSet recreates them from the same template.

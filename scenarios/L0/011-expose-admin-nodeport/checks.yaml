@@ -102,3 +102,17 @@ checks:
       kubectl -n "$TASK_NS" delete pod "$pod" --wait=false >/dev/null
       [ "$phase" = Succeeded ]
     contains: "ACME Admin 3.2.0"
+
+  - id: deployments-kept
+    description: every admin Deployment in the namespace keeps its 1 replica
+    why: >-
+      The admin team owns the workloads in this namespace; a Service that is
+      correct only because a Deployment was scaled down or removed breaks the
+      moment the team scales it back, and takes away a build they still test.
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      selector: app.kubernetes.io/part-of=backoffice
+    path: "{range .items[*]}{.metadata.name}{.spec.replicas}{end}"
+    equals: "{{ if eq .Vars.canary \"true\" }}admin 1 admin-canary 1{{ else }}admin 1{{ end }}"

@@ -95,8 +95,11 @@ memory-limit-too-low, lowering `CACHE_MB` in ConfigMap `reviews-config`
 (for example to 1) also fits the cache under `10Mi`; the pod reads the file
 on its next start, so follow it with `kubectl rollout restart
 deployment/reviews` to get a pod with 0 restarts. It trades a smaller
-cache for the limit every other service has. Then put the label on the pod
-the rollout created:
+cache for the limit every other service has. Removing the liveness probe
+or the memory limit also stops the restarts, and the checks fail both: the
+probe is what restarts a hung container, and the limit keeps a leak in
+reviews from taking memory from the other pods on the node. Then put the
+label on the pod the rollout created:
 
 ```sh
 kubectl -n {{ .Namespace }} rollout status deployment/reviews --timeout=120s

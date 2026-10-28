@@ -28,7 +28,7 @@ function render(c, next) {
     el("p", { class: "profile" },
       el("span", null, el("b", { text: String(done) }), " of " + all.length + " assignments complete"),
       el("span", { class: "sep", text: "/" }),
-      el("span", null, el("b", { text: String(badges) }), " " + (badges === 1 ? "badge" : "badges")),
+      el("span", { title: "A plan badge needs every written assignment of the plan complete" }, el("b", { text: String(badges) }), " plan " + (badges === 1 ? "badge" : "badges")),
       next.reviewsPending ? [el("span", { class: "sep", text: "/" }), el("span", null, el("b", { text: String(next.reviewsPending) }), " " + (next.reviewsPending === 1 ? "review" : "reviews") + " due")] : null,
       el("span", { class: "sep", text: "/" }),
       el("span", null, planned + " more planned")),

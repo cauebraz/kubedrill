@@ -37,6 +37,7 @@ mounts it runs with. Read what it is waiting for before changing anything.
 ## Done when
 
 - deployment db has 1 ready replica
+- service db exposes port 5432
 - deployment api has 2 ready replicas
 - every api pod runs the migrate init container to completion
 - service api has at least one ready endpoint

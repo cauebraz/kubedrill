@@ -940,6 +940,23 @@ func (m *Manager) RemoveContainer(ctx context.Context, name string) error {
 	return nil
 }
 
+// RemoveContainers removes every container whose name starts with prefix,
+// running or not, and returns how many it removed.
+func (m *Manager) RemoveContainers(ctx context.Context, prefix string) (int, error) {
+	out, err := m.probe(ctx, "ps", "-aq", "--filter", "name=^"+prefix)
+	if err != nil {
+		return 0, fmt.Errorf("list workstation containers %s*: %w", prefix, err)
+	}
+	ids := strings.Fields(out)
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	if _, err := m.probe(ctx, append([]string{"rm", "-f"}, ids...)...); err != nil {
+		return 0, fmt.Errorf("remove workstation containers %s*: %w", prefix, err)
+	}
+	return len(ids), nil
+}
+
 // DockerAvailable reports whether the docker daemon answers `docker info`
 // within ten seconds.
 func (m *Manager) DockerAvailable(ctx context.Context) error {

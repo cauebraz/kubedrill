@@ -61,3 +61,31 @@ checks:
       command: ["curl", "-fsS", "-m", "5", "http://cart.{{ .Namespace }}.svc/"]
       timeout: 30s
     contains: "Welcome to nginx!"
+
+  - id: selector-matches-template
+    description: service cart selects the pods that deployment cart creates
+    why: >-
+      Labels set by hand on running pods, or pods kept alive outside the
+      Deployment, vanish with the next rollout; only a selector that the pod
+      template satisfies keeps the Service routing after every deploy.
+    depends_on: [cart-page-served]
+    spoiler: true
+    script: |
+      sel=$(kubectl -n "$TASK_NS" get service cart -o jsonpath='{.spec.selector}')
+      tpl=$(kubectl -n "$TASK_NS" get deployment cart -o jsonpath='{.spec.template.metadata.labels}')
+      pairs() { printf '%s' "$1" | tr -d '{}"' | tr ',' '\n' | sed 's/:/=/'; }
+      if [ -z "$sel" ]; then
+        echo "service cart has no selector"
+        exit 1
+      fi
+      have=" $(pairs "$tpl" | tr '\n' ' ') "
+      missing=""
+      for p in $(pairs "$sel"); do
+        case "$have" in *" $p "*) ;; *) missing="$missing $p" ;; esac
+      done
+      if [ -n "$missing" ]; then
+        echo "service cart selects$missing, which the pod template of deployment cart does not set"
+        exit 1
+      fi
+      echo "every selector label of service cart is set by the pod template of deployment cart"
+    exit_code: 0

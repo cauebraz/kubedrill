@@ -12,9 +12,13 @@ import (
 
 // assertion states in words what a check reads and what it expects, built
 // from the check fields: `Deployment hello: {.status.readyReplicas} equals "2"`.
+// A spoiler check keeps its expected value back, since it names the fix.
 func assertion(c scenario.Check) string {
 	subject := checkSubject(c)
 	validators := checkValidators(c)
+	if c.Spoiler {
+		validators = []string{"has the expected value (" + render.SpoilerHidden + ")"}
+	}
 	if len(validators) == 0 {
 		validators = []string{"is read without error"}
 	}

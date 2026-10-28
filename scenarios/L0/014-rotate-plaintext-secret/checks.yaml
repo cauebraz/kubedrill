@@ -156,6 +156,22 @@ checks:
       echo "$live of $live running pods see the new token"
     exit_code: 0
 
+  - id: worker-restart-safe
+    description: a new payments-worker pod would also start with the new token
+    why: >-
+      A running pod keeps the token it read at start; the pod template decides
+      what the next pod reads after a crash, a drain or a deploy, and a
+      template that names another Secret brings the leaked token back or stops
+      the worker at CreateContainerConfigError.
+    depends_on: [worker-env-new]
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: payments-worker
+    path: "{.spec.template.spec.containers[*].env[*].valueFrom.secretKeyRef.name}{.spec.template.spec.volumes[*].secret.secretName}"
+    matches: "^payments-token( payments-token)*$"
+
   - id: old-copy-gone
     description: secret payments-token-old does not exist
     why: >-

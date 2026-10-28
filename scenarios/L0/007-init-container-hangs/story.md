@@ -35,8 +35,9 @@ in this ticket, from the top down:
   `MIGRATE_FLAG` (a file it expects to find). It retries until both the
   database answers and the file exists.
 - Deployment `db` and Service `db`: the database and its stable name inside
-  the cluster. A Service name resolves through cluster DNS only for pods in
-  the same namespace, and only with the port the Service declares.
+  the cluster. Pods in the same namespace reach it by the short name `db`
+  (from another namespace, `db.<namespace>`). DNS turns the name into an
+  address; the Service then forwards only the ports it declares.
 - ConfigMap `migrate-config`: a small set of files. Mounting it into the
   pod at a path (`mountPath`) makes each key a file under that path, so the
   key `schema-ready` becomes `<mountPath>/schema-ready`.
@@ -97,7 +98,8 @@ depending on what is wrong:
 - `nc: bad address 'db-primary'`: the host name has no Service in this
   namespace, so DNS cannot resolve it.
 - `waiting for database at db:5433` with no error: the name resolved, but
-  nothing listens on that port.
+  the Service does not forward that port, so the connection gets no answer
+  and `nc` gives up after 2 seconds.
 - `waiting for migration flag /etc/migrate/schema-ready` after `database
   reachable`: the database is fine; the file is not at that path.
 
@@ -156,8 +158,9 @@ Why other moves do not work:
   and wait for the same wrong value.
 - Changing the Service `db` or the ConfigMap: both match what every other
   environment has, and other teams use the Service on port 5432.
-- Removing the init container: the api starts, but the migrations never run
-  and the mismatch stays in the manifest for the next environment.
+- Removing the init container, or replacing its loop with a command that
+  exits at once: the api starts, but the migrations never run and the
+  mismatch stays in the manifest for the next environment.
 
 In a real team, also fix the value in the repository's manifest, or the next
 deploy puts the wrong one back.

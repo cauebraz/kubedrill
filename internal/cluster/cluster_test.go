@@ -1127,18 +1127,44 @@ func TestEnsureExistingClusterWaitsForNodes(t *testing.T) {
 
 func TestPullImages(t *testing.T) {
 	const plain = "registry.k8s.io/pause:3.10"
+	const digestRef = "docker.io/library/busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e"
+	const tagRef = "docker.io/library/busybox:1.37.0"
+	const tagCmd = " ctr --namespace k8s.io images tag --force " + digestRef + " " + tagRef
 	tests := []struct {
 		name    string
 		fail    string
+		listErr bool
+		have    string
 		wantErr string
+		want    func(node string) []string
 	}{
-		{name: "every node pulls and tags"},
-		{name: "one node fails", fail: "kubedrill-worker2", wantErr: "pull " + DebugImage + " on kubedrill-worker2: docker exec kubedrill-worker2: no route to registry"},
+		{name: "every node pulls and tags", want: func(node string) []string {
+			return []string{"docker exec " + node + " crictl pull " + DebugImage, "docker exec " + node + tagCmd, "docker exec " + node + " crictl pull " + plain}
+		}},
+		{name: "one node fails", fail: "kubedrill-worker2", wantErr: "pull " + DebugImage + " on kubedrill-worker2: docker exec kubedrill-worker2: no route to registry", want: func(node string) []string {
+			if node == "kubedrill-worker2" {
+				return []string{"docker exec " + node + " crictl pull " + DebugImage, "docker exec " + node + " crictl pull " + plain}
+			}
+			return []string{"docker exec " + node + " crictl pull " + DebugImage, "docker exec " + node + tagCmd, "docker exec " + node + " crictl pull " + plain}
+		}},
+		{name: "images already present are skipped", have: digestRef + "\n" + tagRef + "\n" + plain + "\n", want: func(string) []string { return nil }},
+		{name: "a digest without its tag is only tagged", have: digestRef + "\n", want: func(node string) []string {
+			return []string{"docker exec " + node + tagCmd, "docker exec " + node + " crictl pull " + plain}
+		}},
+		{name: "a failed listing pulls everything", listErr: true, have: digestRef + "\n" + tagRef + "\n" + plain + "\n", want: func(node string) []string {
+			return []string{"docker exec " + node + " crictl pull " + DebugImage, "docker exec " + node + tagCmd, "docker exec " + node + " crictl pull " + plain}
+		}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			m := New(t.TempDir(), WithStateDir(testStateDir(t)))
 			fd := &fakeDocker{respond: func(args []string) ([]byte, error) {
+				if len(args) > 6 && args[2] == "ctr" && args[6] == "ls" {
+					if tc.listErr {
+						return nil, exitErrorWith(t, "ctr: not found")
+					}
+					return []byte(tc.have), nil
+				}
 				if args[1] == tc.fail && args[2] == "crictl" && args[4] == DebugImage {
 					return nil, exitErrorWith(t, "no route to registry")
 				}
@@ -1159,16 +1185,34 @@ func TestPullImages(t *testing.T) {
 			}
 			var want []string
 			for _, node := range []string{"kubedrill-control-plane", "kubedrill-worker", "kubedrill-worker2"} {
-				want = append(want, "docker exec "+node+" crictl pull "+DebugImage)
-				if node != tc.fail {
-					want = append(want, "docker exec "+node+" ctr --namespace k8s.io images tag --force docker.io/library/busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e docker.io/library/busybox:1.37.0")
-				}
-				want = append(want, "docker exec "+node+" crictl pull "+plain)
+				want = append(want, "docker exec "+node+" ctr --namespace k8s.io images ls --quiet")
+				want = append(want, tc.want(node)...)
 			}
 			if strings.Join(got, "\n") != strings.Join(want, "\n") {
 				t.Errorf("calls:\n got %q\nwant %q", got, want)
 			}
 		})
+	}
+}
+
+func TestStoredRef(t *testing.T) {
+	const d = "@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10"
+	tests := []struct {
+		image, want string
+		ok          bool
+	}{
+		{"nginx:1.27", "docker.io/library/nginx:1.27", true},
+		{"registry.k8s.io/pause:3.10", "registry.k8s.io/pause:3.10", true},
+		{"localhost:5000/app:v1", "localhost:5000/app:v1", true},
+		{"nginx" + d, "docker.io/library/nginx" + d, true},
+		{"nginx", "", false},
+		{"localhost:5000/app", "", false},
+	}
+	for _, tc := range tests {
+		got, ok := storedRef(tc.image)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("storedRef(%q) = %q, %v, want %q, %v", tc.image, got, ok, tc.want, tc.ok)
+		}
 	}
 }
 

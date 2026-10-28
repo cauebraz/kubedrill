@@ -3,10 +3,12 @@ package web_test
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -137,6 +139,25 @@ func TestGuard(t *testing.T) {
 		}
 		if res.StatusCode != http.StatusSeeOther || got == nil || got.Value != testToken || !got.HttpOnly || got.SameSite != http.SameSiteStrictMode {
 			t.Errorf("got %d cookie %+v, want 303 with an HttpOnly SameSite=Strict token cookie", res.StatusCode, got)
+		}
+	})
+	t.Run("cross-site requests are refused and pages carry a CSP", func(t *testing.T) {
+		for site, want := range map[string]int{"same-site": http.StatusForbidden, "cross-site": http.StatusForbidden, "same-origin": http.StatusOK, "none": http.StatusOK} {
+			req, _ := http.NewRequest("GET", c.srv.URL+"/api/catalog", nil)
+			req.AddCookie(c.cookie)
+			req.Header.Set("Sec-Fetch-Site", site)
+			res, err := c.srv.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res.Body.Close()
+			if res.StatusCode != want {
+				t.Errorf("Sec-Fetch-Site %s: got %d, want %d", site, res.StatusCode, want)
+			}
+		}
+		res, _ := c.do("GET", "/", "", false)
+		if csp := res.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") || !strings.Contains(csp, "frame-ancestors 'none'") {
+			t.Errorf("CSP: got %q", csp)
 		}
 	})
 	t.Run("a wrong token link is refused", func(t *testing.T) {
@@ -523,5 +544,48 @@ func TestWelcomeGate(t *testing.T) {
 	p := &client{t: t, srv: srv, cookie: &http.Cookie{Name: "kubedrill_token", Value: testToken}}
 	if p.json("GET", "/api/meta", "", &m); !m.Onboarded {
 		t.Error("meta in preview: onboarded=false, want true (no welcome flow for authors)")
+	}
+}
+
+func TestServeClosesTerminalsOnShutdown(t *testing.T) {
+	f := newFake()
+	f.TerminalArgv = []string{"sh", "-c", `printf 'ready\n'; sleep 60`}
+	s := web.New(web.Deps{Backend: f, ProgressPath: filepath.Join(t.TempDir(), "progress.json"), Token: testToken, Now: fixedNow})
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	served := make(chan error, 1)
+	go func() { served <- s.Serve(ctx, ln) }()
+	cfg, err := websocket.NewConfig("ws://"+ln.Addr().String()+"/ws/terminal?cols=80&rows=24", "http://"+ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Header.Add("Cookie", "kubedrill_token="+testToken)
+	ws, err := websocket.DialConfig(cfg)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer ws.Close()
+	_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+	var b []byte
+	if err := websocket.Message.Receive(ws, &b); err != nil {
+		t.Fatalf("receive: %v", err)
+	}
+	cancel()
+	select {
+	case err := <-served:
+		if err != nil {
+			t.Fatalf("Serve: %v", err)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("Serve did not return after cancel")
+	}
+	f.Lock()
+	n := len(f.Cleaned)
+	f.Unlock()
+	if n != 1 {
+		t.Errorf("terminal cleanups after shutdown: got %d, want 1", n)
 	}
 }

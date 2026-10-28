@@ -12,21 +12,6 @@ checks:
       name: api
     exists: true
 
-  - id: readiness-probe-kept
-    description: deployment api keeps a readiness probe on container api
-    why: >-
-      The readiness probe is what keeps a pod that cannot answer out of the
-      Service; without it every new pod gets traffic the moment its process
-      starts, and the next broken release reaches the frontend unfiltered.
-    depends_on: [deploy-exists]
-    resource:
-      apiVersion: apps/v1
-      kind: Deployment
-      namespace: "{{ .Namespace }}"
-      name: api
-    path: "{.spec.template.spec.containers[?(@.name=='api')].readinessProbe}"
-    not_empty: true
-
   - id: ready-replicas
     description: deployment api has 2 ready replicas
     why: >-
@@ -43,6 +28,21 @@ checks:
       name: api
     path: "{.status.readyReplicas}"
     equals: "2"
+
+  - id: readiness-probe-kept
+    description: deployment api keeps a readiness probe that asks nginx on port 80 (HTTP or TCP)
+    why: >-
+      The readiness probe is what keeps a pod that cannot answer out of the
+      Service; a probe that is gone, or that tests a file instead of the
+      server, lets every new pod get traffic the moment its process starts.
+    depends_on: [ready-replicas]
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: api
+    path: "{.spec.template.spec.containers[?(@.name=='api')].readinessProbe.httpGet.port}{.spec.template.spec.containers[?(@.name=='api')].readinessProbe.tcpSocket.port}"
+    matches: "^(80|http)$"
 
   - id: service-endpoints
     description: service api has at least one ready endpoint

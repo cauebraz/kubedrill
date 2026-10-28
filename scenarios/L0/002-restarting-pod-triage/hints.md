@@ -16,8 +16,10 @@ block under `Containers` (Reason, Exit Code) and the `Events` at the end
 (look for `Liveness probe failed`, `Killing`, `BackOff`, and the port in
 each probe URL); `kubectl -n {{ .Namespace }} logs <pod-name> --previous`
 prints what the container wrote before it died. In the same `describe`
-output, compare `Limits`, `Mounts` and the probe lines with those of any
-healthy pod, for example one of `catalog`.
+output, compare `Limits` and `Mounts` with those of any healthy pod, for
+example one of `catalog`; the other services have no probes, so compare
+the port in the `Liveness` line with the `Readiness` line and the port the
+container serves on.
 
 ## Hint 3: what it means
 

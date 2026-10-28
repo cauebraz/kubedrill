@@ -12,7 +12,8 @@ import (
 // asciiStyle is the glamour dark style with every glyph replaced by ASCII so
 // the rendered text pastes back into a terminal unchanged: "| " quotes, "- "
 // bullets, "# " and "## " headings, and inline code without the non-breaking
-// space padding. Colors are kept.
+// space padding. Colors are kept, except inline code: the terminal's cyan on
+// its own background instead of red on dark grey, which reads as an error.
 func asciiStyle() ansi.StyleConfig {
 	st := styles.DarkStyleConfig
 	st.BlockQuote.IndentToken = stringPtr("| ")
@@ -29,6 +30,8 @@ func asciiStyle() ansi.StyleConfig {
 	st.Code.Suffix = ""
 	st.Code.BlockPrefix = ""
 	st.Code.BlockSuffix = ""
+	st.Code.Color = stringPtr("6")
+	st.Code.BackgroundColor = nil
 	st.CodeBlock.BlockPrefix = ""
 	st.CodeBlock.BlockSuffix = ""
 	return st

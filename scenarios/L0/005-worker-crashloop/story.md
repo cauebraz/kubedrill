@@ -82,7 +82,8 @@ Read the `Containers` section. `State: Waiting, Reason: CrashLoopBackOff`
 is now; `Last State: Terminated, Reason: Error, Exit Code: N` is what
 happened to the previous run. A program chooses its exit code: 1 is the
 usual "a configuration is wrong", 2 is the usual "I did not understand my
-arguments", and 137 would mean the kernel killed it for memory. Below that,
+arguments", and 137 (128 plus signal 9) means something killed it: the
+kernel for memory when the Reason is `OOMKilled`, or the kubelet. Below that,
 `Args` lists the arguments the container receives, `Environment Variables
 from` lists the ConfigMap and Secret the environment is built from, and
 `Mounts` lists each path with the key behind it as `path="..."`.

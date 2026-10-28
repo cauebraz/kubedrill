@@ -41,6 +41,7 @@ Read both before changing anything; the fix is one field.
 - deployment worker exists
 - deployment worker has 2 ready replicas
 - deployment worker has 2 replicas available for at least 5 seconds
+- the worker runs the run.sh the team ships, unchanged
 - the worker pods log "worker started"
 
 ## Constraints

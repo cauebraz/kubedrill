@@ -242,6 +242,9 @@ func (u unavailableWorkstation) ShellCommand(context.Context, workstation.ShellO
 }
 
 func (u unavailableWorkstation) RemoveContainer(context.Context, string) error { return u.err }
+func (u unavailableWorkstation) RemoveContainers(context.Context, string) (int, error) {
+	return 0, u.err
+}
 
 func (u unavailableWorkstation) NodeShell(context.Context, string, string) error { return u.err }
 

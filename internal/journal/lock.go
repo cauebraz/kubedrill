@@ -14,8 +14,8 @@ import (
 
 const (
 	breakSuffix    = ".break"
-	lockStaleAfter = 30 * time.Second
-	lockWait       = 45 * time.Second
+	lockStaleAfter = 2 * time.Minute
+	lockWait       = 150 * time.Second
 	lockPollMin    = time.Millisecond
 	lockPollMax    = 50 * time.Millisecond
 )

@@ -196,11 +196,14 @@ func (a *app) statusCommand() *cobra.Command {
 	}
 }
 
-// solvedSet returns the ids with at least one solved episode.
+// solvedSet returns the ids with at least one episode solved without the
+// guide: a guided practice run of the browser workspace does not count, so
+// the path, kubedrill exam and the page's exam coverage agree with the
+// assignment being complete (its DIY run passed).
 func solvedSet(eps []journal.Episode) map[string]bool {
 	set := map[string]bool{}
 	for _, e := range eps {
-		if e.Outcome == journal.OutcomeSolved {
+		if e.Outcome == journal.OutcomeSolved && !e.Guided {
 			set[e.ScenarioID] = true
 		}
 	}

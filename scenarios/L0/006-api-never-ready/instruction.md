@@ -37,13 +37,15 @@ anything.
 ## Done when
 
 - deployment api exists
-- deployment api keeps a readiness probe on container api
 - deployment api has 2 ready replicas
+- deployment api keeps a readiness probe that asks nginx on port 80 (HTTP or TCP)
 - service api has at least one ready endpoint
 - service api answers a request with the ACME API 3.2.0 body
 
 ## Constraints
 
 - Keep the Deployment, Service and ConfigMap names
-- Keep a readiness probe on the container; removing it is not a fix
+- Keep a readiness probe on the container that asks nginx itself on port
+  80 (an HTTP or TCP probe); removing it, or a probe that only tests a
+  file, is not a fix
 - Do not delete the namespace

@@ -33,9 +33,9 @@ Conventions shared by every command:
 
 - Every command accepts the global flag `--root <dir>`, the repository root
   (see `KUBEDRILL_ROOT` in [Environment variables](#environment-variables)).
-- `<ref>` is a scenario id (`001-storefront-down`), its numeric prefix (`000`) or
+- `<ref>` is a scenario id (`001-storefront-down`), its numeric prefix (`001`) or
   any id prefix that matches one scenario.
-- `kubedrill <command> --help` prints a two to five line description for
+- `kubedrill <command> --help` prints a short description (two to eight lines) for
   `start`, `check`, `hint`, `diagnose`, `debrief`, `submit`, `replay`,
   `fault`, `up`, `namespace`, `node`, `path`, `concepts`, `lint`, `learn`,
   `solution`, `smoke` and `profile render`.
@@ -134,22 +134,22 @@ Screens:
 | Screen | What it shows |
 |--------|---------------|
 | Welcome | The first visit of a journal: the five steps of the troubleshooting loop, each on a worked ticket with one pick and the reason the step exists, then the way into the workspace. Every other route redirects here until it is finished or skipped (`POST /api/onboarded`, stored in `web-progress.json`), then opens the route that was asked for; `--preview` skips it, and Home links it again as "How kubedrill works" |
-| Home | A Continue card (the live run with its namespace and elapsed time, or the assignment `kubedrill list` recommends with its reason, or "all caught up"), the plans in progress, and links to the catalog, the exams and the GitHub repository. A profile line counts completed assignments, badges, reviews due and planned assignments |
-| Catalog | Every level and plan, with search (title, id, plan, concept) and filters for level, status (not started, active, solved, mastered, DIY passed), exam domain and concept. The filters live in the URL. A level with nothing written yet collapses to one line with its planned count. An assignment whose `requires` are not solved shows a lock and stays open |
-| Exams | Each exam domain with its weight, the assignments that train it and how many are solved |
+| Home | A Continue card (the live run with its namespace and elapsed time, or the assignment `kubedrill list` recommends with its reason, or "all caught up"), the plans in progress, and links to the catalog, the exams and the GitHub repository. A profile line counts completed assignments, plan badges, reviews due and planned assignments |
+| Catalog | Every level and plan, with search (title, id, plan, concept) and filters for level, status (not started, in progress, live, complete, mastered; complete means the Do it yourself run passed, the rule the plan rings use), exam domain (only domains with an assignment, with their count) and concept (by title). The filters live in the URL. A level with nothing written yet collapses to one line with its planned count. An assignment whose `requires` are not solved shows a lock and stays open |
+| Exams | Each exam domain with its weight, the assignments that train it and how many are complete (Do it yourself passed, as in the plans) |
 | Assignment | The stages below, with the concept pages as chips (each opens in a drawer) and the mastery meter |
 
 An assignment walks through six stages, plus the exam rehearsal:
 
 | Stage | What happens | Recorded |
 |-------|--------------|----------|
-| Meet the customer | A scripted conversation from `simulation.yaml`: the learner picks questions, the customer answers, the mentor comments, and each best question adds a fact to the requirements board. A wrong pick can be retried | best questions on the first try |
-| Check understanding | The quiz of `simulation.yaml`, one question at a time, with an explanation for every answer | right on the first try |
+| Meet the customer | A scripted conversation from `simulation.yaml`: the learner picks questions (shown in an order shuffled per question and stable across reloads; keys 1 to 9 follow the shown order), the customer answers, the mentor comments, and each best question adds a fact to the requirements board. A wrong pick can be retried | best questions on the first try |
+| Check understanding | The quiz of `simulation.yaml`, one question at a time, choices shuffled as in the meeting, with an explanation for every answer | right on the first try |
 | Learn the pieces | The object diagram of `simulation.yaml`, `story.md`, the ticket and the concept pages as tabs | read |
-| Guided practice | `start` on the first variant; the steps beside a terminal into the workstation, the live checks and a timer | passed |
-| Do it yourself | `start` on another variant at random, the ticket and the story instead of the steps, the mentor | passed |
+| Guided practice | `start` on the first variant, recorded `"guided": true`; the steps beside a terminal into the workstation, the live checks and a timer. A guided solve is never a clean solve | passed |
+| Do it yourself | `start` on another variant at random, the ticket and the story (its fix section closed until the run ends or hint 4) instead of the steps, the mentor | passed |
 | Exam rehearsal | `start` on a random variant in a time box, the ticket and a terminal, no hints, guide or live checks; one Submit grades it (see [Exam mode](#exam-mode)) | passed |
-| Result | The badge, the stage results with redo links, and the mastery rule with the learner's numbers | - |
+| Result | Assignment complete or not, the plan badge (locked until every assignment of the plan is complete), the stage results with redo links, and the mastery rule with the learner's numbers | - |
 
 Launching a run:
 
@@ -172,17 +172,23 @@ In the lab:
   it.
 - The live checks poll every 5 seconds while the tab is visible, slow to 15
   seconds after a minute without change, and speed up again on terminal
-  input. Each check opens a popover with its `why`, the expected value and
-  the actual one (a spoiler check never shows its actual value).
+  input. The footer shows `Checks n/m`, one dot per check and the first
+  check that does not pass; the count opens the list of every check, and a
+  dot or a list row opens a popover with its `why`, the expected value and
+  the actual one. A spoiler check that did not pass carries neither value
+  until the run ends; the API sends `expected and actual values hidden
+  until the run ends` as its message instead.
 - The terminal bar shows the time since the run started against the
   expected minutes (amber past them). A dropped terminal shows Reconnect,
   which opens a new container on the same namespace. Leaving the page
   while the terminal is connected asks first.
-- The mentor drawer explains, before the first hint, that a hint never
+- The mentor opens as a panel beside the terminal, which refits to the
+  narrower width (below 961 pixels it is a drawer over the page). It
+  explains, before the first hint, that a hint never
   lowers the grade but takes the attempt out of the clean solves mastery
   counts; after it, the footer shows `<n> hints used`.
 - A failing Validate lists every check with expected, actual and `why`; in
-  a DIY run it adds that the cause differs from the practice run. A passing
+  a DIY run it adds that the cause may differ from the practice run. A passing
   one opens the debrief.
 - A run that ends outside the page (`kubedrill check` passing in the
   terminal, a reset) sends the page to its debrief; reading the debrief of
@@ -193,7 +199,7 @@ refuses one of a running episode, so it never shows the walkthrough
 early): the
 duration against the expected minutes, the hints, the learner's diagnosis
 next to the variant's `root_cause`, the trajectory from telemetry (verdict,
-observations before the first change, the first change and whether it hit
+API reads before the first change, the first change and whether it hit
 a fix target), and the two reflection questions plus "did your diagnosis
 match", stored on the episode with `POST /api/debrief/<episode>` exactly as
 the terminal stores them.
@@ -253,6 +259,8 @@ Namespace and progress:
 - The namespace is `<scenario namespace>-<5 random characters>`.
 - Older episode namespaces of this journal are deleted without waiting.
 - Progress goes to stderr as `creating namespace <ns>... done (1.2s)`.
+- The output of `setup/hook.sh` is not printed; when the hook fails, the
+  error ends with `its output ends with:` and the last 4 KiB of it.
 - A step under 0.1 s ends in `done`; a longer one ends in `done (1.2s)`.
 
 Over an active episode:
@@ -340,9 +348,12 @@ Grades once, prints one line per check and records the grade.
 - Under every failed or errored check it prints `why: <text>`, the check's
   `why` from `checks.yaml`, wrapped at 78 columns.
 - The last line is `N of M checks passed (weighted score S)`.
-- A check marked `spoiler` in `checks.yaml` (its actual value names the root
-  cause, an image reference for example) prints `actual: hidden until your
-  first hint or diagnosis` until the episode has a hint or a diagnosis.
+- A check marked `spoiler` in `checks.yaml` (its values name the root cause
+  or the fix, an image reference or the regex it must match for example)
+  prints `expected and actual values hidden until the run ends` in place of
+  the expected/actual line while it fails; hints and a diagnosis do not
+  reveal it. `check --explain` writes its assertion as `has the expected
+  value (expected and actual values hidden until the run ends)`.
 - When all pass, in this order: the solved banner (`Solved: <title> in 4.1
   min with 0 hints (variant <name>)`), the `Recommended:` lines, `Next:
   kubedrill solution <id> (compare with the reference) | kubedrill list` and
@@ -546,7 +557,8 @@ kubedrill path
 ```
 
 The ladder from `curriculum.yaml`: levels, hours, and modules with planned,
-existing and solved scenario counts.
+existing and solved scenario counts. A guided practice run of the browser
+workspace does not make a scenario solved here.
 
 - A module line wider than the terminal wraps under the text after the
   module id, the same hanging indent as the concepts line.
@@ -619,6 +631,9 @@ kubedrill exam <CKA|CKAD|CKS>
 
 Exam domains with weight and `DONE/TOTAL`.
 
+- `DONE` counts the scenarios with a solve outside the guided practice of
+  the browser workspace (a DIY run, an exam or a terminal `start`); the
+  page's exam coverage reads the same count.
 - A domain without scenarios shows `0/0`.
 - The argument is case-insensitive.
 
@@ -648,6 +663,12 @@ kubedrill story [ref]
 - With `ref`: the story of that scenario, rendered with the active episode
   when it runs that scenario, with seed 1 and the scenario namespace
   otherwise.
+- While an episode of that scenario runs, `## The fix and why it works`
+  keeps its heading but its body reads `This section opens when the run
+  ends, after the fourth hint, or in the guided practice.` It opens when
+  the episode is a guided practice run of the browser workspace or the
+  learner revealed hint 4 (`what to change`) of a four-rung ladder. The
+  page's Story (the assignment and the active run) follows the same rule.
 - A scenario without `story.md`: `<id> has no story yet; kubedrill learn
   prints its fundamentals`, exit 0.
 - No active episode and no ref: exit 1 with `no active episode; kubedrill
@@ -782,8 +803,12 @@ Cluster:
   debug image and every scenario image (`images` in `scenario.toml`, probe
   images and setup images pinned by digest) into each node's containerd. A
   `name:tag@sha256:...` image is also tagged `name:tag`, so a fix that
-  writes only the tag needs no registry. A failed pull is a `warning:` on
-  stderr; the node then pulls the image when a pod first needs it.
+  writes only the tag needs no registry. Each node's image store is listed
+  first (`ctr --namespace k8s.io images ls --quiet`) and an image it already
+  holds under the digest and the tag is skipped, so `up` on an existing
+  cluster pulls only what changed; an image named without a tag or a digest
+  is always pulled. A failed pull is a `warning:` on stderr; the node then
+  pulls the image when a pod first needs it.
 - A changed profile or `cluster/audit-policy.yaml` applies only to a new
   cluster: `kubedrill down --yes && kubedrill up`.
 - When the running cluster's audit policy differs from the repository file,
@@ -1103,7 +1128,7 @@ After a solve (`check`, `submit`, or the page) the debrief prints:
 ```
 Debrief: <id> (episode <episode id>, solved)
   duration 4.1 min, 0 hints
-  observations before the first write: 5 (telemetry: audit+shell)
+  API reads before the first write: 5 (telemetry: audit+shell)
   first write: apps/deployments/storefront (a fix target)
   verdict: root-cause
   your diagnosis: <your text>
@@ -1112,12 +1137,16 @@ Debrief: <id> (episode <episode id>, solved)
 
 The summary block:
 
+- `API reads before the first write` counts the learner's read requests in
+  the audit log, not shell commands: one `kubectl describe` makes several
+  (the object, its events), so the count runs higher than the commands
+  typed.
 - The first write is compared with `fix_targets` in `scenario.toml` through
   `telemetry.MatchTarget`; case and an empty core group do not matter.
 - `not a fix target; the fix targets are ...` names a write that only
   touched a symptom.
 - Without telemetry the block says `telemetry: none recorded (no audit log
-  or shell log for this episode)` in place of the observations, first write
+  or shell log for this episode)` in place of the API reads, first write
   and verdict lines.
 - With the audit log off the verdict reads `verdict: unknown (telemetry
   off)`.

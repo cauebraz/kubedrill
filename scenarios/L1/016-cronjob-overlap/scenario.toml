@@ -19,8 +19,3 @@ root_cause = "CronJob invoice-legacy, left over from the old setup, is not suspe
 name = "allow-overlap"
 vars = { policy = "Allow", batches = "18", legacy_suspend = "true" }
 root_cause = "CronJob invoice has concurrencyPolicy Allow and its export runs about 90 s on a 1-minute schedule, so the controller starts a second Job while the first still writes the file."
-
-[[variant]]
-name = "replace-kills-run"
-vars = { policy = "Replace", batches = "18", legacy_suspend = "true" }
-root_cause = "CronJob invoice has concurrencyPolicy Replace, so each schedule deletes the running Job mid-export and starts a new one, leaving the file half written; Forbid would skip the run instead."

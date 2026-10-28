@@ -12,8 +12,8 @@ mentor:
 meeting:
   opening: >-
     Thanks for picking this up. The docs portal has answered 502 since last
-    night and customers are writing in. The rollout finished and the pods are
-    Running, so we do not know where to look. Where do you want to start?
+    night and customers are writing in. Both web pods show Running, so we
+    do not know where to look. Where do you want to start?
   turns:
     - prompt: Open the conversation. What do you ask first?
       choices:

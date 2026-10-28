@@ -11,14 +11,18 @@ import (
 // crictl, one docker exec per node and image bounded by 60 seconds. An
 // image written as name:tag@sha256:digest is pulled by its digest and then
 // tagged name:tag in the node's image store, so a pod that names only the
-// tag (the learner's fix) starts without the registry. It returns every
-// failure at once, each naming its node and image.
+// tag (the learner's fix) starts without the registry. The image store of
+// each node is listed first (ctr images ls) and an image it already holds
+// under every reference the pull would write is skipped; when the listing
+// fails every image is pulled. It returns every failure at once, each
+// naming its node and image.
 func (m *Manager) PullImages(ctx context.Context, images []string) error {
 	var errs []error
 	for _, n := range nodeNames {
 		node := Name + "-" + n
+		have := m.nodeImages(ctx, node)
 		for _, image := range images {
-			if err := m.pullImage(ctx, node, image); err != nil {
+			if err := m.ensureImage(ctx, node, image, have); err != nil {
 				if ctx.Err() != nil {
 					return fmt.Errorf("pull %s: %w", image, ctx.Err())
 				}
@@ -29,18 +33,65 @@ func (m *Manager) PullImages(ctx context.Context, images []string) error {
 	return errors.Join(errs...)
 }
 
-func (m *Manager) pullImage(ctx context.Context, node, image string) error {
-	if _, err := m.runFor(ctx, pullTimeout, "docker", "exec", node, "crictl", "pull", image); err != nil {
-		return dockerError("docker exec "+node, err)
+// nodeImages returns the image references the containerd of node holds,
+// or nil when they cannot be listed.
+func (m *Manager) nodeImages(ctx context.Context, node string) map[string]bool {
+	out, err := m.runFor(ctx, dockerTimeout, "docker", "exec", node, "ctr", "--namespace", "k8s.io", "images", "ls", "--quiet")
+	if err != nil {
+		return nil
 	}
-	byDigest, byTag, ok := localRefs(image)
-	if !ok {
+	have := map[string]bool{}
+	for _, l := range strings.Split(string(out), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			have[l] = true
+		}
+	}
+	return have
+}
+
+// ensureImage pulls image on node unless have holds it, then tags a
+// name:tag@sha256:digest image name:tag unless have holds that tag.
+func (m *Manager) ensureImage(ctx context.Context, node, image string, have map[string]bool) error {
+	byDigest, byTag, pinned := localRefs(image)
+	pull := true
+	switch {
+	case pinned:
+		pull = !have[byDigest]
+	default:
+		if ref, ok := storedRef(image); ok {
+			pull = !have[ref]
+		}
+	}
+	if pull {
+		if _, err := m.runFor(ctx, pullTimeout, "docker", "exec", node, "crictl", "pull", image); err != nil {
+			return dockerError("docker exec "+node, err)
+		}
+	}
+	if !pinned || (!pull && have[byTag]) {
 		return nil
 	}
 	if _, err := m.runFor(ctx, pullTimeout, "docker", "exec", node, "ctr", "--namespace", "k8s.io", "images", "tag", "--force", byDigest, byTag); err != nil {
 		return dockerError("docker exec "+node, err)
 	}
 	return nil
+}
+
+// storedRef returns the fully qualified reference containerd stores for an
+// image written name:tag or name@sha256:digest; ok is false for an image
+// without a tag or a digest, whose latest tag may have moved.
+func storedRef(image string) (string, bool) {
+	if named, digest, found := strings.Cut(image, "@"); found {
+		if !strings.HasPrefix(digest, "sha256:") {
+			return "", false
+		}
+		return qualifiedName(named) + "@" + digest, true
+	}
+	slash := strings.LastIndex(image, "/")
+	colon := strings.LastIndex(image, ":")
+	if colon <= slash || colon == len(image)-1 {
+		return "", false
+	}
+	return qualifiedName(image[:colon]) + ":" + image[colon+1:], true
 }
 
 // localRefs returns the fully qualified digest and tag references of an

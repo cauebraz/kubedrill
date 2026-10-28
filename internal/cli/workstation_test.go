@@ -67,6 +67,11 @@ func (w *fakeWorkstation) ShellCommand(_ context.Context, o workstation.ShellOpt
 	return exec.Command("sh", "-c", "echo workstation ready; cat"), nil
 }
 
+func (w *fakeWorkstation) RemoveContainers(_ context.Context, prefix string) (int, error) {
+	w.record("RemoveContainers " + prefix)
+	return 0, nil
+}
+
 func (w *fakeWorkstation) RemoveContainer(_ context.Context, name string) error {
 	w.record("RemoveContainer " + name)
 	w.removed = append(w.removed, name)

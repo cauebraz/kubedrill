@@ -85,6 +85,7 @@ type Workstation interface {
 	Prepare(ctx context.Context, out io.Writer) error
 	ShellCommand(ctx context.Context, opts workstation.ShellOptions) (*exec.Cmd, error)
 	RemoveContainer(ctx context.Context, name string) error
+	RemoveContainers(ctx context.Context, prefix string) (int, error)
 	NodeShell(ctx context.Context, clusterName, node string) error
 	NodeDebug(ctx context.Context, clusterName, node, image string) error
 	Replay(ctx context.Context, cast string) error
@@ -540,7 +541,7 @@ func (a *app) getSession(ctx context.Context, j Journal, progress func(string), 
 		Grader:     conn,
 		Journal:    j,
 		Catalog:    cat,
-		Hook:       a.hookRunner(a.stderr),
+		Hook:       a.capturedHook(),
 		Out:        a.stderr,
 		Kubeconfig: kubeconfig,
 		Progress:   progress,
@@ -637,6 +638,51 @@ func (a *app) hookRunner(out io.Writer) func(ctx context.Context, script string,
 		}
 		return a.f.Run(ctx, script, env, out)
 	}
+}
+
+// hookOutputLimit is how many bytes of a setup hook's output an error
+// keeps: the last ones, where the failure is.
+const hookOutputLimit = 4096
+
+// capturedHook is hookRunner with the output kept off the terminal (the
+// server log of kubedrill web, the progress line of start): a failed hook
+// returns its error with the last hookOutputLimit bytes of the output.
+func (a *app) capturedHook() func(ctx context.Context, script string, env []string) error {
+	return func(ctx context.Context, script string, env []string) error {
+		var out tailBuffer
+		err := a.hookRunner(&out)(ctx, script, env)
+		if err == nil {
+			return nil
+		}
+		if tail := strings.TrimSpace(out.String()); tail != "" {
+			return fmt.Errorf("%w; its output ends with:\n%s", err, tail)
+		}
+		return err
+	}
+}
+
+// tailBuffer keeps the last hookOutputLimit bytes written to it. The
+// script runner writes from one goroutine at a time.
+type tailBuffer struct {
+	b       []byte
+	dropped bool
+}
+
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	t.b = append(t.b, p...)
+	if over := len(t.b) - hookOutputLimit; over > 0 {
+		t.b = append(t.b[:0], t.b[over:]...)
+		t.dropped = true
+	}
+	return len(p), nil
+}
+
+// String is the kept output, after "..." when bytes were dropped.
+func (t *tailBuffer) String() string {
+	if t.dropped {
+		return "..." + string(t.b)
+	}
+	return string(t.b)
 }
 
 func (a *app) learnerSession(ctx context.Context) (*env.Session, error) {

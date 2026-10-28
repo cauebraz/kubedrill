@@ -2,7 +2,7 @@ checks:
   - id: deploy-exists
     description: deployment report exists
     why: >-
-      The Deployment is the object the finance team owns; if it is gone,
+      The Deployment is the object the billing team owns; if it is gone,
       nothing below it (ReplicaSet, pod) can recover and the fix is a
       redeploy, not a patch.
     critical: true
@@ -50,7 +50,7 @@ checks:
     description: container report still loads its 48Mi dataset
     why: >-
       The report serves the month's dataset from memory; a pod that stays up
-      because it loads less data is not the report the finance team asked
+      because it loads less data is not the report the billing team asked
       for, so the fix has to make room for the data, not drop it.
     depends_on: [deploy-exists]
     resource:

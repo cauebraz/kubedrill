@@ -204,8 +204,10 @@ guide:
     body: >-
       The workstation shell already points at the episode namespace. List the
       pods and read the STATUS column: it names the step where each pod is
-      stuck. All three show the same status, so the problem is in the shared
-      template, not in one node.
+      stuck. Each pod shows ErrImagePull or ImagePullBackOff, two names for
+      the same failed pull (the kubelet alternates between them while it
+      retries). All three stall at the same step, so the problem is in the
+      shared template, not in one node.
     command: kubectl get pods
   - title: Read the events
     body: >-
@@ -221,6 +223,12 @@ guide:
       compare it with nginx:1.27-alpine, the image every other environment
       runs.
     command: kubectl get deployment storefront -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+  - title: Name the cause before you change anything
+    body: >-
+      Open the Mentor panel and record the cause in one line under Your
+      diagnosis: which object is wrong and the observation that shows it.
+      Committing to a cause before the change is half the method; the
+      debrief puts your line next to the real cause.
   - title: Change the image in the Deployment
     body: >-
       Change one thing: the image of container web. The Deployment creates a

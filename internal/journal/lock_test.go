@@ -158,7 +158,7 @@ func deadPID(t *testing.T) int {
 }
 
 func TestLockStaleRule(t *testing.T) {
-	old := time.Now().Add(-time.Minute)
+	old := time.Now().Add(-3 * time.Minute)
 	here := func(pid int) func(lockConfig) string {
 		return func(c lockConfig) string {
 			return fmt.Sprintf(`{"pid":%d,"hostname":%q,"pid_ns":%q}`, pid, c.hostname, c.pidNS)

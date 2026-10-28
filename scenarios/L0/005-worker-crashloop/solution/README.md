@@ -122,7 +122,9 @@ updated while the pod lives.
 
 The checks read the ready and available replica counts and the pod logs, so
 any route that makes the script start passes. The script `run.sh` needs no
-change: the same script runs in staging with the same inputs.
+change: the same script runs in staging with the same inputs, and a check
+fails when the `run.sh` key of `worker-files` or the container command
+differs from what the team ships.
 
 ## Verify
 

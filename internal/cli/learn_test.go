@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/cauebraz/kubedrill/internal/concepts"
+	"github.com/cauebraz/kubedrill/internal/journal"
 	"github.com/cauebraz/kubedrill/internal/render"
 )
 
@@ -170,8 +171,9 @@ func TestStory(t *testing.T) {
 		errOut string
 	}{
 		{name: "no episode and no ref", args: []string{"story"}, code: 1, errOut: "kubedrill: no active episode; kubedrill story <id> prints the story of one scenario"},
-		{name: "ref without episode", args: []string{"story", "001"}, out: []string{"Story of Hello app is down (001-hello-down)", "The hello pods in task-hello never start."}},
-		{name: "active episode", start: true, args: []string{"story"}, out: []string{"Story of Hello app is down (001-hello-down)", "The hello pods in task-hello-abcde never start."}},
+		{name: "ref without episode", args: []string{"story", "001"}, out: []string{"Story of Hello app is down (001-hello-down)", "The hello pods in task-hello never start.", "Point the image at a tag that exists."}},
+		{name: "active episode", start: true, args: []string{"story"}, out: []string{"Story of Hello app is down (001-hello-down)", "The hello pods in task-hello-abcde never start.", "The fix and why it works", "This section opens when the run ends", "Watch the rollout."}, notOut: []string{"Point the image at a tag that exists."}},
+		{name: "ref of the active episode", start: true, args: []string{"story", "001"}, out: []string{"This section opens when the run ends"}, notOut: []string{"Point the image at a tag that exists."}},
 		{name: "scenario without story", start: true, args: []string{"story", "002"}, out: []string{"002-service-dns has no story yet; kubedrill learn prints its fundamentals"}, notOut: []string{"Story of"}},
 	}
 	for _, tc := range tests {
@@ -193,6 +195,36 @@ func TestStory(t *testing.T) {
 			if len(f.kube.calls) != before {
 				t.Errorf("story touched the cluster: %v", f.kube.calls[before:])
 			}
+		})
+	}
+}
+
+func TestStoryFor(t *testing.T) {
+	story := "## What happened\n\nDown.\n\n## The fix and why it works\n\nSet the tag.\n\n```\n## not a heading\n```\n\n## Check your work\n\nWatch.\n"
+	tests := []struct {
+		name  string
+		ep    journal.Episode
+		hints int
+		open  bool
+	}{
+		{name: "unguided practice", ep: journal.Episode{Mode: journal.ModePractice}, hints: 4},
+		{name: "guided practice", ep: journal.Episode{Mode: journal.ModePractice, Guided: true}, hints: 4, open: true},
+		{name: "fourth hint revealed", ep: journal.Episode{Mode: journal.ModePractice, HintsUsed: 4}, hints: 4, open: true},
+		{name: "third hint revealed", ep: journal.Episode{Mode: journal.ModePractice, HintsUsed: 3}, hints: 4},
+		{name: "every hint of a three-rung ladder", ep: journal.Episode{Mode: journal.ModePractice, HintsUsed: 3}, hints: 3},
+		{name: "exam", ep: journal.Episode{Mode: journal.ModeExam, HintsUsed: 4}, hints: 4},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := storyFor(story, &tc.ep, tc.hints)
+			if tc.open {
+				if got != story {
+					t.Errorf("storyFor: got %q, want the story unchanged", got)
+				}
+				return
+			}
+			mustContain(t, got, "## What happened", "## The fix and why it works", storyFixClosed, "## Check your work", "Watch.")
+			mustNotContain(t, got, "Set the tag.", "## not a heading")
 		})
 	}
 }

@@ -8,9 +8,9 @@ duplicates, each string as the pod spec writes it. Nothing is broken; the
 work is reading the right field of the right objects. The obvious read,
 `kubectl get deployments -o wide`, prints an IMAGES column and looks
 complete, but it lists templates, not running containers: it includes a
-Deployment at 0 replicas, and `kubectl describe pod` prints the same image in
-a form (`docker.io/library/...`) that does not match the spec string the
-audit compares against.
+Deployment at 0 replicas. The pod status reports the same image in a form
+(`docker.io/library/...`) that does not match the spec string the audit
+compares against.
 
 ## Candidate causes
 
@@ -23,10 +23,12 @@ Four places hold an image string, and each one misleads in a different way:
   and exited. `kubectl describe pod` shows it under `Init Containers` with
   `State: Terminated, Reason: Completed`.
 - `Pod.status.containerStatuses[*].image`: what the container runtime
-  reports, normalized: `docker.io/library/nginx:1.27-alpine` for a spec that
-  says `nginx:1.27-alpine`, and `sha256:<config digest>` for a spec pinned
-  with `@sha256:` (measured on kind v1.37 with containerd). It does not match
-  the spec string.
+  reports, normalized: often `docker.io/library/nginx:1.27-alpine` for a
+  spec that says `nginx:1.27-alpine@sha256:...`, with the registry prefix
+  and without the digest (measured on kind v1.37 with containerd; the form
+  depends on how the node pulled the image). It does not match the spec
+  string. `kubectl describe pod` prints the spec string on its `Image:`
+  line and the resolved digest on `Image ID:`.
 - `Pod.spec.containers[*].image`: the string the kubelet pulled, one per
   container, on pods that exist. This is the source.
 

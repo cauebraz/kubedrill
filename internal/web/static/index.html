@@ -6,13 +6,7 @@
 <title>kubedrill</title>
 <meta name="color-scheme" content="dark light">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<script>
-  try {
-    var t = localStorage.getItem("kd:theme");
-    if (!t && window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) { t = "light"; }
-    if (t === "light") { document.documentElement.setAttribute("data-theme", "light"); }
-  } catch (e) {}
-</script>
+<script src="/theme.js"></script>
 <link rel="stylesheet" href="/vendor/xterm/xterm.css">
 <link rel="stylesheet" href="/app.css">
 </head>

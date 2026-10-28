@@ -61,8 +61,18 @@ lists them.
 ## Change
 
 Set requests equal to limits on every container of the three
-Deployments. `kubectl set resources` without `-c` applies to every
-container of the template, sidecar included:
+Deployments, sized by the division above: `Hard` divided by the container
+count, rounded down. `kubectl set resources` without `-c` applies to every
+container of the template, sidecar included. 100m and 128Mi fit every
+budget of this scenario: 5 containers take 500m and 640Mi, 7 take 700m and
+896Mi. The idle nginx uses about 5m and 15Mi, so the size leaves headroom.
+
+```sh
+kubectl -n {{ .Namespace }} set resources deployment/storefront deployment/catalog deployment/cart --requests=cpu=100m,memory=128Mi --limits=cpu=100m,memory=128Mi
+```
+
+Larger values fit only the larger budget. In quota-2-cpu (2 CPU and 2Gi
+over 5 containers) 250m and 256Mi take 1250m and 1280Mi:
 
 ```sh
 kubectl -n {{ .Namespace }} set resources deployment/storefront --requests=cpu=250m,memory=256Mi --limits=cpu=250m,memory=256Mi
@@ -70,17 +80,9 @@ kubectl -n {{ .Namespace }} set resources deployment/catalog --requests=cpu=250m
 kubectl -n {{ .Namespace }} set resources deployment/cart --requests=cpu=250m,memory=256Mi --limits=cpu=250m,memory=256Mi
 ```
 
-These values fit quota-2-cpu only: 5 containers take 1250m and 1280Mi of
-2 CPU and 2Gi. In quota-1-cpu (1 CPU and 1Gi over 5 containers) and in
-catalog-sidecar (1500m and 1536Mi over 7 containers) they cross `Hard`,
-and the last pods are refused with `exceeded quota`. There, use 100m and
-128Mi, which fit every budget of this scenario: 5 containers take 500m and
-640Mi, 7 take 700m and 896Mi. The idle nginx uses about 5m and 15Mi, so
-both sizes leave headroom.
-
-```sh
-kubectl -n {{ .Namespace }} set resources deployment/storefront deployment/catalog deployment/cart --requests=cpu=100m,memory=128Mi --limits=cpu=100m,memory=128Mi
-```
+In quota-1-cpu (1 CPU and 1Gi over 5 containers) and in catalog-sidecar
+(1500m and 1536Mi over 7 containers) the same 250m crosses `Hard`, and the
+last pods are refused with `exceeded quota`.
 
 The second route is a LimitRange `shop-defaults` with `default` equal to
 `defaultRequest` for CPU and memory, sized by the same division: admission fills both into any container that sets
@@ -114,9 +116,11 @@ example `limits.cpu 1250m 2` in quota-2-cpu (measured on kind v1.37).
   `Used` equal to `Hard` it fails with `exceeded quota: shop, requested:
   limits.cpu=250m,... used: limits.cpu=2,...` and the rollout stalls.
   Keep headroom for `maxSurge`, or set `maxSurge: 0`.
-- Guaranteed protects a pod from node-pressure eviction ordering and gives
-  it a stable OOM score, at the price of no bursting: a CPU limit equal to
-  the request throttles the bursts. Some teams keep CPU Burstable and
+- Guaranteed puts a pod last in the node-pressure eviction order while its
+  usage stays within its requests, and gives it the lowest OOM score
+  adjustment; it is still evicted when system daemons need the memory and
+  still OOM-killed above its own limit. The price is no bursting: a CPU
+  limit equal to the request throttles the bursts. Some teams keep CPU Burstable and
   memory equal, accepting Burstable to avoid throttling.
 - `kubectl describe resourcequota` and `kubectl get events
   --field-selector reason=FailedCreate` belong in the first look at any

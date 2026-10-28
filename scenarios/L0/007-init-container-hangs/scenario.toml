@@ -8,7 +8,7 @@ minutes = 10
 namespace = "billing"
 exam = ["CKA:troubleshooting", "CKAD:design-build"]
 concepts = ["pod-lifecycle", "cluster-dns"]
-fix_targets = ["apps/deployments/api", "core/services/db"]
+fix_targets = ["apps/deployments/api"]
 images = ["nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10"]
 
 [[variant]]
@@ -19,7 +19,7 @@ root_cause = "The init container migrate polls DB_HOST=db-primary, a name no Ser
 [[variant]]
 name = "wrong-port"
 vars = { db_host = "db", db_port = "5433", mount_path = "/etc/migrate" }
-root_cause = "The init container migrate polls DB_PORT=5433 while Service db exposes 5432 only, so every connect is refused and the loop never ends."
+root_cause = "The init container migrate polls DB_PORT=5433 while Service db forwards port 5432 only, so every connect to db:5433 gets no answer, nc gives up after its 2-second timeout and the loop never ends."
 
 [[variant]]
 name = "flag-mount-path"

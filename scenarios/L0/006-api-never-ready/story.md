@@ -132,6 +132,8 @@ Why the tempting moves do not work:
   server that hangs) stays in the Service. The ticket forbids it.
 - Touching `/tmp/ready` inside the pod with `kubectl exec` makes that one
   pod Ready until it is replaced; the template still creates broken pods.
+  A probe command that creates the file itself passes every time and tests
+  nothing about nginx; the ticket asks for a probe that asks the server.
 
 ## Check your work
 

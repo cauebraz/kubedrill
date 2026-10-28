@@ -27,9 +27,9 @@ wrote about it. Read the Events before changing anything.
 - Resources: Deployment `storefront` (3 replicas, container `web`), Service
   `storefront` (port 80), ConfigMap `storefront-html` (the static build)
 - You have cluster-admin on the local kind cluster
-- Every other environment runs the same storefront image and serves the
-  files of `storefront-html`; that image is the reference for this one, and
-  the storefront team can name it
+- Every other environment runs the official `nginx:1.27-alpine` image from
+  Docker Hub and serves the files of `storefront-html`; that image is the
+  reference for this one
 
 ## Done when
 

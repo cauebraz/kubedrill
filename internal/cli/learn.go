@@ -182,13 +182,70 @@ func (a *app) printStory(ref string) error {
 	if err != nil {
 		return err
 	}
-	if rd.Story == "" {
+	story := rd.Story
+	if ep != nil {
+		story = storyFor(story, ep, len(rd.Hints))
+	}
+	if story == "" {
 		a.printf("%s has no story yet; kubedrill learn prints its fundamentals\n", sc.Meta.ID)
 		return nil
 	}
 	a.printf("%s\n\n", a.printer().Style(render.StyleBold, fmt.Sprintf("Story of %s (%s)", sc.Meta.Title, sc.Meta.ID)))
-	a.printf("%s", a.printer().Markdown(rd.Story))
+	a.printf("%s", a.printer().Markdown(story))
 	return nil
+}
+
+const (
+	storyFixHeading = "## The fix and why it works"
+	storyFixRung    = 4
+	storyFixClosed  = "This section opens when the run ends, after the fourth hint, or in the guided practice."
+)
+
+// storyFixOpen reports whether the active episode ep may read the fix
+// section of its story: a guided practice run shows the fix anyway, and a
+// learner who revealed the fourth hint (what to change) has been told it.
+// Exam and unguided runs keep it closed until they end.
+func storyFixOpen(ep *journal.Episode, hints int) bool {
+	if ep.Mode == journal.ModeExam {
+		return false
+	}
+	return ep.Guided || (hints >= storyFixRung && ep.HintsUsed >= storyFixRung)
+}
+
+// storyFor returns story as the active episode ep may read it: with the
+// body of the fix section replaced by one line saying when it opens unless
+// storyFixOpen allows it.
+func storyFor(story string, ep *journal.Episode, hints int) string {
+	if storyFixOpen(ep, hints) {
+		return story
+	}
+	return withoutStoryFix(story)
+}
+
+// withoutStoryFix replaces the body of the fix section of story, up to the
+// next level-two heading outside a code fence, with storyFixClosed.
+func withoutStoryFix(story string) string {
+	lines := strings.Split(story, "\n")
+	out := make([]string, 0, len(lines))
+	inFix, fence := false, false
+	for _, l := range lines {
+		t := strings.TrimSpace(l)
+		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
+			fence = !fence
+		}
+		heading := !fence && strings.HasPrefix(l, "## ")
+		switch {
+		case heading && strings.TrimSpace(l) == storyFixHeading:
+			inFix = true
+			out = append(out, l, "", storyFixClosed, "")
+		case heading:
+			inFix = false
+			out = append(out, l)
+		case !inFix:
+			out = append(out, l)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // printConcept prints the header line and the rendered page of c.

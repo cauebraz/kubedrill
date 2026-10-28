@@ -31,12 +31,14 @@ meeting:
           fact: The deploy changed only the manifests and the config objects (a naming alignment); the script and the image are unchanged.
         - say: Can you roll the deploy back?
           reply: >-
-            We tried a rollback of the Deployment; the pods came back the same
-            way. We do not know what else to roll back.
+            We tried. rollout undo says there is no rollout history: the
+            deploy recreated the Deployment, so it has only one revision. And
+            the config objects changed too, which an undo would not touch.
           feedback: >-
-            Rolling back is a fair mitigation, and here it did not help: the
-            change may live outside the Deployment's pod template. Ask what
-            the deploy changed before choosing what to undo.
+            Rolling back is a fair mitigation when a previous revision exists;
+            here none does, and part of the change may live outside the pod
+            template, in the ConfigMaps. Ask what the deploy changed before
+            choosing what to undo.
         - say: Is the queue server down?
           reply: >-
             No, the queue is up and growing. The staging worker reads from a
@@ -225,7 +227,8 @@ guide:
     body: >-
       Describe one pod (TAB completes the name after "pod wor"). In the
       Containers section read State, Last State and Exit Code: 1 is the usual
-      configuration error, 2 a usage error, 137 a memory kill. Note the Args,
+      configuration error, 2 a usage error, 137 a kill from outside (with
+      Reason OOMKilled, a memory kill). Note the Args,
       the "Environment Variables from" list and the Mounts with their
       path="..." values; these are the pod's side of every input name.
     command: kubectl describe pod -l app.kubernetes.io/name=worker

@@ -109,8 +109,8 @@ meeting:
           fact: "Done: 1 available report pod with no OOMKilled container, still loading its 48Mi dataset; keep the names, the args and the namespace."
         - say: Can I cut the dataset in half so it fits?
           reply: >-
-            Then the report would show half the month. Finance needs all of
-            it.
+            Then the report would show half the month. The month-end close
+            needs all of it.
           feedback: >-
             Shrinking the work hides the symptom and breaks the report. Ask
             what done looks like and what you must keep.

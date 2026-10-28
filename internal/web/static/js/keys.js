@@ -43,6 +43,7 @@ export function pushOverlay(close) {
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && overlays.length) {
     e.preventDefault();
+    e.stopPropagation();
     overlays[overlays.length - 1]();
     return;
   }

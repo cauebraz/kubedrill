@@ -1,6 +1,6 @@
 checks:
   - id: invoice-scheduled
-    description: cronjob invoice still runs the export every minute
+    description: cronjob invoice keeps its every-minute schedule and is not suspended
     why: >-
       A fix that suspends invoice or moves its schedule stops the overlap by
       stopping the export; finance then closes the day without an invoice
@@ -15,31 +15,31 @@ checks:
     matches: '^(\*/1|\*) \* \* \* \*\s+suspend=\s*(false)?$'
 
   - id: exclusive-export
-    description: invoice exports never run at the same time, even when one run is slow
+    description: invoice exports never run at the same time, and a slow run is never cut short
     why: >-
-      Two writers on invoices.csv interleave their rows. Only one schedule may
-      start the export, and it has to skip a tick while its last run is
-      active: Allow starts a second writer and Replace kills the first one
-      mid-write.
+      Two writers on invoices.csv interleave their rows. Only one CronJob in
+      the namespace may schedule, and it has to skip a tick while its last
+      run is active: Allow starts a second writer and Replace kills the
+      first one mid-write.
     depends_on: [invoice-scheduled]
     critical: true
     spoiler: true
     weight: 2
     script: >-
-      kubectl -n "$TASK_NS" get cronjobs -l app.kubernetes.io/name=invoice
+      kubectl -n "$TASK_NS" get cronjobs
       -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.suspend}{" "}{.spec.concurrencyPolicy}{"\n"}{end}'
       | awk '$2 != "true" {printf "%s%s/%s", s, $1, $3; s=" "} END {print ""}'
     exit_code: 0
     equals: invoice/Forbid
 
   - id: one-active-job
-    description: at most one invoice export Job is active
+    description: at most one export Job is active in the namespace
     why: >-
       Every active Job runs its own export against the same file; two at once
       interleave their writes, and the next finance close reads a corrupted
       file.
     script: >-
-      kubectl -n "$TASK_NS" get jobs -l app.kubernetes.io/name=invoice
+      kubectl -n "$TASK_NS" get jobs
       -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.active}{"\n"}{end}'
       | awk '$2 > 0 {n++} END {print n+0}'
     exit_code: 0

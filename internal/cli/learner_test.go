@@ -15,6 +15,7 @@ import (
 	"github.com/cauebraz/kubedrill/internal/env"
 	"github.com/cauebraz/kubedrill/internal/grader"
 	"github.com/cauebraz/kubedrill/internal/journal"
+	"github.com/cauebraz/kubedrill/internal/render"
 	"github.com/cauebraz/kubedrill/internal/scenario"
 	"github.com/cauebraz/kubedrill/internal/web"
 )
@@ -45,6 +46,7 @@ func TestAssertion(t *testing.T) {
 		{"bounds and regex", scenario.Check{Resource: &scenario.ResourceRef{Kind: "HorizontalPodAutoscaler", Name: "web"}, Path: "{.spec.maxReplicas}", GTE: strPtr("3"), LTE: strPtr("10"), Matches: "^[0-9]+$", NotEquals: strPtr("5")}, `HorizontalPodAutoscaler web: {.spec.maxReplicas} does not equal "5" and matches /^[0-9]+$/ and >= 3 and <= 10`},
 		{"probe", scenario.Check{Probe: &scenario.Probe{Image: "busybox:1.37", Command: []string{"wget", "-qO-", "http://hello"}}, ExitCode: &code}, `probe pod running "wget -qO- http://hello" (image busybox:1.37): exits with code 0`},
 		{"script", scenario.Check{Script: "checks/dns.sh", Contains: "ok"}, `script "checks/dns.sh": contains "ok"`},
+		{"spoiler keeps the expected value back", scenario.Check{Resource: &scenario.ResourceRef{Kind: "Deployment", Name: "hello"}, Path: "{.spec.template.spec.containers[0].image}", Matches: "^nginx:1\\.27$", Spoiler: true}, "Deployment hello: {.spec.template.spec.containers[0].image} has the expected value (" + render.SpoilerHidden + ")"},
 		{"no validator", scenario.Check{ID: "x", Resource: &scenario.ResourceRef{Kind: "ConfigMap", Name: "cfg"}}, "ConfigMap cfg: is read without error"},
 	}
 	for _, tc := range tests {
@@ -92,7 +94,7 @@ func TestCheckSolvedDebriefPrompts(t *testing.T) {
 		"Solved: Hello app is down in 3.0 min with 0 hints (variant image)",
 		"Debrief: 001-hello-down (episode ep-1, solved)",
 		"  duration 3.0 min, 0 hints",
-		"  observations before the first write: 4 (telemetry: audit+shell)",
+		"  API reads before the first write: 4 (telemetry: audit+shell)",
 		"  first write: apps/deployments/hello (a fix target)",
 		"  verdict: root-cause",
 		"  your diagnosis: the image tag does not exist\n  root cause: The deployment image tag does not exist in the registry.\nDid your diagnosis match? [y/n] ",

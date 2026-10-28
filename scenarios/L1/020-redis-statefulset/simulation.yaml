@@ -61,8 +61,8 @@ meeting:
           fact: Each node keeps its own 100Mi volume on the standard storage class across restarts.
         - say: Can all three nodes share one volume?
           reply: >-
-            They each write their own append-only file to /data, so sharing
-            one would mix three files in one place.
+            Each node writes its own snapshot file, dump.rdb, to /data, so
+            three nodes on one volume would overwrite each other's file.
           feedback: >-
             Shared storage is a design for one writer or a clustered file
             system. Ask what the data needs, then pick the volume shape.
@@ -141,7 +141,7 @@ diagram:
       label: selects Ready
     - from: sts
       to: pods
-      label: creates in order
+      label: creates redis-0, -1, -2
     - from: sts
       to: pvcs
       label: creates

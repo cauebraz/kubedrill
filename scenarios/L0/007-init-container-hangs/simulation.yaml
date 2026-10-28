@@ -215,7 +215,7 @@ quiz:
       - text: The loop polls a host name that no Service in this namespace carries, so DNS cannot resolve it.
         correct: true
         explain: >-
-          Cluster DNS answers for Service names of the namespace. db resolves,
+          Cluster DNS answers for the Services that exist. db resolves,
           db-primary does not, and nc reports bad address without trying to
           connect.
       - text: The database is down.
@@ -224,8 +224,9 @@ quiz:
           failing. bad address happens before any connection, in DNS.
       - text: CoreDNS is broken on the new cluster.
         explain: >-
-          CoreDNS resolves db fine, as the db pod and other teams show. A
-          name that does not exist is not a DNS outage.
+          The same loop gets past DNS when DB_HOST is db, and nc reports bad
+          address only for db-primary. A name that does not exist is not a
+          DNS outage.
 
 guide:
   - title: List the pods

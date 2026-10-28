@@ -29,15 +29,19 @@ checks:
     equals: "1"
 
   - id: data-writable
-    description: the uploads pod writes and reads a file on the volume mounted at /data
+    description: the uploads pod writes and reads a file on claim uploads-data mounted at /data
     why: >-
       A Ready pod proves the server listens, not that uploads land on the
-      persistent volume; a write and a read on the /data mount is what a
-      customer upload does.
+      persistent volume; a write and a read on the uploads-data mount at
+      /data is what a customer upload does, and an emptyDir loses it.
     depends_on: [ready-replicas]
-    script: >-
-      kubectl -n "$TASK_NS" exec deploy/uploads -c uploads --
-      sh -c 'grep -q " /data " /proc/mounts || { echo "/data is not a mount"; exit 1; };
-      echo kubedrill-write-ok > /data/.kubedrill-check && cat /data/.kubedrill-check && rm -f /data/.kubedrill-check'
+    script: |
+      vol=$(kubectl -n "$TASK_NS" get deployment uploads -o jsonpath='{.spec.template.spec.containers[?(@.name=="uploads")].volumeMounts[?(@.mountPath=="/data")].name}')
+      claim=$(kubectl -n "$TASK_NS" get deployment uploads -o jsonpath="{.spec.template.spec.volumes[?(@.name==\"$vol\")].persistentVolumeClaim.claimName}")
+      if [ -z "$vol" ] || [ "$claim" != "uploads-data" ]; then
+        echo "deployment uploads: expected /data on claim uploads-data, got volume '$vol' with claim '$claim'"
+        exit 1
+      fi
+      kubectl -n "$TASK_NS" exec deploy/uploads -c uploads -- sh -c 'grep -q " /data " /proc/mounts || { echo "/data is not a mount"; exit 1; }; echo kubedrill-write-ok > /data/.kubedrill-check && cat /data/.kubedrill-check && rm -f /data/.kubedrill-check'
     exit_code: 0
     contains: kubedrill-write-ok

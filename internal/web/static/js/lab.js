@@ -33,7 +33,7 @@ const LAUNCH = {
   },
   diy: {
     eyebrow: "Stage 5 / Do it yourself", title: "Now fix it on your own", button: "Launch the DIY environment",
-    points: ["Same ticket, a different planted cause: what fixed the practice run will not be enough.", "No guide. The mentor gives hints, and the last one waits until you name a cause.", "Validate when you think the customer is happy; the checks grade the end state, so any fix that works passes."]
+    points: ["Same ticket, another variant: the planted cause or its details may differ from the practice run, so observe before you reuse its fix.", "No guide. The mentor gives hints, and the last one waits until you name a cause.", "Validate when you think the customer is happy; the checks grade the end state, so any fix that works passes."]
   },
   exam: {
     eyebrow: "Exam rehearsal", title: "Fix it against the clock", button: "Start the exam",
@@ -212,30 +212,39 @@ function workspace(stage, a, stageId, act) {
       })));
   }
 
-  let popover = null;
   let closePopover = () => {};
   function showCheck(c, anchor) {
-    closePopover();
-    let release = () => {};
-    const off = (e) => { if (popover && !popover.contains(e.target) && !anchor.contains(e.target)) { closePopover(); } };
-    closePopover = () => {
-      if (popover) { popover.remove(); popover = null; }
-      release();
-      document.removeEventListener("click", off);
-      closePopover = () => {};
-    };
-    popover = el("div", { class: "popover", role: "dialog", "aria-label": c.description },
+    showPopover(anchor, c.description,
       el("div", { class: "pop-head" }, el("span", { class: "pill " + (c.status === "pass" ? "good" : c.status === "skipped" ? "" : "bad"), text: c.status }), el("b", { text: c.description })),
       c.why ? el("p", { class: "small", text: c.why }) : null,
       c.expected ? el("div", { class: "kv" }, el("span", { text: "expected" }), el("code", { text: c.expected })) : null,
       c.actual ? el("div", { class: "kv" }, el("span", { text: "actual" }), el("code", { text: c.actual })) : null,
       c.message ? el("div", { class: "kv" }, el("span", { text: "note" }), el("span", { text: c.message })) : null);
-    document.body.appendChild(popover);
-    const r = anchor.getBoundingClientRect();
-    popover.style.left = Math.max(12, Math.min(r.left, window.innerWidth - popover.offsetWidth - 12)) + "px";
-    popover.style.top = (r.top - popover.offsetHeight - 8) + "px";
-    release = pushOverlay(() => closePopover());
-    setTimeout(() => { if (popover) { document.addEventListener("click", off); } }, 0);
+  }
+  function showCheckList(list, anchor) {
+    showPopover(anchor, "Live checks",
+      el("div", { class: "pop-head" }, el("b", { text: "Live checks" })),
+      el("ul", { class: "check-list" }, list.map((c) => el("li", null, el("button", { onclick: () => showCheck(c, anchor) },
+        el("i", { class: "dot " + c.status, "aria-hidden": "true" }), el("span", { text: c.description }), el("span", { class: "st", text: c.status }))))));
+  }
+  function showPopover(anchor, label, ...children) {
+    closePopover();
+    const node = el("div", { class: "popover", role: "dialog", "aria-label": label }, children);
+    let release = () => {};
+    const off = (e) => { if (e.target.isConnected && !node.contains(e.target) && !anchor.contains(e.target)) { close(); } };
+    const close = () => {
+      node.remove();
+      release();
+      document.removeEventListener("click", off);
+      if (closePopover === close) { closePopover = () => {}; }
+    };
+    closePopover = close;
+    document.body.appendChild(node);
+    const r = anchor.isConnected ? anchor.getBoundingClientRect() : checksBar.getBoundingClientRect();
+    node.style.left = Math.max(12, Math.min(r.left, window.innerWidth - node.offsetWidth - 12)) + "px";
+    node.style.top = Math.max(12, r.top - node.offsetHeight - 8) + "px";
+    release = pushOverlay(close);
+    setTimeout(() => { if (closePopover === close) { document.addEventListener("click", off); } }, 0);
   }
   onLeave(() => closePopover());
 
@@ -244,11 +253,14 @@ function workspace(stage, a, stageId, act) {
       clear(checksBar, el("span", { class: "sum", text: "Exam mode: the checks run once, when you submit" }));
       return;
     }
-    if (s.checkError) { clear(checksBar, el("span", { class: "chk error" }, el("span", { text: s.checkError }))); return; }
+    if (s.checkError) { clear(checksBar, el("span", { class: "chk error", "aria-hidden": "true" }), el("span", { class: "chk-next", title: s.checkError, text: s.checkError })); return; }
     const list = s.checks || [];
     const ok = list.filter((c) => c.status === "pass").length;
-    clear(checksBar, el("span", { class: "sum", text: "Checks " + ok + "/" + list.length }),
-      list.map((c) => el("button", { class: "chk " + c.status, title: "Details", onclick: (e) => showCheck(c, e.currentTarget) }, el("span", { text: c.description }))));
+    const open = list.find((c) => c.status !== "pass");
+    clear(checksBar,
+      el("button", { class: "chk-sum", title: "Every check with its status", onclick: (e) => showCheckList(list, e.currentTarget) }, el("span", { class: "sum", text: "Checks " + ok + "/" + list.length })),
+      list.map((c) => el("button", { class: "chk " + c.status, title: c.description + " (" + c.status + ")", "aria-label": c.description + ", " + c.status, onclick: (e) => showCheck(c, e.currentTarget) })),
+      el("span", { class: "chk-next", text: open ? "next: " + open.description : "every check passes; Validate to grade" }));
   }
 
   let delay = 5000, unchanged = 0, lastKey = "", timerID = 0;
@@ -263,8 +275,10 @@ function workspace(stage, a, stageId, act) {
         location.hash = debriefRoute(a, act.episodeId);
         return;
       }
+      const hintsBefore = act.hintsUsed;
       act = s.active;
       updateMentor();
+      if (tab === "story" && act.hintsUsed !== hintsBefore) { drawSide(); }
       lastChecks = s.checks || [];
       const key = JSON.stringify(lastChecks.map((c) => c.status));
       unchanged = key === lastKey ? unchanged + 1 : 0;
@@ -283,7 +297,13 @@ function workspace(stage, a, stageId, act) {
   drawSide();
   poll();
 
-  const openMentorDrawer = () => openMentor(act, () => updateMentor());
+  let closeMentor = null;
+  const labEl = stage.querySelector(".lab");
+  const openMentorDrawer = () => {
+    if (closeMentor) { closeMentor(); return; }
+    closeMentor = openMentor(act, () => { updateMentor(); if (tab === "story") { drawSide(); } }, labEl, () => { closeMentor = null; mentorBtn.setAttribute("aria-expanded", "false"); });
+    mentorBtn.setAttribute("aria-expanded", "true");
+  };
   mentorBtn.addEventListener("click", openMentorDrawer);
   function submitExam(timedOut) {
     if (submitting || gone) { return; }
@@ -400,8 +420,9 @@ function startTerminal(box, stateEl, reconnect) {
   };
 }
 
-function openMentor(act, onChange) {
-  const back = el("div", { class: "drawer-back" });
+function openMentor(act, onChange, lab, onClose) {
+  const docked = !!lab && window.matchMedia("(min-width: 961px)").matches;
+  const back = docked ? null : el("div", { class: "drawer-back" });
   const body = el("div", { class: "drawer-body", "aria-live": "polite" });
   const msg = (kind, html, cls) => { body.appendChild(el("div", { class: "mentor-msg" + (cls ? " " + cls : "") }, el("div", { class: "k", text: kind }), el("div", { html }))); body.scrollTop = body.scrollHeight; };
   if (act.mentor) { msg("Mentor", act.mentor); }
@@ -421,7 +442,7 @@ function openMentor(act, onChange) {
       hintBtn.disabled = h.index >= h.total;
     }).catch((e) => { hintBtn.disabled = false; msg("Mentor", "<p>" + escapeHTML(e.message) + "</p>", "note"); });
   });
-  const area = el("textarea", { placeholder: "Name the cause in one line, for example: the Deployment pulls an image that does not exist", maxlength: "300", "aria-label": "Your diagnosis" });
+  const area = el("textarea", { placeholder: "Name the cause in one line: which object is wrong, and the observation that shows it", maxlength: "300", "aria-label": "Your diagnosis" });
   if (act.diagnosis) { area.value = act.diagnosis; }
   const diagBtn = el("button", { class: "btn", text: act.diagnosis ? "Update my diagnosis" : "Record my diagnosis" });
   diagBtn.addEventListener("click", () => {
@@ -432,18 +453,36 @@ function openMentor(act, onChange) {
       diagBtn.textContent = "Update my diagnosis";
     }).catch((e) => toast(e.message, true));
   });
-  let release = () => {};
-  const close = () => { release(); back.remove(); };
-  release = pushOverlay(close);
-  back.addEventListener("click", (e) => { if (e.target === back) { close(); } });
+  let release = () => {}, open = true;
+  const aside = el("aside", { class: "drawer" + (docked ? " docked" : ""), role: docked ? "complementary" : "dialog", "aria-modal": docked ? null : "true", "aria-label": "Mentor" });
+  const close = () => {
+    if (!open) { return; }
+    open = false;
+    release();
+    if (docked) { aside.remove(); lab.classList.remove("mentor-open"); } else { back.remove(); }
+    onClose();
+  };
+  if (docked) {
+    aside.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } });
+  } else {
+    release = pushOverlay(close);
+  }
   const closeBtn = el("button", { class: "btn ghost small x", text: "Close", onclick: close });
-  back.appendChild(el("aside", { class: "drawer", role: "dialog", "aria-modal": "true", "aria-label": "Mentor" },
+  aside.append(
     el("div", { class: "drawer-head" }, el("div", { class: "avatar mentor", text: "M", "aria-hidden": "true" }), el("div", null, el("b", { text: "Mentor" }), el("div", { class: "small muted", text: "Each hint goes one step further" })), closeBtn),
     body,
-    el("div", { class: "drawer-foot" }, el("label", { text: "Your diagnosis / the last hint waits for it" }), area, el("div", { class: "row" }, diagBtn, hintBtn))));
-  document.body.appendChild(back);
+    el("div", { class: "drawer-foot" }, el("label", { text: "Your diagnosis / the last hint waits for it" }), area, el("div", { class: "row" }, diagBtn, hintBtn)));
+  if (docked) {
+    lab.classList.add("mentor-open");
+    lab.appendChild(aside);
+  } else {
+    back.addEventListener("click", (e) => { if (e.target === back) { close(); } });
+    back.appendChild(aside);
+    document.body.appendChild(back);
+  }
   onLeave(close);
   (act.diagnosis ? hintBtn : area).focus();
+  return close;
 }
 
 function escapeHTML(s) {
@@ -461,7 +500,7 @@ function showFailure(v, isDIY) {
     el("div", { class: "result-head" },
       el("div", { class: "result-icon no", text: "!" }),
       el("div", null, el("h2", { text: "Not there yet" }), el("div", { class: "small muted", text: "score " + Math.round(v.score * 100) + "%; nothing was recorded against you, validate as often as you like" }))),
-    isDIY ? el("div", { class: "callout info" }, el("div", null, el("b", { text: "The cause is different this time. " }), "If you repeated the practice fix, go back to the observations: the events and the object the ticket names tell you which part is wrong now.")) : null,
+    isDIY ? el("div", { class: "callout info" }, el("div", null, el("b", { text: "The cause may differ this time. " }), "If you repeated the practice fix, go back to the observations: the events and the object the ticket names tell you which part is wrong now.")) : null,
     checkList(v.checks),
     el("div", { class: "modal-actions" }, keep)));
   document.body.appendChild(back);

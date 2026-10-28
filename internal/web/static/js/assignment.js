@@ -41,7 +41,7 @@ export function showAssignment(app, ctx, id, stageId, extra) {
       a.concepts.length ? el("div", { class: "concepts" },
         el("div", { class: "eyebrow muted", text: "Concepts" }),
         el("div", { class: "chips" }, a.concepts.map((c) => el("button", { class: "chip", title: c.summary || c.title, onclick: () => openConcept(c) }, el("span", { class: "ic", html: icons.book }), c.title)))) : null,
-      el("div", { class: "stepper-mastery" }, el("div", { class: "eyebrow muted", text: "Mastery" }), masteryMeter(a.mastery), el("span", { class: "small muted", text: a.mastery.mastered ? "mastered" : a.mastery.variantsSolved + " of " + Math.min(3, a.variants) + " variants" })));
+      el("div", { class: "stepper-mastery" }, el("div", { class: "eyebrow muted", text: "Mastery" }), masteryMeter(a.mastery), el("span", { class: "small muted", text: a.mastery.mastered ? "mastered" : Math.min(a.mastery.cleanInLast, 3) + " of 3 clean solves" })));
     const stage = el("section", { class: "stage", tabindex: "-1" });
     const lab = stageId === "practice" || stageId === "diy" || stageId === "exam";
     clear(app, el("div", { class: "assign" + (lab ? " lab-mode" : "") }, stepper, stage));

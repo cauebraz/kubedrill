@@ -68,11 +68,15 @@ const (
 	journalLabel   = "kubedrill.io/journal"
 	managedByLabel = "app.kubernetes.io/managed-by"
 	managedBy      = "kubedrill"
-	suffixLen      = 5
-	minDiagnosis   = 10
-	maxDiagnosis   = 300
-	expireGrace    = 30 * time.Second
-	seedDraws      = 16
+
+	podSecurityEnforce        = "pod-security.kubernetes.io/enforce"
+	podSecurityEnforceVersion = "pod-security.kubernetes.io/enforce-version"
+
+	suffixLen    = 5
+	minDiagnosis = 10
+	maxDiagnosis = 300
+	expireGrace  = 30 * time.Second
+	seedDraws    = 16
 )
 
 // MaxSeed is the largest seed Start accepts from Rand; larger or negative
@@ -163,10 +167,12 @@ type Catalog interface {
 }
 
 // StartOptions select the seed (0 draws one) and the mode of a new episode.
-// An empty Mode is practice.
+// An empty Mode is practice. Guided records a practice episode run with the
+// browser workspace's guide, which never counts as a clean solve.
 type StartOptions struct {
-	Seed int64
-	Mode journal.Mode
+	Seed   int64
+	Mode   journal.Mode
+	Guided bool
 }
 
 // New wires a Session.
@@ -274,6 +280,9 @@ func (s *Session) Start(ctx context.Context, ref string, o StartOptions) (*journ
 	if mode != journal.ModePractice && mode != journal.ModeExam {
 		return nil, nil, fmt.Errorf("start %s: unknown mode %q", sc.Meta.ID, mode)
 	}
+	if mode == journal.ModeExam && o.Guided {
+		return nil, nil, fmt.Errorf("start %s: an exam cannot be guided", sc.Meta.ID)
+	}
 	if mode == journal.ModeExam && sc.Meta.Minutes <= 0 {
 		return nil, nil, fmt.Errorf("start %s in exam mode: scenario has no time box (minutes)", sc.Meta.ID)
 	}
@@ -296,7 +305,7 @@ func (s *Session) Start(ctx context.Context, ref string, o StartOptions) (*journ
 	if err := s.finishActive(ctx, rd.Namespace); err != nil {
 		return nil, nil, err
 	}
-	ep, err := s.createEpisode(sc, rd, id, mode)
+	ep, err := s.createEpisode(sc, rd, id, mode, o.Guided)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -355,7 +364,11 @@ func (s *Session) prepareCluster(ctx context.Context) error {
 }
 
 // setup creates the episode namespace with its ownership labels, applies
-// the setup manifests and runs the hook script.
+// the setup manifests and runs the hook script. Unless the scenario sets
+// allow_privileged, the namespace enforces the Pod Security baseline level
+// and the rendered manifests are checked against the sandbox rules again,
+// so neither a template that branches on the episode namespace or seed nor
+// a workload that creates pods from inside the cluster escapes the sandbox.
 func (s *Session) setup(ctx context.Context, sc *scenario.Scenario, rd *scenario.Rendered, id string) error {
 	ns := rd.Namespace
 	labels := map[string]string{
@@ -363,6 +376,13 @@ func (s *Session) setup(ctx context.Context, sc *scenario.Scenario, rd *scenario
 		scenarioLabel:  sc.Meta.ID,
 		seedLabel:      strconv.FormatInt(rd.Seed, 10),
 		journalLabel:   s.d.Journal.JournalID(),
+	}
+	if !sc.Meta.AllowPrivileged {
+		if errs := scenario.SandboxProblems(sc, rd); len(errs) > 0 {
+			return fmt.Errorf("setup of %s leaves the pod sandbox for this episode: %w", sc.Meta.ID, errors.Join(errs...))
+		}
+		labels[podSecurityEnforce] = "baseline"
+		labels[podSecurityEnforceVersion] = "latest"
 	}
 	s.d.Progress("creating namespace " + ns)
 	if err := s.d.Kube.ResetNamespace(ctx, ns, labels); err != nil {
@@ -382,7 +402,7 @@ func (s *Session) setup(ctx context.Context, sc *scenario.Scenario, rd *scenario
 
 // createEpisode records the new active episode and returns it as the
 // journal stores it.
-func (s *Session) createEpisode(sc *scenario.Scenario, rd *scenario.Rendered, id string, mode journal.Mode) (*journal.Episode, error) {
+func (s *Session) createEpisode(sc *scenario.Scenario, rd *scenario.Rendered, id string, mode journal.Mode, guided bool) (*journal.Episode, error) {
 	now := s.d.Now()
 	ep := journal.Episode{
 		ID:         id,
@@ -393,6 +413,7 @@ func (s *Session) createEpisode(sc *scenario.Scenario, rd *scenario.Rendered, id
 		Outcome:    journal.OutcomeActive,
 		Namespace:  rd.Namespace,
 		Mode:       mode,
+		Guided:     guided,
 	}
 	if mode == journal.ModeExam {
 		deadline := now.Add(time.Duration(sc.Meta.Minutes) * time.Minute)

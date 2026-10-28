@@ -52,6 +52,7 @@ what the cluster stores.
 - deployment payments has 2 ready replicas
 - every running payments pod sees the new token in API_TOKEN
 - every running payments-worker pod sees the new token
+- a new payments-worker pod would also start with the new token
 - secret payments-token-old does not exist
 
 ## Constraints

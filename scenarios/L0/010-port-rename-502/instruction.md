@@ -7,7 +7,7 @@
 >
 > We shipped release 3.2.0 of the docs portal (`web`) yesterday evening. The
 > release notes say the nginx cleanup changed the HTTP port of the web
-> container; the rollout finished and both pods show `Running`. Since then
+> container; both web pods show `Running`. Since then
 > `https://docs.example` answers `502 Bad Gateway` from the edge on every
 > request, not now and then. The page itself is fine: the same release
 > serves it on a laptop with `docker run`. Nothing else changed in the

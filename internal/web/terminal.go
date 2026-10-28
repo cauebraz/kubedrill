@@ -61,11 +61,16 @@ func parseSize(v string, def uint16) uint16 {
 }
 
 func (s *Server) runTerminal(ctx context.Context, ws *websocket.Conn, cols, rows uint16) error {
+	s.terms.Add(1)
+	defer s.terms.Done()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	s.mu.Lock()
+	defer context.AfterFunc(s.termsCtx, cancel)()
+	if !s.acquire(ctx) {
+		return ctx.Err()
+	}
 	cmd, cleanup, err := s.d.Backend.Terminal(ctx, containerName())
-	s.mu.Unlock()
+	s.release()
 	if err != nil {
 		return err
 	}
@@ -154,9 +159,13 @@ func readInput(ws *websocket.Conn, master *os.File) error {
 	}
 }
 
+// TerminalPrefix starts the name of every workstation container a terminal
+// of the page runs.
+const TerminalPrefix = "kubedrill-web-"
+
 // containerName is a fresh workstation container name for one terminal.
 func containerName() string {
 	b := make([]byte, 4)
 	_, _ = rand.Read(b)
-	return "kubedrill-web-" + hex.EncodeToString(b)
+	return TerminalPrefix + hex.EncodeToString(b)
 }

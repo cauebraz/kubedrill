@@ -3,8 +3,8 @@
 ## Symptom
 
 `invoices.csv` holds rows of two runs mixed together and the export log has
-two `start` lines for one night. Every Job ends `Complete` or is replaced
-without an error, so no alert fired: from the cluster's point of view each
+two `start` lines for one night. Every Job ends `Complete` without an
+error, so no alert fired: from the cluster's point of view each
 pod did what it was told. The problem is how many ran at once.
 
 ## Candidate causes
@@ -42,13 +42,6 @@ the rest (measured on kind v1.37):
 - allow-overlap: at the second tick `invoice-29885665` is still `Running`
   (it completes after `93s`) and `invoice-29885666` starts next to it; the
   POLICY column of `invoice` prints `Allow`.
-- replace-kills-run: events show `Killing pod/invoice-29885665-<id>
-  Stopping container export` and `cronjob/invoice Deleted job
-  invoice-29885665` in the same second as `Created job invoice-29885666`.
-  No Job ever reaches `Complete`, and `kubectl logs -f job/<job-name>`
-  started on the running Job ends after `batch 13 of 18 appended` with no
-  `done`; the killed pod is deleted with its Job, so its log is gone
-  afterwards. The POLICY column of `invoice` prints `Replace`.
 - legacy-twin: `invoice-29885665` and `invoice-legacy-29885665` are created
   in the same minute and both complete in about `43s`. The POLICY column
   prints `Forbid` for both CronJobs, and `invoice-legacy` prints SUSPEND
@@ -88,26 +81,28 @@ kubectl -n {{ .Namespace }} delete job <surplus-job-name>
 {{- end }}
 Neither change stops a Job that is already running, so the last two lines
 remove the extra active Jobs by hand. In production, waiting for the current run to finish is
-the safer way: deleting a running Job is exactly how `Replace` corrupted the
+the safer way: deleting a running Job is exactly how `Replace` corrupts the
 file.
 
 ## Verify
 
 ```sh
-kubectl -n {{ .Namespace }} get cronjobs -l app.kubernetes.io/name=invoice
+kubectl -n {{ .Namespace }} get cronjobs
 kubectl -n {{ .Namespace }} get jobs --watch
-kubectl -n {{ .Namespace }} create job invoice-manual --from=cronjob/invoice
-kubectl -n {{ .Namespace }} logs job/invoice-manual
+kubectl -n {{ .Namespace }} logs job/<job-name>
 ```
 
 `get cronjobs` shows `invoice` with SUSPEND `False` and every other
-`invoice` CronJob with `True`. Over the next ticks the watch shows at most
+CronJob in the namespace with `True`. Over the next ticks the watch shows at most
 one `Running` Job of `invoice`: under `Forbid` a tick that finds a run still
 active creates nothing, and the first tick after it completes starts the
-next run. `create job --from=cronjob/invoice` runs the export once on demand
-from the same template; `concurrencyPolicy` does not cover it, so run it
-only when no scheduled run is active. Its log shows one `start` and one
-`done`. `successfulJobsHistoryLimit: 3` and `failedJobsHistoryLimit: 1` keep
+next run, so when a run lasts longer than a minute (about 90 s in
+allow-overlap) `invoice` starts a Job every other minute.
+Take `<job-name>` from a Job that reached `Complete` after the change: its
+log shows one `start` and one `done`. A manual
+`kubectl create job --from=cronjob/invoice` is not part of the check:
+`concurrencyPolicy` does not cover it, so it adds a second writer whenever
+a scheduled run is active. `successfulJobsHistoryLimit: 3` and `failedJobsHistoryLimit: 1` keep
 the last finished Jobs and their logs around for exactly this comparison.
 
 ## In the real world

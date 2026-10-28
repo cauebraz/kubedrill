@@ -23,6 +23,7 @@ import (
 	"github.com/cauebraz/kubedrill/internal/grader"
 	"github.com/cauebraz/kubedrill/internal/journal"
 	"github.com/cauebraz/kubedrill/internal/progress"
+	"github.com/cauebraz/kubedrill/internal/render"
 	"github.com/cauebraz/kubedrill/internal/scenario"
 	"github.com/cauebraz/kubedrill/internal/telemetry"
 	"github.com/cauebraz/kubedrill/internal/web"
@@ -127,6 +128,15 @@ func (a *app) runWeb(ctx context.Context, o webOptions) error {
 	} else {
 		a.printf("kubedrill web is ready: %s\n", url)
 		a.println("Ctrl-C stops it; your progress stays in the journal.")
+	}
+	if o.preview == "" {
+		if j, err := a.getJournal(); err == nil {
+			if ws, err := a.getWorkstation(j); err == nil && ws != nil {
+				if n, err := ws.RemoveContainers(ctx, web.TerminalPrefix); err == nil && n > 0 {
+					a.printf("removed %d terminal container(s) left by a previous kubedrill web\n", n)
+				}
+			}
+		}
 	}
 	if !o.noOpen && a.getenv("KUBEDRILL_NO_BROWSER") != "1" {
 		openBrowser(url)
@@ -267,7 +277,7 @@ func (b *webBackend) Catalog(ctx context.Context) (web.Catalog, error) {
 		return web.Catalog{}, err
 	}
 	out := web.Catalog{Levels: []web.Level{}, Exams: []web.Exam{}}
-	solved := map[string]bool{}
+	solved := solvedSet(st.eps)
 	for _, lv := range c.Levels {
 		level := web.Level{ID: lv.ID, Title: lv.Title, Before: lv.Before, After: lv.After, Modules: []web.Module{}}
 		for _, m := range lv.Modules {
@@ -283,9 +293,6 @@ func (b *webBackend) Catalog(ctx context.Context) (web.Catalog, error) {
 					continue
 				}
 				ms := progress.ScenarioMastery(episodesOf(st.eps, sc.Meta.ID), scenarioInfo(sc))
-				if ms.Solved > 0 {
-					solved[sc.Meta.ID] = true
-				}
 				mod.Assignments = append(mod.Assignments, web.AssignmentCard{
 					ID:         sc.Meta.ID,
 					Title:      sc.Meta.Title,
@@ -312,6 +319,11 @@ func (b *webBackend) Catalog(ctx context.Context) (web.Catalog, error) {
 			exam.Domains = append(exam.Domains, web.ExamDomain{ID: d.Domain.ID, Title: d.Domain.Title, Weight: d.Domain.Weight, Assignments: nonNil(d.Scenarios), Solved: d.Done})
 		}
 		out.Exams = append(out.Exams, exam)
+	}
+	if lib, err := a.getConcepts(); err == nil && lib != nil {
+		for _, c := range lib.All() {
+			out.Concepts = append(out.Concepts, web.Concept{ID: c.ID, Title: c.Title})
+		}
 	}
 	return out, nil
 }
@@ -354,6 +366,9 @@ func (b *webBackend) Assignment(ctx context.Context, id string) (web.Assignment,
 		Ticket:     rd.Instruction,
 		Story:      rd.Story,
 		Mastery:    masteryView(sc, st.eps),
+	}
+	if st.current != nil && st.current.ScenarioID == sc.Meta.ID {
+		out.Story = storyFor(out.Story, st.current, len(rd.Hints))
 	}
 	if lib, err := a.getConcepts(); err == nil && lib != nil {
 		for _, cid := range sc.Meta.Concepts {
@@ -400,7 +415,7 @@ func (b *webBackend) Session(ctx context.Context, live bool) (web.Session, error
 		out.CheckError = err.Error()
 		return out, nil
 	}
-	out.Checks, out.Passed = checkViews(g), g.Passed
+	out.Checks, out.Passed = checkViews(g, true), g.Passed
 	return out, nil
 }
 
@@ -441,7 +456,7 @@ func activeView(ep *journal.Episode, rd *scenario.Rendered) *web.Active {
 		Title:      rd.Scenario.Meta.Title,
 		Namespace:  rd.Namespace,
 		Ticket:     rd.Instruction,
-		Story:      rd.Story,
+		Story:      storyFor(rd.Story, ep, len(rd.Hints)),
 		StartedAt:  ep.StartedAt,
 		Minutes:    rd.Scenario.Meta.Minutes,
 		HintsUsed:  ep.HintsUsed,
@@ -468,12 +483,18 @@ func activeView(ep *journal.Episode, rd *scenario.Rendered) *web.Active {
 	return v
 }
 
-func checkViews(g grader.Grade) []web.Check {
+// checkViews is g as the page reads it. With hide set (the run goes on) a
+// spoiler check that did not pass carries neither its expected nor its
+// actual value, and its message says so when it has none of its own.
+func checkViews(g grader.Grade, hide bool) []web.Check {
 	out := make([]web.Check, 0, len(g.Results))
 	for _, r := range g.Results {
-		c := web.Check{ID: r.ID, Description: r.Description, Why: r.Why, Status: string(r.Status), Expected: r.Expected, Message: r.Message}
-		if !r.Spoiler {
-			c.Actual = r.Actual
+		c := web.Check{ID: r.ID, Description: r.Description, Why: r.Why, Status: string(r.Status), Expected: r.Expected, Actual: r.Actual, Message: r.Message}
+		if hide && r.Spoiler && r.Status != grader.StatusPass && (c.Expected != "" || c.Actual != "") {
+			c.Expected, c.Actual = "", ""
+			if c.Message == "" {
+				c.Message = render.SpoilerHidden
+			}
 		}
 		out = append(out, c)
 	}
@@ -511,7 +532,7 @@ func (b *webBackend) Start(ctx context.Context, id string, stage web.Stage, repl
 		restore := a.progress.Divert(progress)
 		defer restore()
 	}
-	if _, _, err := a.startEpisode(ctx, j, sc.Meta.ID, startOptions{seed: seed, exam: stage == web.StageExam}, prev); err != nil {
+	if _, _, err := a.startEpisode(ctx, j, sc.Meta.ID, startOptions{seed: seed, exam: stage == web.StageExam, guided: stage == web.StagePractice}, prev); err != nil {
 		return web.Session{}, err
 	}
 	return b.Session(ctx, false)
@@ -557,7 +578,7 @@ func (b *webBackend) Validate(ctx context.Context) (web.Validation, error) {
 	if err != nil {
 		return web.Validation{}, err
 	}
-	v := web.Validation{EpisodeID: ep.ID, ScenarioID: ep.ScenarioID, Passed: g.Passed, Score: g.Score, Checks: checkViews(g)}
+	v := web.Validation{EpisodeID: ep.ID, ScenarioID: ep.ScenarioID, Passed: g.Passed, Score: g.Score, Checks: checkViews(g, !g.Passed)}
 	if g.Passed {
 		v.RootCause = rd.Variant.RootCause
 		v.Solution = rd.Solution
@@ -590,7 +611,7 @@ func (b *webBackend) Submit(ctx context.Context) (web.Validation, error) {
 	if err != nil {
 		return web.Validation{}, err
 	}
-	v := web.Validation{EpisodeID: ep.ID, ScenarioID: ep.ScenarioID, Score: g.Score, Checks: checkViews(g), RootCause: rd.Variant.RootCause, Solution: rd.Solution}
+	v := web.Validation{EpisodeID: ep.ID, ScenarioID: ep.ScenarioID, Score: g.Score, Checks: checkViews(g, false), RootCause: rd.Variant.RootCause, Solution: rd.Solution}
 	if done != nil {
 		v.Passed = g.Passed && done.Outcome == journal.OutcomeSolved
 		v.Outcome = outcomeWord(done.Outcome)
@@ -625,7 +646,7 @@ func (b *webBackend) expireExam(ctx context.Context, s *env.Session) (web.Valida
 	v := web.Validation{EpisodeID: done.ID, ScenarioID: done.ScenarioID, Outcome: outcomeWord(done.Outcome), RootCause: rd.Variant.RootCause, Solution: rd.Solution}
 	if n := len(done.Grades); n > 0 {
 		g := done.Grades[n-1]
-		v.Passed, v.Score, v.Checks = g.Passed && done.Outcome == journal.OutcomeSolved, g.Score, checkViews(g)
+		v.Passed, v.Score, v.Checks = g.Passed && done.Outcome == journal.OutcomeSolved, g.Score, checkViews(g, false)
 	}
 	return v, nil
 }

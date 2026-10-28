@@ -89,10 +89,11 @@ kubectl describe pod <pod-name>
 Use TAB to complete the name, or `-l app.kubernetes.io/name=worker` to pick
 by label. The `worker` pod has an `Init Containers:` block whose state reads
 `Terminated` with reason `Completed`: it ran and finished. The `Containers:`
-block below it is what runs. The `Image:` lines in `describe` may read
-`docker.io/library/nginx:1.27-alpine` while the spec says
-`nginx:1.27-alpine`: that is the runtime's spelling, and security compares
-the spec's.
+block below it is what runs. Each container shows two image lines:
+`Image:` is the string the pod spec writes, the one security compares, and
+`Image ID:` is what the node resolved, such as
+`docker.io/library/nginx@sha256:...`: the runtime's spelling, which the
+audit does not compare.
 
 ## The fix and why it works
 
@@ -114,9 +115,10 @@ Why the tempting moves do not work:
 
 - Reading the Deployments: a Deployment at 0 replicas names an image that
   runs nowhere, and it would land in the inventory.
-- Copying from `describe` or from `status.containerStatuses`: the runtime
-  spells the image with its registry and library prefix, or as a bare
-  `sha256:` digest, and the audit's string compare fails.
+- Copying the `Image ID:` line of `describe` or the image from
+  `status.containerStatuses`: the runtime spells the image with its
+  registry and library prefix, often without the digest the spec pinned,
+  and the audit's string compare fails.
 - Including the init container: it already exited; the ticket asks for
   what runs now.
 - `--from-file=images.txt` without `images=`: the key becomes `images.txt`,

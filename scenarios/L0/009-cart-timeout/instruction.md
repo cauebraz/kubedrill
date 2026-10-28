@@ -41,6 +41,7 @@ without the Service, which splits "the pod serves" from "the Service routes".
 - service cart lists at least one endpoint
 - service cart has at least one ready endpoint
 - the cart page is served through service cart from inside the cluster
+- service cart selects the pods that deployment cart creates
 
 ## Constraints
 

@@ -96,20 +96,38 @@ kubectl -n {{ .Namespace }} get configmap checkout-config -o jsonpath='{.data}'
 - cpu-64 and typo-tag: the 2.5.0 deploy removed `payments_url`. An undo
   scales the old ReplicaSet back to 4, its fourth pod stays in
   `CreateContainerConfigError` with `couldn't find key payments_url in
-  ConfigMap`, and the rollout is stuck on revision 3 instead. Fix forward.
+  ConfigMap`, and the rollout is stuck on revision 3 instead. Fix forward
+  from the 2.5.0 template instead of rolling back.
 
-Fix forward by changing only the field revision 2 broke:
+Fix forward by changing only the field revision 2 broke, while the
+Deployment still runs the 2.5.0 template:
 
 ```sh
 kubectl -n {{ .Namespace }} patch deployment checkout --type=json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/httpGet/path","value":"/"}]'
 kubectl -n {{ .Namespace }} set resources deployment/checkout -c web --requests=cpu=10m
-kubectl -n {{ .Namespace }} set image deployment/checkout web=nginx:1.27-alpine
+kubectl -n {{ .Namespace }} set image deployment/checkout web=nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
 ```
 
 Run the line that matches the Event you read: the probe path for a 404, the
 cpu request for `Insufficient cpu`, the image for `Failed to pull image`.
-Restoring `payments_url` in the ConfigMap and then rolling back also works
-in every variant. Every route passes the checks, which read the ready and up-to-date replica
+
+If a rollback already stalled on revision 3, these lines change nothing
+useful: the template is revision 1's, which has the right probe, cpu and
+image. Two ways out of the stalled rollback:
+
+```sh
+kubectl -n {{ .Namespace }} patch configmap checkout-config --type=merge -p '{"data":{"payments_url":"http://payments.{{ .Namespace }}.svc.cluster.local"}}'
+```
+
+puts the key revision 1 reads back with the URL `payments_endpoint` holds;
+the waiting pod starts on its next retry, with no new revision. Or
+`kubectl -n {{ .Namespace }} rollout undo deployment/checkout` without a
+target returns to the previous revision, now 2.5.0 (revision 4), and then
+the fix-forward line applies. After the key is restored, `rollout status`
+can still print the progress-deadline error once, because the deadline
+passed while the pod waited; the `Progressing` reason turns to
+`NewReplicaSetAvailable` as soon as the fourth pod is available. Every
+route passes the checks, which read the ready and up-to-date replica
 counts, the `Progressing` reason, the Service's ready endpoints and the pod
 phases.
 

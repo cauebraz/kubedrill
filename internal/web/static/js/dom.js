@@ -78,6 +78,24 @@ export function initials(name) {
   return (name || "?").split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
 }
 
+export function shuffledOrder(n, seed) {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) { h = Math.imul(h ^ seed.charCodeAt(i), 16777619); }
+  let a = h >>> 0;
+  const next = () => {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const out = Array.from({ length: n }, (_, i) => i);
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(next() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 export function plural(n, word) { return n + " " + word + (n === 1 ? "" : "s"); }
 
 export function duration(seconds) {

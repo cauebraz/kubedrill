@@ -136,10 +136,15 @@ ConfigMap key revision 1 reads, the copy the rollback starts stays in
 `CreateContainerConfigError` with `couldn't find key payments_url`, and the
 rollout is stuck again, now on the old release.
 
-The route that works in both cases is to fix forward: change only the
-field revision 2 broke (the probe path, the CPU request or the image tag)
-and let a new rollout run. It keeps release 2.5.0 and the new ConfigMap
-key, but it needs you to be sure of the cause.
+There are two ways out of a stuck rollback. One is to give the old
+blueprint what it reads: put key `payments_url` back in the ConfigMap, and
+the waiting copy starts on its next retry. The other is to fix forward:
+change only the field revision 2 broke (the probe path, the CPU request or
+the image tag) and let a new rollout run. Fixing forward starts from the
+2.5.0 blueprint, so after a rollback, undo once more without a target to
+return to the previous revision, which is now 2.5.0, and then change the
+field. It keeps release 2.5.0 and the new ConfigMap key, but it needs you
+to be sure of the cause.
 
 Why other moves do not work:
 

@@ -126,7 +126,9 @@ The variants ask for different settings:
   has to be recreated, and the new one reuses the claims by name.
 - tuned-config: a ConfigMap volume for `redis-config` mounted with `subPath`
   at the file path, and `redis-server /usr/local/etc/redis/redis.conf` as
-  the container arguments. The file sets `maxmemory-policy allkeys-lru`.
+  the container arguments. The file sets `maxmemory-policy allkeys-lru`
+  and `appendonly yes`; passing the same settings as flags leaves
+  `config_file` empty in `redis-cli info server`, and the check reads it.
 
 The Service can also come from `kubectl create service clusterip redis
 --clusterip=None --tcp=6379:6379`, which sets the selector `app=redis`.
@@ -139,6 +141,7 @@ kubectl -n {{ .Namespace }} get endpointslices -l kubernetes.io/service-name=red
 kubectl -n {{ .Namespace }} exec deploy/session-api -- nslookup redis-2.redis.{{ .Namespace }}.svc.cluster.local
 kubectl -n {{ .Namespace }} logs deploy/session-api --tail=4
 kubectl -n {{ .Namespace }} exec redis-0 -- redis-cli config get maxmemory-policy
+kubectl -n {{ .Namespace }} exec redis-0 -- redis-cli info server | grep config_file
 ```
 
 `rollout status` ends with `partitioned roll out complete: 3 new pods have
@@ -146,7 +149,8 @@ been updated...`. `nslookup` answers one address, the IP of pod `redis-2`;
 before the build it answered `NXDOMAIN`. Within 10 seconds the client logs
 `3 of 3 redis nodes reachable, sessions stored`. The last command prints
 `allkeys-lru` on tuned-config and `noeviction`, the redis default, on the
-other variants. `nslookup redis.{{ .Namespace }}.svc.cluster.local` lists all
+other variants; `config_file` is `/usr/local/etc/redis/redis.conf` on
+tuned-config and empty on the others. `nslookup redis.{{ .Namespace }}.svc.cluster.local` lists all
 three pod IPs: a headless Service answers with the pods, not a virtual IP.
 
 ## In the real world

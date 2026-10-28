@@ -46,6 +46,20 @@ checks:
     path: "{.status.availableReplicas}"
     equals: "2"
 
+  - id: script-unchanged
+    description: the worker runs the run.sh the team ships, unchanged
+    why: >-
+      The same run.sh runs in staging and production; an edited copy in one
+      namespace makes the next deploy overwrite the fix and hides the input
+      mismatch that broke this one.
+    depends_on: [deploy-exists]
+    script: |
+      sum=$(kubectl -n {{ .Namespace }} get configmap worker-files -o jsonpath='{.data.run\.sh}' | cksum | cut -d' ' -f1)
+      cmd=$(kubectl -n {{ .Namespace }} get deployment worker -o jsonpath='{.spec.template.spec.containers[?(@.name=="worker")].command}')
+      if [ "$sum" = "3657645302" ]; then state=unchanged; else state=changed; fi
+      printf 'run.sh %s, command %s\n' "$state" "$cmd"
+    equals: 'run.sh unchanged, command ["sh","/opt/worker/run.sh"]'
+
   - id: worker-log
     description: the worker pods log "worker started"
     why: >-

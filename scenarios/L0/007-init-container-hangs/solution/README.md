@@ -46,8 +46,9 @@ variant (measured on kind v1.37 with busybox 1.36):
   cluster DNS answers for Services of this namespace, and
   `kubectl -n {{ .Namespace }} get svc` lists `db`, not `db-primary`.
 - wrong-port: `waiting for database at db:5433` with no error line. The
-  name resolves, nothing listens on 5433; `get svc` shows `db` on
-  `5432/TCP`.
+  name resolves, but Service `db` forwards port 5432 only: the connect to
+  5433 gets no answer and `nc` gives up after its 2-second timeout. `get
+  svc` shows `db` on `5432/TCP`.
 - flag-mount-path: `database reachable at db:5432` then `waiting for
   migration flag /etc/migrate/schema-ready`. The database answered; the
   file is missing at that path.
@@ -89,11 +90,14 @@ kubectl -n {{ .Namespace }} patch deployment api --type=json -p '[{"op":"replace
 
 Editing the manifest and applying it again is the route that survives the
 next deploy in a GitOps setup. The checks read ready replicas, that every
-api pod ran `migrate` to completion, the Service's EndpointSlices and the
-response through the Service, so any change that lets the loop end passes
-except removing the init container, which restores service but skips the
-migrations the app needs. The Service `db` and the ConfigMap need no
-change: they match what every other environment has.
+api pod ran the shipped `migrate` loop to completion (its log reached the
+database on 5432 and read schema 12), that Service `db` still exposes
+5432, the Service's EndpointSlices and the response through the Service.
+Any change to the host, the port variable or the mount path passes;
+removing the init container or replacing its loop with a command that
+exits at once (`true`) does not, because the migrations never run. The
+Service `db` and the ConfigMap need no change: they match what every
+other environment has.
 
 ## Verify
 

@@ -102,13 +102,14 @@ meeting:
             Both pods Ready, the Service routing to them, and a request
             through the Service returning our release body. Keep the names of
             the Deployment, the Service and the ConfigMap, keep a readiness
-            probe on the container, and do not delete the namespace.
+            probe on the container that asks nginx on port 80, and do not
+            delete the namespace.
           feedback: >-
             Agreeing on the end state and the constraints up front is what
             lets you verify your fix the same way the customer will, and
             "keep a probe" rules out the lazy fix.
           best: true
-          fact: "Done: 2 ready pods, the Service answers with the ACME API 3.2.0 body; keep the names, keep a readiness probe, keep the namespace."
+          fact: "Done: 2 ready pods, the Service answers with the ACME API 3.2.0 body; keep the names, keep a readiness probe that asks nginx on port 80, keep the namespace."
         - say: Can I remove the health checks so the pods come up?
           reply: >-
             Please do not. The checklist exists because last year a hung api

@@ -320,6 +320,15 @@ func lintGracePeriod(s *Scenario, r *Rendered) []error {
 
 var hostFlags = map[string]bool{"hostNetwork": true, "hostPID": true, "hostIPC": true}
 
+// SandboxProblems checks the rendered setup manifests of r against the pod
+// sandbox rules lint applies (privileged containers, host namespaces and
+// ports, hostPath, added capabilities, unconfined profiles, local
+// PersistentVolumes, the docker socket). The episode start runs it on the
+// manifests rendered for the real namespace and seed.
+func SandboxProblems(s *Scenario, r *Rendered) []error {
+	return lintPrivileged(s, r)
+}
+
 func lintPrivileged(s *Scenario, r *Rendered) []error {
 	var errs []error
 	for i, m := range r.Manifests {

@@ -30,9 +30,9 @@ makes the node protect them first when memory runs short.
   every pod in the namespace and refuses a new pod that would go over. A
   quota on CPU and memory also refuses a pod that declares nothing.
 - QoS class: a label the cluster gives each pod from its resources.
-  `Guaranteed` (every container has requests equal to limits) is evicted
-  last when a node runs out of memory; `Burstable` and `BestEffort` go
-  first.
+  `Guaranteed` (every container has requests equal to limits) is among the
+  last pods evicted when a node runs out of memory; `BestEffort` and pods
+  using more than they requested go first.
 
 ```mermaid
 flowchart TD
@@ -56,8 +56,8 @@ kubectl -n {{ .Namespace }} get deploy,rs,pods
 ```
 
 The Deployments show `0/2` or `0/1` READY and there are no pods at all.
-The ReplicaSets show DESIRED `2` and CURRENT `0`: they wanted pods and got
-none. A pod that never existed cannot be described, so ask the ReplicaSet.
+The ReplicaSets show DESIRED `2` (`1` for cart) and CURRENT `0`: they
+wanted pods and got none. A pod that never existed cannot be described, so ask the ReplicaSet.
 You do not need its random name: a label picks it.
 
 ```sh

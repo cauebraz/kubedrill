@@ -20,8 +20,6 @@
 > me to the canary page.
 {{- end }}
 
-New to Kubernetes? `kubedrill story` tells this ticket from zero.
-
 ## Before you start
 
 A Service is a selector plus a port mapping. The selector picks pods by their
@@ -54,6 +52,7 @@ container port before writing the Service.
 - service admin publishes nodePort 30080
 - service admin has exactly one ready endpoint, the pod of deployment admin
 - a client on the cluster network gets the ACME Admin 3.2.0 page from http://<node-ip>:30080/
+- every admin Deployment in the namespace keeps its 1 replica
 
 ## Constraints
 

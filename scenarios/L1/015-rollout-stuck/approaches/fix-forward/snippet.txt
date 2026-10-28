@@ -1,5 +1,5 @@
 kubectl -n {{ .Namespace }} rollout history deployment/checkout --revision=2
 kubectl -n {{ .Namespace }} patch deployment checkout --type=json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/httpGet/path","value":"/"}]'
 kubectl -n {{ .Namespace }} set resources deployment/checkout -c web --requests=cpu=10m
-kubectl -n {{ .Namespace }} set image deployment/checkout web=nginx:1.27-alpine
+kubectl -n {{ .Namespace }} set image deployment/checkout web=nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
 kubectl -n {{ .Namespace }} rollout status deployment/checkout --timeout=120s

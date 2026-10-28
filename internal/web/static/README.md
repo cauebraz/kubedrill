@@ -11,10 +11,11 @@ the first page with a ```mermaid block and themes it from the tokens.
 | `favicon.svg` | The mark (a five-step ring, one step and the center in the brand teal) with its own light and dark colors through `prefers-color-scheme`; the top bar draws the same paths with `--fg` and `--brand` |
 | `app.js` | Entry: routes (`#/`, `#/catalog`, `#/exams`, `#/a/<id>/<stage>`, `#/a/<id>/debrief/<episode>`, `#/kit`), navigation, theme, preview and server-down banners |
 | `js/api.js` | The JSON API, the NDJSON launch stream, the connection listener |
-| `js/dom.js` | `el`, `svg`, `clear`, `toast`, `store` (localStorage), `onLeave` cleanups, icons |
+| `js/dom.js` | `el`, `svg`, `clear`, `toast`, `store` (localStorage), `onLeave` cleanups, `shuffledOrder` (the choice order of a question, seeded by its text), icons |
 | `js/keys.js` | Shortcuts per screen (`bind`), the overlay stack Esc closes, the `?` help |
-| `js/ui.js` | Shared components: stages, rings, dots, mastery meter, status pill, assignment row, skeleton, error state |
+| `js/ui.js` | Shared components: stages, rings, dots, mastery meter (clean solves out of 3), status pill and its vocabulary (`statusOf`: not started, in progress, live, complete, mastered), assignment row, `hideFixSection`, skeleton, error state |
 | `js/welcome.js` | The welcome flow (`#/welcome`): the five steps of the loop on a worked ticket, shown once per journal before the workspace opens |
+| `js/mermaid.js` | Renders ```mermaid blocks of scenario markdown with the vendored mermaid, themed from the tokens, redrawn on theme change |
 | `js/home.js`, `js/catalog.js`, `js/exams.js` | The three top-level screens |
 | `js/assignment.js` | The assignment shell, stepper and concept drawer |
 | `js/meeting.js`, `js/quiz.js`, `js/learn.js`, `js/lab.js`, `js/result.js` | The stages: meeting, quiz, learn and diagram, practice and DIY lab, debrief and result |
@@ -67,6 +68,15 @@ Rules:
 - Loading shows `skeleton()`, failures show `errorState()` with a retry;
   no screen stays blank.
 - Single-key shortcuts never fire while typing (`isTyping`).
+- Choices (meeting, quiz, welcome) are shown in `shuffledOrder`, never in
+  file order, and the number keys follow the shown order.
+- One status vocabulary everywhere: an assignment is complete when its Do
+  it yourself run passed, which is what the plan rings, the exam coverage
+  and the catalog filter count; a plan badge needs every assignment of the
+  plan complete.
+- Esc that closes an overlay stops there and never reaches the terminal.
+  The lab's mentor is a docked column beside the terminal at 961 pixels and
+  up (Esc inside it closes it), a drawer below that.
 
 ## Checking a change
 

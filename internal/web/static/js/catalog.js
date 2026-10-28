@@ -6,13 +6,13 @@
 import { api } from "./api.js";
 import { el, clear, icons, plural } from "./dom.js";
 import { bind } from "./keys.js";
-import { assignmentRow, flatten, isDone, ring, skeleton, errorState } from "./ui.js";
+import { assignmentRow, flatten, isDone, ring, skeleton, errorState, statusOf, STATUS_WORDS } from "./ui.js";
 
-const STATUSES = [["", "Any status"], ["todo", "Not started"], ["active", "Active"], ["solved", "Solved"], ["mastered", "Mastered"], ["complete", "DIY passed"]];
+const STATUSES = [["", "Any status"]].concat(STATUS_WORDS.map(([id, word]) => [id, word[0].toUpperCase() + word.slice(1)]));
 
 function readFilters() {
   const q = new URLSearchParams((location.hash.split("?")[1]) || "");
-  return { q: q.get("q") || "", level: q.get("level") || "", status: q.get("status") || "", exam: q.get("exam") || "", concept: q.get("concept") || "" };
+  return { q: q.get("q") || "", level: q.get("level") || "", status: ({ active: "live", solved: "started" })[q.get("status")] || q.get("status") || "", exam: q.get("exam") || "", concept: q.get("concept") || "" };
 }
 
 function writeFilters(f) {
@@ -33,25 +33,28 @@ function render(c) {
   const all = flatten(c);
   const byID = Object.fromEntries(all.map((a) => [a.id, a]));
   const f = readFilters();
-  const concepts = [...new Set(all.flatMap((a) => a.concepts || []))].sort();
-  const domains = c.exams.flatMap((e) => e.domains.map((d) => [e.id + ":" + d.id, e.id + " " + d.title]));
+  const titles = Object.fromEntries((c.concepts || []).map((x) => [x.id, x.title]));
+  const conceptTitle = (id) => titles[id] || id;
+  const concepts = [...new Set(all.flatMap((a) => a.concepts || []))].sort((x, y) => conceptTitle(x).localeCompare(conceptTitle(y)));
+  const domains = c.exams.flatMap((e) => e.domains.map((d) => [e.id + ":" + d.id, e.id + " " + d.title, all.filter((a) => (a.exam || []).includes(e.id + ":" + d.id)).length]))
+    .filter(([, , n]) => n > 0).map(([id, t, n]) => [id, t + " (" + n + ")"]);
 
   const search = el("input", { type: "search", class: "input", placeholder: "Search titles, ids, concepts", value: f.q, "aria-label": "Search assignments" });
   const level = select([["", "Any level"]].concat(c.levels.map((l) => [l.id, l.id + " " + l.title])), f.level, "Level");
   const status = select(STATUSES, f.status, "Status");
   const exam = select([["", "Any exam domain"]].concat(domains), f.exam, "Exam domain");
-  const concept = select([["", "Any concept"]].concat(concepts.map((x) => [x, x])), f.concept, "Concept");
+  const concept = select([["", "Any concept"]].concat(concepts.map((x) => [x, conceptTitle(x)])), f.concept, "Concept");
   const reset = el("button", { class: "btn ghost small", text: "Clear filters" });
   const count = el("div", { class: "result-count", "aria-live": "polite" });
   const results = el("div", { class: "catalog-results" });
 
   function matches(a, v) {
     if (v.level && a.level !== v.level) { return false; }
-    if (v.status === "complete" ? !isDone(a) : v.status && a.status !== v.status) { return false; }
+    if (v.status && statusOf(a) !== v.status) { return false; }
     if (v.exam && !(a.exam || []).includes(v.exam)) { return false; }
     if (v.concept && !(a.concepts || []).includes(v.concept)) { return false; }
     if (v.q) {
-      const hay = (a.id + " " + a.title + " " + a.moduleTitle + " " + (a.concepts || []).join(" ")).toLowerCase();
+      const hay = (a.id + " " + a.title + " " + a.moduleTitle + " " + (a.concepts || []).map((x) => x + " " + conceptTitle(x)).join(" ")).toLowerCase();
       if (!v.q.toLowerCase().split(/\s+/).every((w) => hay.includes(w))) { return false; }
     }
     return true;

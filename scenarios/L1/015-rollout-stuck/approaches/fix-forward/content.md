@@ -9,7 +9,9 @@ the team needs, and the old capacity holds while the new pods start. With
 `maxUnavailable: 0` the old pods keep serving the whole time; with 25%, as
 here, the rollout runs one pod short until it completes. It is the route
 that works when a rollback cannot, because the 2.5.0 deploy removed
-configuration the old release reads.
+configuration the old release reads. It applies to the 2.5.0 template: after
+a rollback stalled, the template is revision 1's, so return to the previous
+revision first (`rollout undo` without a target) and then change the field.
 
 The trade-off is risk under pressure: a second guess that is also wrong
 starts a third revision and another wait for the progress deadline. Make

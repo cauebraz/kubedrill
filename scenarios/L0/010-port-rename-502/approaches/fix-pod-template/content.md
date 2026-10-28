@@ -2,7 +2,8 @@ Change the pod template of Deployment `web` so every port reference in it
 agrees with `listen` in `web-nginx`: the readiness probe port, or the
 containerPort name the Service resolves. A template change starts a
 rollout, and `rollout status` waits until the new pods pass the probe, so
-the third line is the verification.
+the last line is the verification. The patch reads the containerPort's
+name first, so the probe follows whatever name the release gave it.
 
 Choose it when the pod template is the object left behind: the probe still
 asks the old port (pods `0/1`, `Readiness probe failed ... connection

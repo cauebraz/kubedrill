@@ -1,7 +1,7 @@
 // Stage 1: the scripted meeting with the customer.
 
 import { api } from "./api.js";
-import { el, clear, initials, store, toast } from "./dom.js";
+import { el, clear, initials, store, toast, shuffledOrder } from "./dom.js";
 import { bind } from "./keys.js";
 
 export function stageHead(eyebrow, title, text, action) {
@@ -45,10 +45,10 @@ export function renderMeeting(stage, a, next) {
     meter.style.width = Math.round(100 * st.facts.length / total) + "%";
     counter.textContent = st.facts.length + "/" + total;
   }
-  let choiceButtons = [];
+  let shown = [];
   function drawChoices() {
     clear(choices);
-    choiceButtons = [];
+    shown = [];
     if (st.turn >= total) {
       const btn = el("button", { class: "btn", text: "Continue to the quiz", onclick: finish });
       choices.appendChild(el("div", { class: "prompt", text: "Meeting complete: " + st.firstTry + " of " + total + " best questions on the first try" }));
@@ -58,10 +58,10 @@ export function renderMeeting(stage, a, next) {
     }
     const t = sim.meeting.turns[st.turn];
     choices.appendChild(el("div", { class: "prompt", text: (t.prompt || "Your next question") + " (" + (st.turn + 1) + " of " + total + ")" }));
-    t.choices.forEach((c, ci) => {
-      const b = el("button", { class: "choice", disabled: st.tried.includes(ci), onclick: () => pick(ci) }, el("kbd", { class: "kbd", text: String(ci + 1) }), el("span", { text: c.say }));
-      choiceButtons.push(b);
-      choices.appendChild(b);
+    shown = shuffledOrder(t.choices.length, a.id + "\n" + st.turn + "\n" + (t.prompt || "") + "\n" + t.choices.map((c) => c.say).join("\n"));
+    shown.forEach((ci, pos) => {
+      const c = t.choices[ci];
+      choices.appendChild(el("button", { class: "choice", disabled: st.tried.includes(ci), onclick: () => pick(ci) }, el("kbd", { class: "kbd", text: String(pos + 1) }), el("span", { text: c.say })));
     });
   }
   function pick(ci) {
@@ -86,7 +86,7 @@ export function renderMeeting(stage, a, next) {
   }
   function restart() { store(key, null); st = fresh(); drawLog(); drawBoard(); drawChoices(); }
 
-  for (let n = 1; n <= 9; n++) { bind(String(n), n === 1 ? "Pick a question (1 to 9)" : "", () => pick(n - 1)); }
+  for (let n = 1; n <= 9; n++) { bind(String(n), n === 1 ? "Pick a question (1 to 9)" : "", () => { if (n <= shown.length) { pick(shown[n - 1]); } }); }
   bind("Enter", "Continue when the meeting is over", () => { if (st.turn >= total) { finish(); } });
 
   stage.appendChild(el("div", { class: "stage-inner" },

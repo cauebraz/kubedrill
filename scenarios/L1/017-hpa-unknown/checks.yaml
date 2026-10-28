@@ -45,7 +45,7 @@ checks:
     not_empty: true
 
   - id: hpa-keeps-intent
-    description: hpa api still resizes deployment api on 50% average cpu, between 1 and 4 pods
+    description: hpa api resizes deployment api by the rule the ticket asks for, between 1 and 4 pods
     why: >-
       The team sized api on CPU with a 1 to 4 pod range; an HPA that resizes
       another workload, follows another resource or drops the range reports

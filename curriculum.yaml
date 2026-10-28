@@ -17,7 +17,7 @@ levels:
             type: break-fix
             feasibility: kind
           - id: 002-restarting-pod-triage
-            ticket: "Find which of 40 pods in shop is restarting and why; label it triage=yes"
+            ticket: "One of the shop pods keeps restarting"
             type: break-fix
             feasibility: kind
           - id: 003-image-inventory
@@ -25,7 +25,7 @@ levels:
             type: build
             feasibility: kind
           - id: 004-wrong-namespace
-            ticket: "Someone created objects in the wrong namespace; move catalog Deployment and Service to catalog"
+            ticket: "Catalog copied into the shop namespace, storefront cannot reach it"
             type: break-fix
             feasibility: kind
       - id: L0.2
@@ -35,15 +35,15 @@ levels:
         concepts: [pod-lifecycle, resources-and-qos]
         scenarios:
           - id: 005-worker-crashloop
-            ticket: "worker is CrashLoopBackOff since the last deploy; nothing changed in the code"
+            ticket: "worker is CrashLoopBackOff since the last deploy"
             type: break-fix
             feasibility: kind
           - id: 006-api-never-ready
-            ticket: "api never becomes Ready; the dev says it starts in 2s"
+            ticket: "api never becomes Ready; the dev says it starts in 2 seconds"
             type: break-fix
             feasibility: kind
           - id: 007-init-container-hangs
-            ticket: "migrate init container hangs forever on the new cluster"
+            ticket: "api never starts: the migrate init container hangs forever on the new cluster"
             type: break-fix
             feasibility: kind
           - id: 008-report-oomkilled
@@ -56,11 +56,11 @@ levels:
         exam: ["CKA:networking", "CKAD:networking"]
         scenarios:
           - id: 009-cart-timeout
-            ticket: "cart.shop.svc times out but pods are Running"
+            ticket: "Cart checkout times out but the cart pods are Running"
             type: break-fix
             feasibility: kind
           - id: 010-port-rename-502
-            ticket: "Ingress 502 after the port rename in the image"
+            ticket: "Docs portal answers 502 since the web release that changed its port"
             type: break-fix
             feasibility: kind
           - id: 011-expose-admin-nodeport
@@ -77,11 +77,11 @@ levels:
             type: break-fix
             feasibility: kind
           - id: 013-secret-file-not-found
-            ticket: "db-password mounted but app says file not found"
+            ticket: "billing api never starts after db-password moved into a Secret"
             type: break-fix
             feasibility: kind
           - id: 014-rotate-plaintext-secret
-            ticket: "Secret committed in plain text; recreate it from a file and rotate"
+            ticket: "Payments token ended up in a pull request; security wants it rotated today"
             type: build
             feasibility: kind
 

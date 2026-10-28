@@ -41,11 +41,14 @@ dashboards and selectors filter by it.
 - the pod labeled triage=yes is a pod of the service that was restarting
 - the service that was restarting runs one pod with 0 restarts that has stayed up at least 45 seconds
 - the service that was restarting has its pod Running and Ready
+- the service that was restarting keeps a liveness probe
+- the service that was restarting keeps a memory limit
 - every deployment in the namespace has all its replicas available (14 deployments, 40 pods)
 
 ## Constraints
 
 - Keep the 14 Deployment names and their replica counts
+- Keep a liveness probe and a memory limit on every service that has one
 - Do not delete the namespace or the ConfigMaps
 - The label goes on the pod that is running when you hand the ticket back;
   a rollout replaces pods, and their labels with them

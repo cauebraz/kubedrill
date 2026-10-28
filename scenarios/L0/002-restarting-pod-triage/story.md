@@ -98,8 +98,10 @@ Three parts of this output answer "why":
   for memory.
 - Still under `Containers`: `Limits` (the memory ceiling), `Liveness` and
   `Readiness` (the probe URLs with their ports) and `Mounts` (where each
-  file bag is mounted). Compare them with a healthy pod: every other
-  service runs with `32Mi` and a readiness probe on port 8080.
+  file bag is mounted). Compare `Limits` and `Mounts` with a healthy pod:
+  every other service runs with `32Mi`. The other services have no probes,
+  so compare the port in the `Liveness` line with the `Readiness` line and
+  with port 8080, where every service listens.
 - `Events` at the bottom: `Liveness probe failed: ... connection refused`
   followed by `Killing ... failed liveness probe, will be restarted` is
   the kubelet explaining a kill. `Back-off restarting failed container`
@@ -174,7 +176,11 @@ Why the tempting moves do not work:
 - Deleting the pod: the Deployment creates another one from the same
   template, with the same fault, and the counter starts again.
 - Removing the liveness probe altogether: the restarts stop, but a
-  container that hangs would never be restarted again; fix the port.
+  container that hangs would never be restarted again; fix the port. The
+  checks require the probe to stay.
+- Removing the memory limit: the OOM kills stop, but a leak in reviews
+  would then take memory from every other pod on the node. The checks
+  require a limit to stay.
 - Raising the memory limit when the cause is the probe (or the other way
   around): a change that does not match the observation changes nothing,
   and the counter keeps growing.

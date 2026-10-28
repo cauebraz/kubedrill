@@ -395,7 +395,7 @@ func scenarios() []*scenario.Scenario {
 				{Name: "fix-manifest", Snippet: "kubectl edit deploy/hello", Body: "# Fix the manifest\n\nEdit the source of truth.\n"},
 				{Name: "set-image", Snippet: "kubectl set image deploy/hello app=nginx:1.27", Body: "# Set image\n\nFast, but drifts from git.\n"},
 			},
-			Story:       "## What happened\n\nThe hello pods in {{ .Namespace }} never start.\n",
+			Story:       "## What happened\n\nThe hello pods in {{ .Namespace }} never start.\n\n## The fix and why it works\n\nPoint the image at a tag that exists.\n\n## Check your work\n\nWatch the rollout.\n",
 			Checks:      []scenario.Check{{ID: "ready", Description: "deployment hello has 2 ready replicas"}},
 			SolveScript: "/scenarios/L0/001-hello-down/solution/solve.sh",
 		},
@@ -1477,6 +1477,37 @@ func TestProgressLineClosedOnError(t *testing.T) {
 		if strings.HasPrefix(line, "kubedrill:") && strings.Contains(line, "... ") {
 			t.Errorf("error printed on the progress line: %q", line)
 		}
+	}
+}
+
+func TestSetupHookOutputStaysOffTheTerminal(t *testing.T) {
+	f := newFixture(t)
+	f.catalog.all[0].HookScript = "/scenarios/L0/001-hello-down/setup/hook.sh"
+	f.runOut = "deployment \"hello\" successfully rolled out\n"
+	code, out, errOut := f.run(t, "", "start", "001", "--seed", "1")
+	if code != 0 {
+		t.Fatalf("start: exit %d (%s)", code, errOut)
+	}
+	mustNotContain(t, out+errOut, "successfully rolled out")
+
+	f = newFixture(t)
+	f.catalog.all[0].HookScript = "/scenarios/L0/001-hello-down/setup/hook.sh"
+	f.runOut = "error: timed out waiting for the condition\n"
+	f.runErr = errors.New("exit status 1")
+	code, _, errOut = f.run(t, "", "start", "001", "--seed", "1")
+	if code != 1 {
+		t.Fatalf("start with a failing hook: exit %d, want 1", code)
+	}
+	mustContain(t, errOut, "its output ends with:", "error: timed out waiting for the condition")
+}
+
+func TestTailBufferKeepsTheEnd(t *testing.T) {
+	var b tailBuffer
+	fmt.Fprint(&b, strings.Repeat("a", hookOutputLimit))
+	fmt.Fprint(&b, "end")
+	got := b.String()
+	if !strings.HasPrefix(got, "...") || !strings.HasSuffix(got, "end") || len(got) != hookOutputLimit+3 {
+		t.Errorf("tail: got %d bytes, prefix %q, suffix %q; want ... then the last %d bytes", len(got), got[:3], got[len(got)-3:], hookOutputLimit)
 	}
 }
 

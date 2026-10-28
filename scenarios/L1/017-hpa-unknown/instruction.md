@@ -26,8 +26,8 @@ the controller's own reason.
 
 - Namespace: `{{ .Namespace }}`
 - Resources: Deployment `api` (1 replica, container `api`, nginx
-  `1.27-alpine`), HorizontalPodAutoscaler `api` (`autoscaling/v2`, 1 to 4
-  pods, target 50% average CPU utilization)
+  `1.27-alpine`), HorizontalPodAutoscaler `api` (`autoscaling/v2`, added last
+  sprint)
 - metrics-server runs in `kube-system`; `kubectl top` works
 - You have cluster-admin on the local kind cluster
 
@@ -36,10 +36,10 @@ the controller's own reason.
 - deployment api has at least 1 ready replica
 - hpa api has condition ScalingActive True
 - hpa api reports a current metric value
-- hpa api still resizes deployment api on 50% average cpu, between 1 and 4 pods
+- hpa api resizes deployment api by the rule the ticket asks for, between 1 and 4 pods
 
 ## Constraints
 
 - Keep the Deployment and HorizontalPodAutoscaler names
-- Keep the target of 50% average CPU utilization and the 1 to 4 pod range
+- Keep the scaling rule the ticket describes and the 1 to 4 pod range
 - Do not delete the namespace

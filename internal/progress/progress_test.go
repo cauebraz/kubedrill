@@ -48,6 +48,8 @@ func TestIsClean(t *testing.T) {
 		{"solved fast without hints", ep("s", 1, 0), true},
 		{"exam solve", func() journal.Episode { e := ep("s", 1, 0); e.Mode = journal.ModeExam; return e }(), true},
 		{"hinted", ep("s", 1, 0, hints(1)), false},
+		{"guided practice solve", func() journal.Episode { e := ep("s", 1, 0); e.Guided = true; return e }(), false},
+		{"guided and hinted", func() journal.Episode { e := ep("s", 1, 0, hints(2)); e.Guided = true; return e }(), false},
 		{"over the time box", ep("s", 1, 0, took(11*time.Minute)), false},
 		{"exactly the time box", ep("s", 1, 0, took(10*time.Minute)), true},
 		{"abandoned", ep("s", 1, 0, outcome(journal.OutcomeAbandoned)), false},
@@ -86,6 +88,17 @@ func TestScenarioMastery(t *testing.T) {
 			name: "three clean on distinct seeds over two sessions",
 			eps:  []journal.Episode{ep("s", 1, 0), ep("s", 2, time.Hour), ep("s", 3, day)},
 			want: Mastery{Attempts: 3, Solved: 3, Clean: 3, Last: 3, CleanInLast: 3, Sessions: 2, Mastered: true},
+		},
+		{
+			name: "guided runs are solves but not clean",
+			eps: func() []journal.Episode {
+				eps := []journal.Episode{ep("s", 1, 0), ep("s", 2, time.Hour), ep("s", 3, day)}
+				for i := range eps {
+					eps[i].Guided = true
+				}
+				return eps
+			}(),
+			want: Mastery{Attempts: 3, Solved: 3, Clean: 0, Last: 3, CleanInLast: 0, Sessions: 0, Mastered: false},
 		},
 		{
 			name: "same session is not enough",
