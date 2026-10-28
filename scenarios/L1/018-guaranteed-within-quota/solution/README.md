@@ -82,7 +82,13 @@ kubectl -n {{ .Namespace }} set resources deployment/cart --requests=cpu=250m,me
 
 In quota-1-cpu (1 CPU and 1Gi over 5 containers) and in catalog-sidecar
 (1500m and 1536Mi over 7 containers) the same 250m crosses `Hard`, and the
-last pods are refused with `exceeded quota`.
+last pods are refused with `exceeded quota`. The pods that were admitted
+then hold the quota: a second `set resources` with smaller values stalls at
+`0 out of 2 new replicas have been updated`, because RollingUpdate surges
+one new pod before it stops an old one and the surge pod is refused with
+`exceeded quota` too (measured in quota-1-cpu, 250m then 100m). Scale each
+Deployment to 0 and back to its replica count, and the new template comes
+up inside the budget.
 
 The second route is a LimitRange `shop-defaults` with `default` equal to
 `defaultRequest` for CPU and memory, sized by the same division: admission fills both into any container that sets

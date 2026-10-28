@@ -19,8 +19,8 @@
 A container gets a ConfigMap value by one of three routes, and each one
 reacts to an edit differently: an env var (`valueFrom.configMapKeyRef`) is
 read once, when the container starts; a volume that mounts the ConfigMap is
-refreshed by the kubelet within about a minute; a `subPath` mount of one key
-is never refreshed. The API holds what `kubectl get configmap -o yaml`
+refreshed by the kubelet within one to two minutes; a `subPath` mount of one
+key is never refreshed. The API holds what `kubectl get configmap -o yaml`
 prints; the container holds what `kubectl exec <pod> -- env` and
 `kubectl exec <pod> -- cat <file>` print. Compare the two before you change
 anything.

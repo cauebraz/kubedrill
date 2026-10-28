@@ -159,7 +159,7 @@ quiz:
         explain: >-
           The kubelet resolves configMapKeyRef when it creates the container.
           A running process keeps the environment it was started with.
-      - text: Within about a minute, when the kubelet syncs the pod.
+      - text: Within a minute or two, when the kubelet syncs the pod.
         explain: >-
           That is the behavior of a whole-ConfigMap volume. Env vars are not
           refreshed.

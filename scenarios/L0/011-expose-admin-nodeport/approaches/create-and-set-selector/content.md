@@ -1,7 +1,7 @@
 `kubectl create service nodeport` writes a NodePort Service with the port
 mapping and the node port in one command, but its selector is always
 `app=<name>`, a label the admin pod does not carry, so the Service starts with
-`Endpoints: <none>`. `kubectl set selector` replaces the selector with the
+an empty `Endpoints:` line. `kubectl set selector` replaces the selector with the
 label pairs that identify the stable admin pod, and the EndpointSlice fills
 within a second.
 

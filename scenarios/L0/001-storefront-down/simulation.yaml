@@ -244,8 +244,10 @@ guide:
     check: ready-replicas
   - title: Confirm the Service has endpoints again
     body: >-
-      The Service routes only to Ready pods. Its EndpointSlice lists their
-      addresses; three addresses mean traffic reaches the storefront again.
-      Then press Validate to grade the assignment.
+      The Service routes only to Ready pods. Its EndpointSlice listed the
+      three pod addresses before the fix too, each marked ready false; now
+      the three are ready and traffic reaches the storefront again (add -o
+      yaml to read the conditions). Then press Validate to grade the
+      assignment.
     command: kubectl get endpointslices -l kubernetes.io/service-name=storefront
     check: service-endpoints

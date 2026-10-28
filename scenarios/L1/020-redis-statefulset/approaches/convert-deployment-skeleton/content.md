@@ -3,8 +3,9 @@ Service in one line and sets the selector `app=redis`, the label that
 `kubectl create deployment redis` also puts on its pod template. The
 Deployment skeleton then becomes a StatefulSet: change the kind, add
 `serviceName: redis` and the `volumeClaimTemplates` block, add the readiness
-probe and the volume mount, and remove `strategy` and `status`, which a
-StatefulSet does not accept.
+probe and the volume mount, and remove `strategy`, which the StatefulSet
+schema rejects (`unknown field "spec.strategy"`), and `status`, which the
+server owns.
 
 Choose it under time pressure, as in an exam: the generators get the
 labels, selector and image right, and only the StatefulSet fields are

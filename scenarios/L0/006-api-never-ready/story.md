@@ -140,11 +140,14 @@ Why the tempting moves do not work:
 ```sh
 kubectl rollout status deployment/api
 kubectl get pods
-kubectl get endpointslices -l kubernetes.io/service-name=api
+kubectl get endpointslices -l kubernetes.io/service-name=api -o jsonpath='{range .items[*].endpoints[*]}{.addresses[0]} ready={.conditions.ready}{"\n"}{end}'
 ```
 
 `rollout status` ends with `successfully rolled out`, `get pods` shows two
-pods `1/1 Running`, and the EndpointSlice lists two addresses. A pod named
+pods `1/1 Running`, and the EndpointSlice lists two addresses with
+`ready=true` (before the fix it listed the same addresses with
+`ready=false`; the plain `get endpointslices` table prints every address,
+ready or not). A pod named
 `kubedrill-probe-...` may appear for a few seconds: it is the grader
 sending one request through the Service, the way the frontend would. The
 checks below the terminal turn green, and `kubedrill check` grades once

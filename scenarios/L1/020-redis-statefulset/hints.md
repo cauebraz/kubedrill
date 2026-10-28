@@ -22,10 +22,11 @@ pod or a claim that waits.
 ## Hint 3: what it means
 
 The first part is a pod name, which only a StatefulSet makes stable: pod
-`<statefulset>-<ordinal>`. The second part is a Service name, and DNS
-publishes one record per pod only for a Service with `clusterIP: None` that
-the StatefulSet names in `spec.serviceName`. A ready endpoint list with the
-three pods means the records exist. Each pod gets its own claim
+`<statefulset>-<ordinal>`. The second part is a Service name: DNS publishes
+one record per Ready pod for the Service the StatefulSet names in
+`spec.serviceName`, and the ticket wants that Service headless
+(`clusterIP: None`) so the name `redis` itself never load-balances. A ready
+endpoint list with the three pods means the records exist. Each pod gets its own claim
 `<template>-<pod>` from `volumeClaimTemplates`; on `standard` the claim stays
 Pending until its pod is scheduled (WaitForFirstConsumer), which is normal.
 `podManagementPolicy` decides whether the pods start one after the other

@@ -99,7 +99,9 @@ containerPort back to `http` in the pod template, which the Service then
 resolves again. The checks read ready replicas, the EndpointSlice, and the
 page through both Services, so every route passes. `web-nginx` stays as
 shipped: the port move is the release, and reverting it would be undone by
-the next deploy.
+the next deploy. Removing the readiness probe also brings the page back in
+probe-left-on-80, and fails the last check: the probe is what showed the
+mismatch in the READY column, so it stays.
 
 ## Verify
 
@@ -107,6 +109,7 @@ the next deploy.
 kubectl -n {{ .Namespace }} rollout status deployment/web
 kubectl -n {{ .Namespace }} get endpointslices -l kubernetes.io/service-name=web
 kubectl -n {{ .Namespace }} run curl --rm -it --restart=Never --image=curlimages/curl:8.14.1 -- curl -sS -m 5 http://edge.{{ .Namespace }}.svc/
+kubectl -n {{ .Namespace }} logs deploy/statuscheck --tail=3
 ```
 
 The EndpointSlice shows a number in PORTS (`80` for renamed-port, `8080`
@@ -115,8 +118,10 @@ for the others) and two addresses, and `rollout status` ends with
 rollout, so it returns at once). Before the fix the curl pod printed `curl:
 (22) The requested URL returned error: 502` with `-f`, or the nginx 502
 page without it; after the fix it prints the page with `<h1>ACME Docs
-Portal 3.2.0</h1>`. A pod named `kubedrill-probe-...` that appears for a
-few seconds is the grader making the same request.
+Portal 3.2.0</h1>`. Within 5 seconds the checker log switches from
+`GET http://edge/ -> failed: wget: server returned error: HTTP/1.1 502 Bad
+Gateway` to `GET http://edge/ -> ok`. A pod named `kubedrill-probe-...`
+that appears for a few seconds is the grader making the same request.
 
 ## In the real world
 

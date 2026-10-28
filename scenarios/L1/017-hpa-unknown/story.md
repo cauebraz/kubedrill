@@ -104,8 +104,8 @@ team wants CPU makes the HPA react to the wrong resource.
 kubectl get hpa api --watch
 ```
 
-Within about a minute TARGETS changes from `<unknown>/50%` to a number such
-as `cpu: 0%/50%`. Stop with Ctrl-C. `kubectl describe hpa api` now shows
+Within about a minute TARGETS changes from `<unknown>/50%` to a small number
+such as `cpu: 2%/50%`. Stop with Ctrl-C. `kubectl describe hpa api` now shows
 `ScalingActive True ValidMetricFound`. The first minute of `<unknown>` after
 a new pod starts is normal: metrics-server has not measured it yet.
 

@@ -42,6 +42,7 @@ describe pod` prints both the Mounts and the Events.
 - deployment api has 2 ready replicas
 - the api pods log "api: connected"
 - deployment api has 2 available replicas
+- the api pods take the password from Secret db-credentials
 
 ## Constraints
 

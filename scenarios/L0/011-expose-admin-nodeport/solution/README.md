@@ -14,8 +14,9 @@ This is a build ticket: nothing is broken, one object is missing. The
 candidates are the ways the new Service can still fail to deliver the page,
 and each leaves a different trace once the Service exists:
 
-- Selector matches no pod: `kubectl describe service admin` shows
-  `Endpoints: <none>`, and a request is refused by kube-proxy at once.
+- Selector matches no pod: `kubectl describe service admin` shows an empty
+  `Endpoints:` line (older kubectl prints `<none>`), and a request is
+  refused by kube-proxy at once.
 - Selector matches more than one pod: `Endpoints` lists two addresses and
   the EndpointSlice names a pod of another Deployment, so part of the
   requests reach the wrong build.

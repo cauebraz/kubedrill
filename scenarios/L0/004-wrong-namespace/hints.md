@@ -22,10 +22,10 @@ Deployment itself carries the name the team expects.
 ## Hint 3: what it means
 
 A Service forwards each connection to a Ready pod whose labels contain every
-key and value of its selector, on the targetPort. `Endpoints: <none>` with
-Running pods means no pod carries the selector's labels, whether because the
-pods were created under another name and label or because the selector was
-copied with the old value. Endpoints present and still `Connection refused`
+key and value of its selector, on the targetPort. An empty `Endpoints` line
+with Running pods means no pod carries the selector's labels, whether because
+the pods were created under another name and label or because the selector
+was copied with the old value. Endpoints present and still `Connection refused`
 means the pods are reached on a port nothing listens on. The manifests were
 edited by hand during the copy, so the mismatch is in whatever was edited:
 the Deployment name and its labels, the selector value, or the targetPort.

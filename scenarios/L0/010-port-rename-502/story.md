@@ -47,6 +47,9 @@ in this ticket, from the customer down:
 - ConfigMap `web-nginx`: the nginx server block of release 3.2.0, mounted
   into each web pod. Its `listen` line is the port nginx really opens.
 - ConfigMap `web-html`: the page.
+- Deployment `statuscheck`: the status page's checker, one pod that
+  requests `http://edge/` every 5 seconds and logs the answer. It stands in
+  for the customers, so the edge log always has a fresh request to read.
 
 ```mermaid
 flowchart TD
@@ -78,11 +81,13 @@ Start at the component that produced the 502, the edge, and read its log:
 kubectl -n {{ .Namespace }} logs deploy/edge
 ```
 
-Each 502 comes with an `[error]` line such as `connect() failed (111:
+The checker sends a request every 5 seconds, so the log is never empty:
+each 502 comes with an `[error]` line such as `connect() failed (111:
 Connection refused) while connecting to upstream ... upstream:
-"http://10.96.x.x:80/"`. The upstream address is the ClusterIP of Service
-`web`, so the edge found the name and the Service refused the connection.
-The edge is fine; the problem is at or below Service `web`.
+"http://10.96.x.x:80/"`, followed by the access line with `502`. The
+upstream address is the ClusterIP of Service `web`, so the edge found the
+name and the Service refused the connection. The edge is fine; the problem
+is at or below Service `web`.
 
 Next, look at the web pods and the Service's EndpointSlice together:
 
@@ -153,6 +158,9 @@ Why other moves do not work:
   describes the old port.
 - Restarting or editing the edge: its log already shows it found the
   Service and was refused; the edge has nothing to fix.
+- Removing the readiness probe when the pods show `0/1`: the pods turn
+  Ready and the page comes back, but the probe was the one thing that made
+  the port mismatch visible, so the last check keeps it.
 
 ## Check your work
 
@@ -160,11 +168,14 @@ Why other moves do not work:
 kubectl get endpointslices -l kubernetes.io/service-name=web
 kubectl rollout status deployment/web
 kubectl run curl --rm -it --restart=Never --image=curlimages/curl:8.14.1 -- curl -sS -m 5 http://edge.{{ .Namespace }}.svc/
+kubectl logs deploy/statuscheck --tail=3
 ```
 
 The EndpointSlice shows a number in PORTS and two addresses, `rollout
-status` ends with `successfully rolled out`, and the curl pod prints the
-page with `ACME Docs Portal 3.2.0`. A pod named `kubedrill-probe-...` may
+status` ends with `successfully rolled out`, the curl pod prints the
+page with `ACME Docs Portal 3.2.0`, and within 5 seconds the checker log
+switches from `-> failed: wget: server returned error: HTTP/1.1 502 Bad
+Gateway` to `GET http://edge/ -> ok`. A pod named `kubedrill-probe-...` may
 appear for a few seconds: it is the grader making the same request through
 the edge. The checks below the terminal turn green, and `kubedrill check`
 grades once from the shell.

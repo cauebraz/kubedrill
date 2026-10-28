@@ -45,7 +45,7 @@ in this ticket:
 ```mermaid
 flowchart TD
   A["<b>session-api</b><br/>connect to<br/>redis-2.redis.&lt;ns&gt;.svc.cluster.local:6379"]
-  N["<b>cluster DNS</b><br/>entry exists only if:<br/>- Service redis is headless (clusterIP None)<br/>- StatefulSet redis names it in serviceName<br/>- pod redis-2 matches the selector and is Ready"]
+  N["<b>cluster DNS</b><br/>entry exists only if:<br/>- StatefulSet redis names Service redis in serviceName<br/>- pod redis-2 matches the selector and is Ready<br/>(the ticket wants Service redis headless, clusterIP None)"]
   P["<b>Pod redis-2</b><br/>made by StatefulSet redis, label app=redis"]
   V["<b>PVC data-redis-2</b><br/>from volumeClaimTemplate data, disk on 'standard'"]
   A --> N --> P --> V
@@ -116,8 +116,11 @@ Why the tempting moves do not work:
 
 - A Deployment named `redis`: its pods are called `redis-<random>`, so no
   `redis-2` ever exists.
-- A normal Service (with a cluster IP): `redis.<ns>.svc` resolves, but to
-  one shared address, and `redis-2.redis...` still does not.
+- A normal Service (with a cluster IP): `redis-2.redis...` resolves here
+  too, because the cluster's DNS publishes the pod record for the Service
+  named in `serviceName`, but `redis.<ns>.svc` answers one shared address
+  that spreads requests over the nodes, the behavior the team rejected, and
+  the ticket asks for `clusterIP: None`.
 - Fixing a mistake in `serviceName` or `volumeClaimTemplates` with an edit:
   these fields cannot change on an existing StatefulSet. The API refuses the
   edit; recreate the StatefulSet instead, and the claims are reused.

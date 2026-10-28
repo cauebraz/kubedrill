@@ -97,7 +97,9 @@ Any change to the host, the port variable or the mount path passes;
 removing the init container or replacing its loop with a command that
 exits at once (`true`) does not, because the migrations never run. The
 Service `db` and the ConfigMap need no change: they match what every
-other environment has.
+other environment has. In missing-service-name a second Service named
+`db-primary` in front of the db pod also passes the checks, but it leaves
+the wrong name in the manifest and the debrief verdict says symptom-only.
 
 ## Verify
 
@@ -105,7 +107,7 @@ other environment has.
 kubectl -n {{ .Namespace }} rollout status deployment/api
 kubectl -n {{ .Namespace }} get pods
 kubectl -n {{ .Namespace }} logs <pod-name> -c migrate
-kubectl -n {{ .Namespace }} get endpointslices -l kubernetes.io/service-name=api
+kubectl -n {{ .Namespace }} get endpointslices -l kubernetes.io/service-name=api -o jsonpath='{range .items[*].endpoints[*]}{.addresses[0]} ready={.conditions.ready}{"\n"}{end}'
 kubectl -n {{ .Namespace }} run curl --rm -it --restart=Never --image=curlimages/curl:8.14.1 -- curl -sS -m 5 -o /dev/null -w '%{http_code}\n' http://api.{{ .Namespace }}.svc/
 ```
 
@@ -113,10 +115,12 @@ kubectl -n {{ .Namespace }} run curl --rm -it --restart=Never --image=curlimages
 new pods show `1/1 Running`, and their `migrate` logs end with `database
 reachable at db:5432` and `schema 12 ready, migrations done`: the loop
 reached its last line and exited 0, which is what let the app container
-start. The EndpointSlice lists two addresses once the old pods are gone,
-and the curl pod prints `200`. Before the fix it printed `curl: (7) Failed
-to connect to api.{{ .Namespace }}.svc port 80`: a Service whose pods are
-not Ready has no endpoint, and kube-proxy refuses the connection at once.
+start. The EndpointSlice lists the new addresses with `ready=true` (and
+the old ones with `ready=false` until they are gone), and the curl pod
+prints `200`. Before the fix it printed `curl: (7) Failed to connect to
+api.{{ .Namespace }}.svc port 80`: the EndpointSlice listed both stuck pods
+with `ready=false`, so kube-proxy had no destination and refused the
+connection at once.
 
 ## In the real world
 

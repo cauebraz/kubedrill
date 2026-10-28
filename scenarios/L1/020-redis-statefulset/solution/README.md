@@ -16,8 +16,10 @@ unresolved for any of these reasons, each with its own trace:
 - No Service `redis`: `kubectl get svc` lists nothing, every lookup answers
   NXDOMAIN.
 - Service `redis` has a cluster IP: `redis.<ns>.svc` resolves to one virtual
-  address, but CoreDNS publishes no per-pod record, so `redis-2.redis...`
-  stays NXDOMAIN.
+  address that load-balances. CoreDNS still publishes `redis-2.redis...` for
+  the pods of a StatefulSet that names the Service in `serviceName`
+  (measured on kind v1.37 with CoreDNS 1.14), so this is not a cause of
+  NXDOMAIN; it fails the headless check and the client's contract instead.
 - Pods without stable names: a Deployment names pods
   `redis-<hash>-<suffix>`, so no pod is ever called `redis-2`.
 - StatefulSet `spec.serviceName` names another Service: the pods get the

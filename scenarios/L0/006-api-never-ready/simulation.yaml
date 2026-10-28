@@ -273,8 +273,8 @@ guide:
     check: ready-replicas
   - title: Confirm the Service has endpoints again
     body: >-
-      The Service routes only to Ready pods. Its EndpointSlice now lists two
-      addresses with ready=true, so traffic reaches the api again. Then press
-      Validate to grade the assignment.
-    command: kubectl get endpointslices -l kubernetes.io/service-name=api
+      The Service routes only to Ready pods. Its EndpointSlice now lists the
+      new pod addresses with ready=true, so traffic reaches the api again.
+      Then press Validate to grade the assignment.
+    command: kubectl get endpointslices -l kubernetes.io/service-name=api -o jsonpath='{range .items[*].endpoints[*]}{.addresses[0]} ready={.conditions.ready}{"\n"}{end}'
     check: service-endpoints

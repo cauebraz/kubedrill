@@ -18,9 +18,10 @@ checks:
   - id: svc-headless
     description: service redis is headless (clusterIP None)
     why: >-
-      A Service with a cluster IP answers DNS with one virtual address and
-      load-balances across the pods; only a headless Service publishes one
-      record per pod, and session-api must reach each redis node by name.
+      A Service with a cluster IP answers DNS for redis with one virtual
+      address and load-balances across the pods; the ticket asks for the
+      headless form, the documented StatefulSet contract, so the name redis
+      itself never sends a client to a random node.
     resource:
       apiVersion: v1
       kind: Service

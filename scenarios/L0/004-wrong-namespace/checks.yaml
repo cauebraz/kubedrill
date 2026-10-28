@@ -15,10 +15,10 @@ checks:
   - id: service-endpoints
     description: service catalog has at least one ready endpoint
     why: >-
-      A Service is only a selector; EndpointSlices hold the pod IPs that are
-      Ready and match it. With no ready endpoint kube-proxy rejects every
-      connection to http://catalog/ (connection refused) and the storefront's
-      catalog panel stays empty.
+      A Service is only a selector; its EndpointSlices list the pod IPs that
+      match it and mark which are Ready. With no ready endpoint kube-proxy
+      rejects every connection to http://catalog/ (connection refused) and
+      the storefront's catalog panel stays empty.
     depends_on: [page-served]
     resource:
       apiVersion: discovery.k8s.io/v1
@@ -47,7 +47,7 @@ checks:
     description: deployment catalog has 2 ready replicas
     why: >-
       readyReplicas counts pods whose Ready condition is true; the same
-      condition is what puts a pod IP into the Service's EndpointSlices, so
+      condition marks a pod IP ready in the Service's EndpointSlices, so
       fewer than 2 here means the catalog runs below the agreed capacity.
     depends_on: [deploy-exists]
     weight: 2

@@ -148,8 +148,8 @@ Four steps, in this order.
 
 3. Replace the pods. The Secret now holds the new value, but the pods still
    have the old one in memory, because the environment was built when they
-   started. (A Secret volume is refreshed in place by the kubelet within
-   about a minute, but the restart makes the change immediate and
+   started. (A Secret volume is refreshed in place by the kubelet within a
+   minute or two, but the restart makes the change immediate and
    uniform.) A Deployment replaces its pods only when its pod template
    changes; `rollout restart` changes a timestamp annotation in the
    template, which is enough. New pods start, read the Secret again, and get

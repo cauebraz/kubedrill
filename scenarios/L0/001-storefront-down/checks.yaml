@@ -16,7 +16,7 @@ checks:
     description: deployment storefront has 3 ready replicas
     why: >-
       readyReplicas counts pods whose Ready condition is true; the same
-      condition is what puts a pod IP into the Service's EndpointSlices, so 0
+      condition marks a pod IP ready in the Service's EndpointSlices, so 0
       here means an outage even if the pods exist.
     depends_on: [deploy-exists]
     weight: 2
@@ -47,7 +47,7 @@ checks:
   - id: service-endpoints
     description: service storefront has at least one ready endpoint
     why: >-
-      A Service is only a selector; EndpointSlices hold the pod IPs that are
+      A Service is only a selector; its EndpointSlices mark which pod IPs are
       Ready. With no ready endpoint kube-proxy rejects every connection to
       the storefront Service (connection refused), and the edge answers 503.
     depends_on: [ready-replicas]

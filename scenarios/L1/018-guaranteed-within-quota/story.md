@@ -108,7 +108,11 @@ Why other moves do not work:
 - Setting only requests: the quota also caps limits, so the pod is still
   refused.
 - Large values such as `500m` per pod: the first pods fit, the next ones
-  are refused with `exceeded quota`, and some Deployments stay short.
+  are refused with `exceeded quota`, and some Deployments stay short. The
+  admitted pods then hold the budget, so a second try with smaller values
+  stalls: the rollout wants one new pod before it stops an old one, and
+  that pod is refused too. Scale the Deployment to 0 and back, and the
+  smaller pods come up.
 - Raising the quota: it works, and it spends money the ticket says the
   shop does not have.
 

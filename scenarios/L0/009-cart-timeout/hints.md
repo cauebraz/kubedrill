@@ -50,10 +50,17 @@ rejects every connection to the Service, which is why the client sees
 The Service `cart`, field `spec.ports[0].targetPort`: make it the port the
 cart container listens on, which is its `containerPort`. The pods need no
 change, and the EndpointSlice updates on its own.
-{{- else -}}
+{{- else if eq .Variant "stale-tier-selector" -}}
 The Service `cart`, field `spec.selector`: every key and value in it must be
 a label the cart pods carry, so correct or drop the entry that does not
-match. Changing the labels in the Deployment's pod template instead also
+match. Changing that label in the Deployment's pod template instead also
 works but rolls the pods, and a label added to a pod by hand is undone by
 the next rollout.
+{{- else -}}
+The Service `cart`, field `spec.selector`: every key and value in it must be
+a label the cart pods carry, so correct the entry that does not match. The
+pod template cannot take the Service's value instead: the Deployment
+selector is immutable and the API refuses a template whose `app` label no
+longer matches it. A label added to a pod by hand is undone by the next
+rollout.
 {{- end }}

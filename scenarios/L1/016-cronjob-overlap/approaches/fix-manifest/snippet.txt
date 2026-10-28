@@ -1,4 +1,4 @@
-mkdir -p deploy && kubectl -n {{ .Namespace }} get cronjob invoice -o yaml > deploy/invoice.yaml
-sed -i.bak 's/concurrencyPolicy: .*/concurrencyPolicy: Forbid/' deploy/invoice.yaml && rm deploy/invoice.yaml.bak
-kubectl -n {{ .Namespace }} diff -f deploy/invoice.yaml
-kubectl -n {{ .Namespace }} apply -f deploy/invoice.yaml
+mkdir -p deploy && kubectl -n {{ .Namespace }} get cronjob invoice -o yaml > deploy/invoice.yaml && kubectl -n {{ .Namespace }} get cronjob invoice-legacy -o yaml > deploy/invoice-legacy.yaml
+sed -i.bak 's/concurrencyPolicy: .*/concurrencyPolicy: Forbid/' deploy/invoice.yaml && sed -i.bak 's/^  suspend: .*/  suspend: true/' deploy/invoice-legacy.yaml && rm deploy/*.bak
+kubectl -n {{ .Namespace }} diff -f deploy/
+kubectl -n {{ .Namespace }} apply -f deploy/

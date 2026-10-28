@@ -47,10 +47,16 @@ Events differ per variant (measured on kind v1.37 with local-path-provisioner):
   "fast-ssd" not found`, and the pod's is `FailedScheduling 0/3 nodes are
   available: pod has unbound immediate PersistentVolumeClaims`. The class
   does not exist, so the scheduler cannot even apply WaitForFirstConsumer.
-- rwx-access: `describe pvc` shows `Access Modes: RWX` and `Warning
-  ProvisioningFailed failed to provision volume with StorageClass "standard":
-  NodePath only supports ReadWriteOnce and ReadWriteOncePod (1.22+) access
-  modes`. The class exists and the provisioner ran, but local-path creates a
+- rwx-access: `describe pvc` shows `Warning ProvisioningFailed failed to
+  provision volume with StorageClass "standard": NodePath only supports
+  ReadWriteOnce and ReadWriteOncePod (1.22+) access modes`, between `Normal`
+  `WaitForFirstConsumer`, `Provisioning` and `ExternalProvisioning` lines.
+  `Access Modes` is empty in `describe` and in `get pvc` while a claim is
+  Pending; `kubectl -n {{ .Namespace }} get pvc uploads-data -o
+  jsonpath='{.spec.accessModes}'` prints `["ReadWriteMany"]`. The pod has
+  no Events and no node: the scheduler chose a node (annotation
+  `volume.kubernetes.io/selected-node` on the claim) and waits for the
+  volume. The class exists and the provisioner ran, but local-path creates a
   directory on one node, which only that node can mount.
 - claim-name-typo: the claim shows only `Normal WaitForFirstConsumer waiting
   for first consumer to be created before binding`, and the pod shows

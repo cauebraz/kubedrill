@@ -36,9 +36,11 @@ kubectl -n {{ .Namespace }} describe pod <pod-name>
 Take `<pod-name>` from the NAME column of `get pods`; `describe pod` prints
 the Events at the end of its output only for a named pod. Every pod shows
 `ErrImagePull` or `ImagePullBackOff`, which rules out the mount, the crash
-loop, the probe, the selector and scheduling at once. The newest Event of a
-pod is `Error: ImagePullBackOff`; the `Failed to pull image` Event just above
-it names the image and the registry's answer, and that line differs per
+loop, the probe, the selector and scheduling at once. The Events of a pod
+alternate between a pull attempt (`Pulling`, `Failed to pull image ...`,
+`Error: ErrImagePull`) and the wait before the next one (`Back-off pulling
+image ...`, `Error: ImagePullBackOff`); the `Failed to pull image` Event
+names the image and the registry's answer, and that line differs per
 variant (measured on kind v1.37 with containerd; the text after the image
 reference comes from the container runtime):
 
@@ -94,7 +96,10 @@ kubectl -n {{ .Namespace }} run curl --rm -it --restart=Never --image=curlimages
 
 `rollout status` ends with `deployment "storefront" successfully rolled
 out`, and the EndpointSlice lists three addresses once the old pods are gone
-(a terminating pod can show as a fourth for a few seconds). Before the fix
+(a terminating pod can show as a fourth for a few seconds). The ENDPOINTS
+column listed the three pod addresses before the fix too, each with
+`conditions.ready: false` in `-o yaml`; the Service routes only to the ready
+ones, which is what the check reads. Before the fix
 the curl pod printed `curl: (7) Failed to connect to
 storefront.{{ .Namespace }}.svc port 80 after 0 ms: Could not connect to
 server` (measured on kind v1.37): a Service with zero ready endpoints answers

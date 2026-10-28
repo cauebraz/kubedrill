@@ -78,8 +78,10 @@ kubectl get events --sort-by=.lastTimestamp
 ```
 
 `Created job` comes from a CronJob tick, `Deleted job` means the CronJob
-removed a running Job, and `Killing ... Stopping container export` is that
-pod being stopped. Read the policy and the suspend flag of every CronJob:
+removed a Job: a running one under `Replace`, or a finished one beyond
+`successfulJobsHistoryLimit` under any policy. The `Killing` line on the
+pod next to it is what tells the first case apart. Read the policy and the
+suspend flag of every CronJob:
 
 ```sh
 kubectl get cronjobs -o custom-columns=NAME:.metadata.name,POLICY:.spec.concurrencyPolicy,SUSPEND:.spec.suspend,SCHEDULE:.spec.schedule
@@ -129,9 +131,11 @@ kubectl get jobs --watch
 ```
 
 Only `invoice` shows SUSPEND `False`, and over the next ticks at most one Job
-is `Running` at a time. When a run lasts longer than a minute, the next
-tick is skipped and the export starts every other minute; that is `Forbid`
-doing its job. Do not start an extra run by hand to test it: a Job created with
+is `Running` at a time. When a run lasts longer than a minute, the tick that
+finds it running creates nothing, and the next Job starts the moment the
+run completes, so the exports follow each other back to back instead of
+starting on the minute; that is `Forbid` doing its job. Do not start an
+extra run by hand to test it: a Job created with
 `kubectl create job --from=cronjob/invoice` is outside the policy and
 becomes a second writer. The checks below the terminal turn green, and
 `kubedrill check` grades once from the shell.

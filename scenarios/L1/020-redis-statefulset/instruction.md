@@ -32,10 +32,11 @@ New to Kubernetes? `kubedrill story` tells this ticket from zero.
 
 A StatefulSet gives each pod a fixed name (`redis-0`, `redis-1`, ...) and its
 own PersistentVolumeClaim from `volumeClaimTemplates`. The DNS name
-`<pod>.<service>.<ns>.svc.cluster.local` exists only when `spec.serviceName`
-names a headless Service (`clusterIP: None`) whose selector matches the pods,
-and only while the pod is Ready. `kubectl explain statefulset.spec` lists the
-fields.
+`<pod>.<service>.<ns>.svc.cluster.local` exists when `spec.serviceName` names
+a Service whose selector matches the pods, and only while the pod is Ready.
+A StatefulSet's Service is headless (`clusterIP: None`), so `redis.<ns>.svc`
+answers with the pods instead of one load-balanced address. `kubectl explain
+statefulset.spec` lists the fields.
 
 ## Environment
 

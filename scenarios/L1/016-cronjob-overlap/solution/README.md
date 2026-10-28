@@ -13,8 +13,9 @@ pod did what it was told. The problem is how many ran at once.
   schedule interval, so the controller starts a new Job while the previous
   one is `Running`; `get jobs` shows two `Running` Jobs of `invoice`.
 - A run killed mid-write under `concurrencyPolicy: Replace`: each tick deletes
-  the running Job; events show `Deleted job invoice-<n>` next to `Created
-  job`, and the killed run's log ends without `done`.
+  the running Job; events show `Killing ... Stopping container export`,
+  `Deleted job invoice-<n>` and `Created job invoice-<n+1>` in the same
+  second, and the killed run's Job and pod are gone with their log.
 - A second scheduler: another CronJob that is not suspended runs the same
   export on the same schedule; `get jobs` shows Jobs with two name prefixes
   created in the same minute.
@@ -95,9 +96,11 @@ kubectl -n {{ .Namespace }} logs job/<job-name>
 `get cronjobs` shows `invoice` with SUSPEND `False` and every other
 CronJob in the namespace with `True`. Over the next ticks the watch shows at most
 one `Running` Job of `invoice`: under `Forbid` a tick that finds a run still
-active creates nothing, and the first tick after it completes starts the
-next run, so when a run lasts longer than a minute (about 90 s in
-allow-overlap) `invoice` starts a Job every other minute.
+active creates nothing (event `JobAlreadyActive`), and as soon as that run
+completes the controller starts the Job of the tick it skipped, so when a
+run lasts longer than a minute (about 90 s in allow-overlap) the Jobs of
+`invoice` follow each other back to back, one every 93 s or so instead of
+one per minute, and never two at once.
 Take `<job-name>` from a Job that reached `Complete` after the change: its
 log shows one `start` and one `done`. A manual
 `kubectl create job --from=cronjob/invoice` is not part of the check:
@@ -116,9 +119,11 @@ the last finished Jobs and their logs around for exactly this comparison.
   in another cluster. `Forbid` cannot see any of them, so the export itself
   should take a lock (a Lease, a lock row, a conditional write) and write to
   a temporary file that it renames at the end.
-- A run skipped by `Forbid` is a missed export. Alert on
+- A tick skipped by `Forbid` runs as soon as the active Job completes, at
+  an odd time, and only the most recent missed tick runs. Alert on
   `status.lastSuccessfulTime` older than the interval, and set
-  `startingDeadlineSeconds` so a late tick still runs within a window.
+  `startingDeadlineSeconds` when a tick that is too late should be dropped
+  instead of run late.
 
 ## Go deeper
 

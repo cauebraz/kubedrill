@@ -124,8 +124,9 @@ the waiting pod starts on its next retry, with no new revision. Or
 `kubectl -n {{ .Namespace }} rollout undo deployment/checkout` without a
 target returns to the previous revision, now 2.5.0 (revision 4), and then
 the fix-forward line applies. After the key is restored, `rollout status`
-can still print the progress-deadline error once, because the deadline
-passed while the pod waited; the `Progressing` reason turns to
+still exits with the progress-deadline error for a few seconds, because
+the deadline passed while the pod waited; the kubelet retries the
+container within about 10 s, and the `Progressing` reason turns to
 `NewReplicaSetAvailable` as soon as the fourth pod is available. Every
 route passes the checks, which read the ready and up-to-date replica
 counts, the `Progressing` reason, the Service's ready endpoints and the pod

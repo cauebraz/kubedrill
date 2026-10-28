@@ -122,8 +122,8 @@ meeting:
 diagram:
   nodes:
     - id: customers
-      label: Customers
-      note: get 502 from the edge
+      label: Customers + statuscheck pod
+      note: get 502 from the edge; the checker requests http://edge/ every 5 seconds and logs it
     - id: edge
       label: Service edge + edge pod
       note: nginx proxy, proxy_pass http://web:80/

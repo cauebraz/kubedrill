@@ -95,8 +95,9 @@ gone, but its output is kept until the next restart replaces it:
 kubectl logs <pod-name> --previous
 ```
 
-Without `--previous` you get the output of the current attempt, which may
-be empty while the kubelet waits. The last line starts with `worker:` and
+Without `--previous` you get the current attempt: while the kubelet waits
+between restarts it serves the output of the last exit, so both forms print
+the same line here. The last line starts with `worker:` and
 names the input the program could not use: an empty `QUEUE_URL`, an unknown
 flag, or a config file it cannot read. That line tells the three episodes
 apart.

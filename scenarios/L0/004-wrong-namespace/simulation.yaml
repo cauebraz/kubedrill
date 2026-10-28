@@ -195,9 +195,9 @@ quiz:
       - text: Only the pods; edit their labels with kubectl label.
         explain: >-
           The Deployment's ReplicaSet recreates pods from its template, so a
-          label added to a running pod is lost on the next restart, and the
-          ReplicaSet drops a pod whose labels no longer match its own
-          selector.
+          label added to a running pod is lost when the pod is replaced, and
+          the ReplicaSet releases a pod whose labels no longer match its own
+          selector and creates another one in its place.
   - question: The EndpointSlice lists two addresses with port 8080 and the connection is still refused. What does the refusal tell you?
     choices:
       - text: The pods are reached, but nothing listens on 8080 inside them; the targetPort is wrong.

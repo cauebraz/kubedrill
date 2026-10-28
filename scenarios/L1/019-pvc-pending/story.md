@@ -76,7 +76,9 @@ kubectl -n {{ .Namespace }} get pvc,pods
 kubectl describe pvc uploads-data
 ```
 
-`get pvc` shows the claim's `STATUS`, `STORAGECLASS` and `ACCESS MODES`.
+`get pvc` shows the claim's `STATUS` and `STORAGECLASS`; `ACCESS MODES`
+stays empty until the claim is Bound, so read what the claim asks for with
+`kubectl get pvc uploads-data -o jsonpath='{.spec.accessModes}'`.
 `describe pvc` ends with Events, notes the cluster wrote about this claim:
 
 - `ProvisioningFailed ... storageclass ... not found`: the claim asks for a
@@ -96,6 +98,9 @@ kubectl describe pod -l app.kubernetes.io/name=uploads
 The `Volumes` section shows `ClaimName`, the claim the pod asks for, and the
 `FailedScheduling` Event says why the scheduler found no node. If it says a
 claim is `not found`, compare that name with `uploads-data` letter by letter.
+A pod with no Events at all is also an answer: the scheduler chose a node
+and waits for the volume the provisioner could not create, so the reason is
+in the claim's Events.
 
 ## The fix and why it works
 

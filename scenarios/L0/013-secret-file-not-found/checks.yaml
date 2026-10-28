@@ -57,3 +57,19 @@ checks:
       name: api
     path: "{.status.availableReplicas}"
     equals: "2"
+
+  - id: volume-from-db-credentials
+    description: the api pods take the password from Secret db-credentials
+    why: >-
+      The ticket keeps one Secret, db-credentials; a second Secret created
+      under the name the template asks for starts the pods but leaves the
+      password in two objects and the template pointing at the wrong one.
+    depends_on: [deploy-exists]
+    spoiler: true
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: api
+    path: "{.spec.template.spec.volumes[*].secret.secretName} {.spec.template.spec.volumes[*].projected.sources[*].secret.name}"
+    matches: '^\s*(db-credentials\s*)+$'

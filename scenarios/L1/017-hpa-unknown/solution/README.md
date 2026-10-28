@@ -55,8 +55,9 @@ broke, and it differs per variant (measured on kind v1.37 with metrics-server):
   asked for CPU scaling.
 
 The first Events after the start can read `no metrics returned from resource
-metrics API`; that is the scrape delay of a new pod, and the newer Events
-carry the reason that stays.
+metrics API` and then `did not receive metrics for targeted pods (pods might
+be unready)`; that is the scrape delay of a new pod, and the Events that
+follow, about a minute after the start, carry the reason that stays.
 
 ## Change
 
@@ -102,7 +103,8 @@ kubectl -n {{ .Namespace }} describe hpa api
 ```
 
 Within about a minute TARGETS changes from `<unknown>/50%` to a percentage
-such as `cpu: 0%/50%` (an idle nginx uses under 1m of CPU), and the
+such as `cpu: 2%/50%` (an idle nginx uses 1m to 4m of CPU against the 50m
+request, the numbers `kubectl top pods` prints), and the
 Conditions read `ScalingActive True ValidMetricFound the HPA was able to
 successfully calculate a replica count from cpu resource utilization
 (percentage of request)`. Stop the watch with Ctrl-C. The value appears only
@@ -129,7 +131,7 @@ after metrics-server has scraped the pod once, so a fresh pod shows
 ## Go deeper
 
 - Horizontal Pod Autoscaling, the algorithm and the conditions:
-  https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/
+  https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/
 - HPA walkthrough with metrics-server:
   https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale-walkthrough/
 - Requests and limits:

@@ -187,7 +187,8 @@ quiz:
         explain: >-
           The kubelet keeps the log of the last terminated container.
           --previous reads it; without the flag you get the current attempt,
-          often empty while the kubelet waits.
+          which is that same output while the kubelet waits between restarts
+          and a fresh one once the container runs again.
       - text: Nowhere, it is lost when the container exits.
         explain: >-
           The log of the previous container is kept while the pod exists.

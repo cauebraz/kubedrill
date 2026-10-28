@@ -13,9 +13,12 @@ Read the Events of both objects:
 `kubectl -n {{ .Namespace }} describe pvc uploads-data` and
 `kubectl -n {{ .Namespace }} describe pod -l app.kubernetes.io/name=uploads`,
 or all of them with `kubectl -n {{ .Namespace }} get events --sort-by=.lastTimestamp`.
-Note the `Warning` lines (`ProvisioningFailed`, `FailedScheduling`) and
-compare the claim's `StorageClass` and `Access Modes`, and the claim name in
-the pod's `Volumes` section, with what the cluster has.
+Note the `Warning` lines (`ProvisioningFailed`, `FailedScheduling`; a pod
+with no Events at all is waiting for its claim) and compare the claim's
+`StorageClass`, its access mode (`kubectl -n {{ .Namespace }} get pvc
+uploads-data -o jsonpath='{.spec.accessModes}'`, because `describe` leaves
+`Access Modes` empty while the claim is Pending) and the claim name in the
+pod's `Volumes` section with what the cluster has.
 
 ## Hint 3: what it means
 

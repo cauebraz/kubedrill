@@ -109,7 +109,8 @@ kubectl -n {{ .Namespace }} run curl --rm -it --restart=Never --image=curlimages
 addresses, and the curl pod prints
 `{"service": "ACME API 3.2.0", "status": "ok"}`. Before the fix the same
 curl printed `curl: (7) Failed to connect to api.{{ .Namespace }}.svc port
-80 after 0 ms: Could not connect to server`: a Service with no ready
+80 after 1 ms: Could not connect to server` (the millisecond count
+varies): a Service with no ready
 endpoint is refused at once by kube-proxy, which is why the frontend saw a
 refusal and not a timeout.
 

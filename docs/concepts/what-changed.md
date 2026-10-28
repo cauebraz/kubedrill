@@ -64,7 +64,7 @@ LAST SEEN   TYPE      REASON              OBJECT                 MESSAGE
 ## Common failures
 
 - Rollback did not fix it -> the change was outside the pod template (a ConfigMap, a Service, a NetworkPolicy) -> `kubectl get <kind> <name> -o yaml --show-managed-fields` and read the newest `time`.
-- `rollout undo` fails with no revision to roll back to -> `revisionHistoryLimit: 0` deleted the old ReplicaSets -> `kubectl get deploy <name> -o jsonpath='{.spec.revisionHistoryLimit}'`.
+- `rollout undo` fails with `no rollout history found` -> the Deployment is still at revision 1 (the bad version was the first one applied), or `revisionHistoryLimit: 0` deleted the old ReplicaSets -> `kubectl rollout history deployment/<name>` and `kubectl get deploy <name> -o jsonpath='{.spec.revisionHistoryLimit}'`.
 - Rolled back, then the next GitOps sync reapplied the bad version -> the cluster was fixed but Git was not -> `kubectl diff -f <manifest>` after the sync.
 - Pods restarted with no new revision -> a ConfigMap or Secret consumed by the app changed, or a node was drained -> `kubectl get events -A --sort-by=.lastTimestamp` around the restart time.
 - Events empty for an incident from this morning -> older than `--event-ttl` (1h) -> rely on `managedFields` times and ReplicaSet ages instead.

@@ -48,16 +48,15 @@ meeting:
       choices:
         - say: What exactly does kubectl show for the pod, word for word?
           reply: >-
-            The STATUS column flips between OOMKilled and CrashLoopBackOff, the
-            RESTARTS number keeps going up, and the Deployment says 0
-            available.
+            The STATUS column says OOMKilled, the RESTARTS number keeps going
+            up, and the Deployment says 0 available.
           feedback: >-
             OOMKilled is a precise word: the kernel killed a container for
             using more memory than its limit allowed. That rules out a crash
             in the code and points at a limit, which the pod description
             shows per container.
           best: true
-          fact: The pod flips between OOMKilled and CrashLoopBackOff, RESTARTS climbs, and the Deployment has 0 available.
+          fact: The pod shows OOMKilled, RESTARTS climbs, and the Deployment has 0 available.
         - say: Is the node running out of memory?
           reply: >-
             I do not know how to tell. Other teams' pods on the cluster look

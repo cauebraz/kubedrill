@@ -171,14 +171,15 @@ deploy puts the wrong one back.
 kubectl rollout status deployment/api
 kubectl get pods
 kubectl logs <pod-name> -c migrate
-kubectl get endpointslices -l kubernetes.io/service-name=api
+kubectl get endpointslices -l kubernetes.io/service-name=api -o jsonpath='{range .items[*].endpoints[*]}{.addresses[0]} ready={.conditions.ready}{"\n"}{end}'
 ```
 
 `rollout status` ends with `successfully rolled out`. `get pods` shows two
 api pods `Running` with `1/1` READY. The init logs now end with `schema 12
-ready, migrations done`, the loop's last line. The EndpointSlice lists two
-addresses the Service sends traffic to; an empty list was the reason for the
-refused connections. A pod named `kubedrill-probe-...` may appear for a few
+ready, migrations done`, the loop's last line. The EndpointSlice lists the
+new pod addresses with `ready=true`, the ones the Service sends traffic to;
+before the fix it listed the stuck pods with `ready=false`, which was the
+reason for the refused connections. A pod named `kubedrill-probe-...` may appear for a few
 seconds: it is the grader sending one request through the Service, and the
 grader deletes it. The checks below the terminal turn green, and `kubedrill
 check` grades once from the shell.

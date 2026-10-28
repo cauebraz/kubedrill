@@ -68,15 +68,19 @@ Read the STATUS column. It names the step where each pod is stuck:
 `Pending` (no node yet), `ContainerCreating` (pulling or mounting),
 `ErrImagePull` or `ImagePullBackOff` (the image download failed),
 `CrashLoopBackOff` (the container starts and dies), or `Running` with
-`0/1` in READY (started, but the probe fails). All 3 pods show the same
-status, which already tells you the problem is in the shared blueprint, not
-in one unlucky pod.
+`0/1` in READY (started, but the probe fails). All 3 pods show one of the
+two pull statuses (the kubelet alternates between them while it retries),
+which already tells you the problem is in the shared blueprint, not in one
+unlucky pod.
 
 Next, ask a pod why. You need its name; you do not have to type it:
 
 - Press TAB: `kubectl describe pod stor` then TAB completes the name.
 - Or let a label pick the pods: `kubectl describe pods -l
-  app.kubernetes.io/name=storefront` describes all 3 without any name.
+  app.kubernetes.io/name=storefront` describes all 3 without any name, but
+  with several pods matched it prints no `Events` section unless you add
+  `--show-events=true`; `kubectl get events --sort-by=.lastTimestamp` lists
+  them all.
 - Or copy it: select the name in the terminal of the page with the mouse
   and copy it with `Cmd-c` (`Ctrl-Shift-c` on Linux).
 
@@ -150,8 +154,10 @@ kubectl get endpointslices -l kubernetes.io/service-name=storefront
 `rollout status` waits and ends with `successfully rolled out`. `get pods`
 shows 3 pods `Running` with `1/1` READY. A pod named `kubedrill-probe-...`
 may appear for a few seconds: it is the grader sending one request through
-the Service, the way a customer would, and the grader deletes it. The EndpointSlice lists the pod
-addresses the Service sends traffic to; an empty list was the reason for the
+the Service, the way a customer would, and the grader deletes it. The
+EndpointSlice lists the pod addresses; it listed three before the fix too,
+each marked `ready: false` (add `-o yaml` to see the conditions), and the
+Service sends traffic only to the ready ones, which was the reason for the
 503. The checks below the terminal turn green, and `kubedrill check`
 grades once from the shell.
 

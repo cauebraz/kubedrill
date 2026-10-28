@@ -30,7 +30,9 @@ anything.
   ConfigMap `edge-nginx`, shared with other teams), Service `edge` (port 80,
   the customer entry point), Deployment `web` (2 replicas, container
   `nginx`, release 3.2.0), Service `web` (port 80), ConfigMaps `web-nginx`
-  (the server block of release 3.2.0) and `web-html` (the page)
+  (the server block of release 3.2.0) and `web-html` (the page), Deployment
+  `statuscheck` (1 replica, the status page's checker; it requests
+  `http://edge/` every 5 seconds and logs the result)
 - You have cluster-admin on the local kind cluster
 - The port change in release 3.2.0 is intentional; the docs team ships
   `web-nginx` with the release and it stays as it is
@@ -43,10 +45,12 @@ anything.
 - service web serves the ACME Docs Portal 3.2.0 page
 - service edge serves the ACME Docs Portal 3.2.0 page
 - configmap web-nginx still holds the release 3.2.0 server block
+- deployment web still has a readiness probe
 
 ## Constraints
 
 - Keep the names of the Deployments, Services and ConfigMaps
 - Do not change ConfigMap `web-nginx`; the port of release 3.2.0 stays
-- Do not change the edge Deployment, Service or ConfigMap
+- Do not change the edge Deployment, Service or ConfigMap, or the
+  `statuscheck` Deployment
 - Do not delete the namespace

@@ -26,8 +26,9 @@ meeting:
           feedback: >-
             The names are the contract. A name of the form
             pod.service.namespace.svc.cluster.local only exists for a pod with
-            a stable name behind a headless Service, so the client already
-            decided which objects you build.
+            a stable name, which a StatefulSet gives, under the Service it
+            names in serviceName, so the client already decided which objects
+            you build.
           best: true
           fact: session-api connects to redis-0, redis-1 and redis-2 by name under the Service redis, port 6379, and picks the node itself.
         - say: Can we put one Service with a cluster IP in front of three redis pods?
@@ -116,7 +117,7 @@ diagram:
       note: connects to redis-N.redis by name
     - id: dns
       label: Cluster DNS
-      note: one record per Ready pod of a headless Service
+      note: one record per Ready pod of the Service in serviceName
     - id: svc
       label: Service redis
       note: clusterIP None, selector app=redis
@@ -150,22 +151,26 @@ diagram:
       label: mounted at /data
 
 quiz:
-  - question: Why does redis-2.redis.<ns>.svc.cluster.local need a headless Service?
+  - question: The ticket asks for a headless Service (clusterIP None) in front of the redis pods. What does that change?
     choices:
-      - text: Only a Service with clusterIP None makes DNS publish one record per pod.
+      - text: redis.<ns>.svc answers with the pod addresses instead of one virtual IP, so no request is load-balanced to a random node.
         correct: true
         explain: >-
           A Service with a cluster IP gets one record pointing at its virtual
-          address. A headless Service has no virtual address, so DNS answers
-          with the pods, and adds a record per pod named by the StatefulSet.
+          address and kube-proxy spreads connections over the pods. With
+          clusterIP None DNS answers with the pods themselves, and the
+          per-pod records redis-N.redis come from serviceName.
       - text: A headless Service is faster because it skips kube-proxy.
         explain: >-
           It does skip the virtual IP, but that is a side effect. The reason
-          here is the per-pod record, which a cluster IP Service never has.
-      - text: Any Service works once the StatefulSet exists.
+          here is that the client picks the node, and a load-balanced address
+          would send its writes to a random one.
+      - text: Without clusterIP None, redis-2.redis.<ns>.svc.cluster.local cannot resolve.
         explain: >-
-          With a cluster IP, redis.<ns>.svc resolves but redis-2.redis... does
-          not. The record comes from the headless Service plus serviceName.
+          On this cluster CoreDNS publishes redis-2.redis for a Service with a
+          cluster IP too, as long as the StatefulSet names it in serviceName
+          and the pod is Ready. The headless form is the documented
+          StatefulSet contract and keeps redis.<ns>.svc from load-balancing.
   - question: The StatefulSet shows 3/3 but redis-2.redis does not resolve. What do you check first?
     choices:
       - text: That spec.serviceName is redis and the Service selector matches the pods.

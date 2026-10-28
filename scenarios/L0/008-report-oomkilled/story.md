@@ -51,7 +51,7 @@ flowchart TD
   R["<b>ReplicaSet</b><br/>creates the pod"]
   P["<b>Pod</b><br/>containers: report (and maybe a helper)<br/>each container gets a memory limit from<br/>the Deployment's template, or the namespace<br/>LimitRange default when the template set none"]
   K["<b>Kernel on the node</b><br/>container grows past its limit:<br/>killed, exit 137<br/>Kubernetes writes: Last State OOMKilled"]
-  L["<b>kubelet</b><br/>restarts it with a growing pause:<br/>CrashLoopBackOff<br/>the pod is never Ready long enough:<br/>AVAILABLE 0"]
+  L["<b>kubelet</b><br/>restarts it with a growing pause<br/>(10s, 20s, 40s ...)<br/>the pod is never Ready long enough:<br/>AVAILABLE 0"]
   D --> R --> P --> K --> L
 ```
 
@@ -72,10 +72,11 @@ kubectl -n {{ .Namespace }} get pods
 ```
 
 Read three columns. READY says how many of the pod's containers are ready
-out of how many it has. STATUS alternates between `OOMKilled` (the kernel
-just killed a container) and `CrashLoopBackOff` (the kubelet is waiting
-before the next restart). RESTARTS counts the kills; a number that grows
-while you watch means it happens on every start, not once.
+out of how many it has. STATUS reads `OOMKilled`, the reason of the last
+kill, and keeps reading it while the kubelet waits before the next restart
+(on this kubelet the wait is not shown as `CrashLoopBackOff`; older ones
+alternate between the two words). RESTARTS counts the kills; a number that
+grows while you watch means it happens on every start, not once.
 
 Next, ask the pod for details. You need its name; you do not have to type
 it:

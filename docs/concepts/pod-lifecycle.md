@@ -73,8 +73,8 @@ If you don't see a command prompt, try pressing enter.
 
 - STATUS `ImagePullBackOff` or `ErrImagePull` -> the image reference cannot be pulled -> `kubectl describe pod <pod>` and read the `Failed` event message (see `image-pull`).
 - STATUS `CrashLoopBackOff` with `Last State: Terminated, Exit Code: 1` -> the process exits on start (bad config, missing env, bad command) -> `kubectl logs <pod> --previous`.
-- STATUS `CrashLoopBackOff` with `Reason: OOMKilled, Exit Code: 137` -> memory limit below real usage -> `kubectl get pod <pod> -o jsonpath='{.spec.containers[0].resources.limits.memory}'`.
-- STATUS `Pending` with no node -> unschedulable (resources, taints, node selector) -> `kubectl describe pod <pod>` and read the `FailedScheduling` event.
+- STATUS `OOMKilled` (the kubelet can show it for minutes between restarts) or `CrashLoopBackOff` with `Last State: Terminated, Reason: OOMKilled, Exit Code: 137` -> memory limit below real usage -> `kubectl get pod <pod> -o jsonpath='{.spec.containers[0].resources.limits.memory}'`.
+- STATUS `Pending` with no node -> unschedulable (resources, taints, node selector) -> `kubectl describe pod <pod>` and read the `FailedScheduling` event; with no event at all, the scheduler is waiting on something the pod needs first, such as a PersistentVolumeClaim that is itself `Pending` (`kubectl describe pvc <claim>`).
 - STATUS `ContainerCreating` for more than a minute -> a volume or secret the pod mounts does not exist -> `kubectl describe pod <pod>`, look for `FailedMount`.
 - STATUS `Completed` on a Deployment pod -> the main process exits 0 and `restartPolicy: Always` restarts it into `CrashLoopBackOff` -> `kubectl get pod <pod> -o jsonpath='{.spec.containers[0].command}'`.
 - STATUS `Running` but `READY 0/1` -> readiness probe failing -> `kubectl describe pod <pod>`, look for `Unhealthy` events (see `readiness-and-endpoints`).

@@ -15,15 +15,16 @@ NodePort and Endpoints on one screen.
 In the LABELS column: the labels the `admin` pod carries, and whether another
 pod in the namespace shares any of them. In the ports output: the
 `containerPort` number. In `describe service admin`: the `Endpoints:` line,
-which lists the pod IP and port the Service forwards to, or `<none>`.
+which lists the pod IP and port the Service forwards to, or stays empty
+(older kubectl prints `<none>`).
 `kubectl -n {{ .Namespace }} get endpointslices -l kubernetes.io/service-name=admin -o jsonpath='{range .items[*].endpoints[*]}{.targetRef.name} ready={.conditions.ready}{"\n"}{end}'`
 names each endpoint pod, so you see which pods the selector matched.
 
 ## Hint 3: what it means
 
 `spec.selector` is an AND of label pairs: a pod becomes an endpoint when it
-carries every pair. A selector that names a label the pod lacks gives
-`Endpoints: <none>` and connection refused; a selector that another pod also
+carries every pair. A selector that names a label the pod lacks leaves the
+`Endpoints:` line empty and gives connection refused; a selector that another pod also
 satisfies sends part of the requests to that pod, so add a pair only the
 stable admin pod carries. `targetPort` must be the port the container listens
 on, or the endpoint exists and the request is refused inside the pod.

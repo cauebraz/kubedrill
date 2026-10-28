@@ -106,7 +106,8 @@ kubectl get endpointslices -l kubernetes.io/service-name=admin
 ```
 
 `describe` prints Type, Port, TargetPort, NodePort and Endpoints together.
-`Endpoints: <none>` means the selector matched no Ready pod. Two addresses
+An empty `Endpoints:` line (older kubectl prints `<none>`) means the
+selector matched no Ready pod. Two addresses
 mean it matched two pods. The EndpointSlice is the same information as a
 list of the pod IPs the Service forwards to.
 

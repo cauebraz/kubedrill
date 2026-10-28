@@ -79,6 +79,25 @@ All notable changes to kubedrill. The format follows
 - `kubedrill up` and `web` skip images the nodes already hold; setup hook
   output is kept for errors instead of printed.
 - The debrief count reads "API reads before the first write".
+- Every scenario was replayed live, variant by variant, and the text was
+  corrected where the cluster disagreed: endpoint tables list not-ready
+  addresses (001, 004, 006, 007), `describe pvc` leaves Access Modes empty
+  while Pending (019), an OOMKilled container shows `OOMKilled` not
+  `CrashLoopBackOff` (008), per-pod DNS records are not exclusive to
+  headless Services (020), Forbid runs the missed tick when the active
+  Job ends (016), `Endpoints:` prints blank rather than `<none>` (004,
+  011), ConfigMap and Secret volumes refresh in 65-85 s (012, 014), the
+  stalled rollout after an oversized attempt (018), `rollout status`
+  exits with the deadline error on every call (015), and `kubectl logs`
+  without `--previous` is not empty during the backoff (005). New
+  checks: 010 keeps the readiness probe, 013 the volume names
+  `db-credentials`; 010 gains a status checker so the edge log holds the
+  502 before anyone requests it; 011's NodePort check retries the
+  kube-proxy rule race.
+- The debrief verdict counts a pod template label change as a fix; only
+  annotations under the template are metadata-only.
+- Concept pages: Pending with no event points at the claim, OOMKilled
+  status, `rollout undo` at revision 1, zero ready endpoints.
 
 ### Security
 

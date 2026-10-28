@@ -1,4 +1,4 @@
-mkdir -p deploy && kubectl -n {{ .Namespace }} get deployment storefront -o yaml > deploy/storefront.yaml
+mkdir -p deploy && kubectl -n {{ .Namespace }} get deployment storefront -o yaml | sed '/resourceVersion:/d' > deploy/storefront.yaml
 sed -i.bak 's|image: .*|image: nginx:1.27-alpine|' deploy/storefront.yaml && rm deploy/storefront.yaml.bak
 kubectl -n {{ .Namespace }} diff -f deploy/storefront.yaml
 kubectl -n {{ .Namespace }} apply -f deploy/storefront.yaml

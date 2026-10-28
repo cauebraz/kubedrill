@@ -75,7 +75,7 @@ kubectl -n {{ .Namespace }} get pods --sort-by='.status.containerStatuses[0].res
 
 Read the RESTARTS column. 39 pods show `0`; the last row shows a number
 that grows, with the time of the last restart in parentheses, for example
-`4 (31s ago)`. Its STATUS may say `Running`, `Error` or
+`4 (31s ago)`. Its STATUS may say `Running`, `Error`, `OOMKilled` or
 `CrashLoopBackOff` depending on when you look: after each failure the
 kubelet waits longer before the next start (10s, 20s, 40s, up to 5
 minutes), and `CrashLoopBackOff` is that waiting. Note the pod's name;

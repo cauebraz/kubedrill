@@ -180,7 +180,7 @@ diagram:
       label: only if the selector matches
 
 quiz:
-  - question: kubectl describe service admin shows Endpoints <none> while the admin pod is 1/1 Running. What is wrong?
+  - question: kubectl describe service admin shows an empty Endpoints line while the admin pod is 1/1 Running. What is wrong?
     choices:
       - text: The selector names a label pair the pod does not carry.
         correct: true

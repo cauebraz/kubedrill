@@ -2,9 +2,9 @@
 
 ## Symptom
 
-Deployment `report` shows `0/1` ready and `0` available, the pod alternates
-between `OOMKilled` and `CrashLoopBackOff`, and its RESTARTS count grows
-while you watch. The laptop measurement (about 50 MB) did not catch it
+Deployment `report` shows `0/1` ready and `0` available, the pod shows
+`OOMKilled` (older kubelets alternate it with `CrashLoopBackOff` during the
+restart backoff), and its RESTARTS count grows while you watch. The laptop measurement (about 50 MB) did not catch it
 because nothing on the laptop limited the process; in the cluster every
 container runs under a memory limit the kernel enforces, and the number
 that matters is the limit of the container being killed, not the average
@@ -108,8 +108,8 @@ kubectl -n {{ .Namespace }} rollout restart deployment/report
 ```
 
 Raising only `max` and then running `set resources` on the Deployment
-works too; raising only the defaults does not, because `max` still caps
-them.
+works too; raising only the defaults is refused by the API (`default value
+128Mi is greater than max value 32Mi`), because `max` still caps them.
 
 The checks read the Deployment's available replicas, the `lastState` of
 every container in the pod and the `report` container's args, so either

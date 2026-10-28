@@ -551,10 +551,12 @@ func eachLine(r io.Reader, limit int, fn func(line []byte)) error {
 
 // metadataOnly reports whether a patch or update request body changes only
 // metadata: a merge or strategic merge patch (an object) whose keys outside
-// metadata, apiVersion and kind are only spec.template.metadata, or a JSON
-// patch (an array) whose every path is under /metadata or
-// /spec/template/metadata. An empty or unreadable body is not metadata
-// only, so a write without a recorded body keeps counting as a change.
+// metadata, apiVersion and kind are only spec.template.metadata.annotations,
+// or a JSON patch (an array) whose every path is under /metadata or
+// /spec/template/metadata/annotations. Template labels are a change: they
+// move pods in or out of a selector. An empty or unreadable body is not
+// metadata only, so a write without a recorded body keeps counting as a
+// change.
 func metadataOnly(body json.RawMessage) bool {
 	if len(body) == 0 || string(body) == "null" {
 		return false
@@ -567,7 +569,7 @@ func metadataOnly(body json.RawMessage) bool {
 			return false
 		}
 		for _, op := range ops {
-			if !strings.HasPrefix(op.Path, "/metadata") && !strings.HasPrefix(op.Path, "/spec/template/metadata") {
+			if !strings.HasPrefix(op.Path, "/metadata") && !strings.HasPrefix(op.Path, "/spec/template/metadata/annotations") {
 				return false
 			}
 		}
@@ -607,9 +609,18 @@ func onlyTemplateMetadata(spec json.RawMessage) bool {
 		if json.Unmarshal(v, &tpl) != nil {
 			return false
 		}
-		for tk := range tpl {
+		for tk, tv := range tpl {
 			if tk != "metadata" {
 				return false
+			}
+			var md map[string]json.RawMessage
+			if json.Unmarshal(tv, &md) != nil {
+				return false
+			}
+			for mk := range md {
+				if mk != "annotations" {
+					return false
+				}
 			}
 		}
 	}

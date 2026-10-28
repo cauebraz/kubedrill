@@ -1,6 +1,6 @@
 # Readiness and endpoints
 
-A Service sends traffic only to pods whose `Ready` condition is true, and that condition comes from the readiness probe. `Running` describes the process; `Ready` describes whether traffic may reach it; the two differ in exactly the cases that page you. The sentence to hold on call: a Deployment whose 2 pods are Running with READY 0/2 has zero endpoints, so the Service is down even though nothing crashed.
+A Service sends traffic only to pods whose `Ready` condition is true, and that condition comes from the readiness probe. `Running` describes the process; `Ready` describes whether traffic may reach it; the two differ in exactly the cases that page you. The sentence to hold on call: a Deployment whose 2 pods are Running with READY 0/2 has zero ready endpoints, so the Service is down even though nothing crashed.
 
 ## The mechanism
 

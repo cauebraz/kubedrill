@@ -84,3 +84,18 @@ checks:
     path: '{.data.default\.conf}'
     contains: "listen {{ .Vars.listen_port }};"
     spoiler: true
+
+  - id: web-probe-kept
+    description: deployment web still has a readiness probe
+    why: >-
+      Without a readiness probe every new pod counts as Ready the moment it
+      starts, so the Service sends requests to a pod before nginx listens and
+      the next port mismatch goes unnoticed; the probe is what made this
+      outage visible in the READY column.
+    resource:
+      apiVersion: apps/v1
+      kind: Deployment
+      namespace: "{{ .Namespace }}"
+      name: web
+    path: "{.spec.template.spec.containers[0].readinessProbe}"
+    not_empty: true

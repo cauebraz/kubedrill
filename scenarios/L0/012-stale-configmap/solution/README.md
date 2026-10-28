@@ -83,7 +83,8 @@ kubectl -n {{ .Namespace }} patch deployment banner -p '{"spec":{"template":{"sp
 Both change the pod template, so the Deployment rolls out new pods. A second
 valid path for the wrong name is to write `Winter sale 2026` into
 `banner-config`, the ConfigMap the pods mount: the kubelet refreshes the
-volume within its sync period, up to about a minute, with no rollout. For
+volume on its next pod sync, 65 to 85 seconds after the edit when measured
+on kind v1.37, with no rollout. For
 the subPath variant, mounting the whole ConfigMap at
 `/usr/share/nginx/html` without `subPath` also works and makes the next edit
 reach the pods on its own. The checks read the Service's page, the ready

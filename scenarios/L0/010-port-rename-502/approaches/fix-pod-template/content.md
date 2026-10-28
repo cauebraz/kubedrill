@@ -7,10 +7,13 @@ name first, so the probe follows whatever name the release gave it.
 
 Choose it when the pod template is the object left behind: the probe still
 asks the old port (pods `0/1`, `Readiness probe failed ... connection
-refused` in Events), or the release renamed the containerPort and the team
-prefers to restore the name the Service and the dashboards expect. Pointing
-the probe at the containerPort by name (`port: http`) instead of a number
-ties it to the port declaration, so the next port move needs one edit.
+refused` in Events). Pointing the probe at the containerPort by name
+(`port: http`) instead of a number ties it to the port declaration, so the
+next port move needs one edit. When the release renamed the containerPort
+and the team prefers to restore the name the Service and the dashboards
+expect, the snippet's probe patch changes nothing; the patch then targets
+`/spec/template/spec/containers/0/ports/0/name` with the value `http`, and
+the Service resolves it again after the rollout.
 
 The trade-off is a rollout: new pods, a surge pod per replica, and a
 minute of waiting. When the Service is the field left behind, patching the

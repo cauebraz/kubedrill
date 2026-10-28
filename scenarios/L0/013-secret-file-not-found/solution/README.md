@@ -85,7 +85,10 @@ kubectl -n {{ .Namespace }} patch deployment api --type=json -p '[{"op":"replace
 
 `kubectl edit deployment api`, or the same change in the team's manifest
 followed by `kubectl apply`, passes too: the checks read the ready and
-available replica counts and the app's log line, never the command used.
+available replica counts, the app's log line and the Secret the volume
+names, never the command used. Creating a second Secret under the name the
+volume asks for (`db-credential`) starts the pods but fails the last check:
+the ticket keeps one Secret, `db-credentials`.
 
 ## Verify
 
