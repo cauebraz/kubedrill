@@ -152,3 +152,158 @@ func (p *progressStore) complete(id string, stage Stage, score, total int) error
 	f.Assignments[id] = sp
 	return p.save(f)
 }
+
+// results lists the stage results of sp in the order of the stages.
+func results(sp *StageProgress) []*StageResult {
+	return []*StageResult{&sp.Meeting, &sp.Quiz, &sp.Learn, &sp.Practice, &sp.DIY, &sp.Exam}
+}
+
+// anyDone reports whether a stage of sp is done.
+func anyDone(sp StageProgress) bool {
+	for _, r := range results(&sp) {
+		if r.Done {
+			return true
+		}
+	}
+	return false
+}
+
+// mergeStages returns cur with each stage that is not done taken from old.
+func mergeStages(cur, old StageProgress) StageProgress {
+	c, o := results(&cur), results(&old)
+	for i := range c {
+		if !c[i].Done && o[i].Done {
+			*c[i] = *o[i]
+		}
+	}
+	return cur
+}
+
+// decodeStages reads a snapshot of stage progress: scenario id to its
+// stages. An empty snapshot reads as none.
+func decodeStages(raw json.RawMessage) (map[string]StageProgress, error) {
+	out := map[string]StageProgress{}
+	if len(raw) == 0 || string(raw) == "null" {
+		return out, nil
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("decode saved stage progress: %w", err)
+	}
+	return out, nil
+}
+
+// snapshot is the stage progress of id (every assignment when id is empty)
+// merged over prev, the snapshot an earlier reset of the same scope saved,
+// as a reset marker keeps it: scenario id to its stages, only those with a
+// stage done. It is nil when nothing is done.
+func (p *progressStore) snapshot(id string, prev json.RawMessage) (json.RawMessage, error) {
+	f, err := p.load()
+	if err != nil {
+		return nil, err
+	}
+	out, err := decodeStages(prev)
+	if err != nil {
+		return nil, err
+	}
+	for sid, sp := range f.Assignments {
+		if id != "" && sid != id {
+			continue
+		}
+		out[sid] = mergeStages(sp, out[sid])
+	}
+	for sid, sp := range out {
+		if !anyDone(sp) {
+			delete(out, sid)
+		}
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return nil, fmt.Errorf("encode stage progress: %w", err)
+	}
+	return b, nil
+}
+
+// clear removes the stage progress of id (every assignment when id is
+// empty) and, with welcome, the welcome flag, so the welcome flow shows
+// again. It reports whether a stage was done.
+func (p *progressStore) clear(id string, welcome bool) (bool, error) {
+	f, err := p.load()
+	if err != nil {
+		return false, err
+	}
+	cleared := false
+	for sid, sp := range f.Assignments {
+		if id != "" && sid != id {
+			continue
+		}
+		cleared = cleared || anyDone(sp)
+		delete(f.Assignments, sid)
+	}
+	if welcome {
+		f.Onboarded = time.Time{}
+	}
+	if !cleared && !welcome {
+		return false, nil
+	}
+	return cleared, p.save(f)
+}
+
+// restore puts saved, a snapshot, back: each stage not done now takes its
+// saved result. It reports whether a stage came back.
+func (p *progressStore) restore(saved json.RawMessage) (bool, error) {
+	old, err := decodeStages(saved)
+	if err != nil {
+		return false, err
+	}
+	if len(old) == 0 {
+		return false, nil
+	}
+	f, err := p.load()
+	if err != nil {
+		return false, err
+	}
+	back := false
+	for sid, sp := range old {
+		merged := mergeStages(f.Assignments[sid], sp)
+		back = back || anyDone(merged) && merged != f.Assignments[sid]
+		f.Assignments[sid] = merged
+	}
+	if !back {
+		return false, nil
+	}
+	return true, p.save(f)
+}
+
+// StageFile is the stage progress file of the browser workspace at one
+// path, for kubedrill progress, which resets and restores it outside the
+// server. Its methods read and write the file on every call.
+type StageFile struct {
+	p progressStore
+}
+
+// NewStageFile returns the stage progress file at path.
+func NewStageFile(path string) *StageFile {
+	return &StageFile{p: progressStore{path: path, now: time.Now}}
+}
+
+// Snapshot is the stage progress of id (every assignment when id is empty)
+// merged over prev, a snapshot an earlier reset saved: the Stages a reset
+// marker keeps. It is nil when no stage is done.
+func (f *StageFile) Snapshot(id string, prev json.RawMessage) (json.RawMessage, error) {
+	return f.p.snapshot(id, prev)
+}
+
+// Clear removes the stage progress of id (every assignment when id is
+// empty) and reports whether a stage was done.
+func (f *StageFile) Clear(id string) (bool, error) {
+	return f.p.clear(id, false)
+}
+
+// Restore puts a snapshot back: each stage not done now takes its saved
+// result. It reports whether a stage came back.
+func (f *StageFile) Restore(saved json.RawMessage) (bool, error) {
+	return f.p.restore(saved)
+}

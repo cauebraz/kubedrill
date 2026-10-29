@@ -8,6 +8,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -91,12 +92,17 @@ type Workstation interface {
 	Replay(ctx context.Context, cast string) error
 }
 
-// Journal is what the commands need from the episode store.
+// Journal is what the commands need from the episode store. Resets,
+// ResetProgress and RestoreProgress are the progress reset markers (see
+// journal.Store.ResetProgress).
 type Journal interface {
 	env.Journal
 	Episodes(scenarioID string) ([]journal.Episode, error)
 	Problems() []string
 	Dir() string
+	Resets() (journal.Resets, error)
+	ResetProgress(scenarioID string, stages func(prev json.RawMessage) (json.RawMessage, error)) (journal.ResetResult, error)
+	RestoreProgress(scenarioID string) (journal.ResetResult, error)
 }
 
 // Catalog is what the commands need from the scenario catalog.

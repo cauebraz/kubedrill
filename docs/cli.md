@@ -69,6 +69,7 @@ Conventions shared by every command:
 | [`path`](#path) | The ladder with your progress | no |
 | [`stats`](#stats) | Solves, outcomes, verdicts, concepts | no |
 | [`journal`](#journal) | Episodes, newest first | no |
+| [`progress`](#progress) | Reset the progress of a scenario or of everything, or restore it | no |
 | [`status`](#status) | Cluster, active episode, solved count | no (reads kind) |
 | [`exam`](#exam) | Exam domains and coverage | no |
 | [`learn`](#learn) | Concept pages of the active scenario | no |
@@ -143,8 +144,8 @@ Screens:
 | Home | A Continue card (the live run with its namespace and elapsed time, or the assignment `kubedrill list` recommends with its reason, or "all caught up"), the plans in progress, and links to the catalog, the exams and the GitHub repository. A profile line counts completed assignments, badges earned or mastered out of every badge (a link to Badges), reviews due and planned assignments; a card shows the next badge in progress |
 | Catalog | Every level and plan, each plan with its module badge and caption, with search (title, id, plan, concept) and filters for level, status (not started, in progress, live, complete, mastered; complete means the Do it yourself run passed), exam domain (only domains with an assignment, with their count) and concept (by title). The filters live in the URL. A level with nothing written yet collapses to one line with its planned count. An assignment whose `requires` are not solved shows a lock and stays open |
 | Exams | Each exam with its track badge, the share of the exam weight in covered domains and a bar of the domains by weight; each domain with its weight, its state (covered, not covered yet, no assignment yet) and the assignments that train it, each marked solved clean, mastered or not yet. Covered uses the badge rule: one assignment of the domain solved clean |
-| Badges | Every module badge (hexagon, grouped by level), level badge (shield) and exam track badge (rosette) with its state, its caption and three dots for the variants solved clean, the legend, and a Share button on each earned or mastered badge (see [Badges](#badges)) |
-| Assignment | The stages below, with the concept pages as chips (each opens in a drawer), the mastery meter with the clean solves and the distinct variants among them, for example `2 of 3 clean solves, 2 of 3 variants solved clean`, and the badge of its module |
+| Badges | Every module badge (hexagon, grouped by level), level badge (shield) and exam track badge (rosette) with its state, its caption and three dots for the variants solved clean, the legend, a Share button on each earned or mastered badge (see [Badges](#badges)), and a Start over footer with Reset all progress (see [Resetting progress](#resetting-progress)) |
+| Assignment | The stages below, with the concept pages as chips (each opens in a drawer), the mastery meter with the clean solves and the distinct variants among them, for example `2 of 3 clean solves, 2 of 3 variants solved clean`, the badge of its module, and a Reset progress link at the foot of the stage list (on the Result stage below 961 pixels) |
 
 An assignment walks through six stages, plus the exam rehearsal:
 
@@ -189,6 +190,35 @@ the run); mastered is the mastery rule.
   `github.com/cauebraz/kubedrill`. Nothing is hosted, so there is no
   verification link. Copy text puts one line for a post on the clipboard.
 - The exam tracks are kubedrill practice tracks, not a certification.
+
+#### Resetting progress
+
+Reset progress (the foot of the assignment's stage list, and the Result
+stage) and Reset all progress (the Badges screen) do what
+[`kubedrill progress reset`](#progress) does.
+
+- The dialog says what resets: the runs so far stop counting toward clean
+  solves, mastery and badges, the stage checkmarks are cleared, and the
+  journal keeps the history. Reset all progress stays disabled until
+  `reset` is typed; its "Show the welcome again" checkbox also clears the
+  welcome flag, and the page opens the welcome flow. The welcome flag is
+  not restored by Undo.
+- Esc closes the dialog, Tab stays inside it, and the focus returns to the
+  link that opened it.
+- After the reset a toast names what changed (`003-crashloop: 3 runs no
+  longer count; stage progress cleared.`) with an Undo button for 10
+  seconds; Undo is `kubedrill progress restore`. The screen draws again
+  and `kd:badges-seen` takes the new badge states, so the Result stage
+  does not announce the drop as a badge change.
+- A run active in the scope refuses the reset with `end the active run
+  first (kubedrill solution, or Give up in the page)` (HTTP 409).
+- `POST /api/progress/reset` and `POST /api/progress/restore` take
+  `{"id": "<scenario id>"}` or `{"all": true}` (`"welcome": true` only with
+  a reset of everything) and return `{"id", "all", "runs", "stages"}`:
+  the runs that stopped counting or count again, and whether stage
+  progress was cleared or came back.
+- The debrief of a run a reset no longer counts carries `"reset": true`
+  and does not mark its stage done again.
 
 Launching a run:
 
@@ -270,7 +300,9 @@ Storage:
   (`assignments` per scenario id, the stage of each episode the
   workspace started and `onboarded`, when the welcome flow was finished
   or skipped); the episodes, grades, hints, diagnoses, debriefs and
-  telemetry are the journal's, as for every other command.
+  telemetry are the journal's, as for every other command. A progress
+  reset saves the stage progress it clears in `resets.json` (see
+  [progress](#progress)), so a restore puts it back.
 - The browser keeps per-assignment conveniences in `localStorage`: a
   meeting or quiz in progress, the guide steps marked done, the side tab,
   the terminal text size and the theme. Clearing them loses nothing graded.
@@ -658,7 +690,56 @@ Table of episodes, newest first.
   while the episode is active`.
 - Duration is in minutes with one decimal (`12.5 min`); under 0.1 min it
   prints `0.1 min`.
+- A run a progress reset no longer counts keeps its row, with `(reset)`
+  after the outcome (`solved (reset)`) and the footer `(reset): a progress
+  reset no longer counts the run; kubedrill progress restore counts it
+  again`. `kubedrill debrief` still shows it.
 - Corrupt journal lines are reported on stderr.
+
+### progress
+
+```
+kubedrill progress reset <ref> | --all [--yes]
+kubedrill progress restore <ref> | --all
+```
+
+Starts a scenario, or everything, over without deleting anything.
+
+- `reset <ref>` records a marker in `<journal dir>/resets.json` (written
+  through a temporary file and a rename, under the journal lock): every
+  finished run of the scenario that ended at or before it no longer
+  counts. That covers clean solves, mastery, `CleanVariants`, badges, the
+  recommendation, `list` (status, median, `LAST4`), `status`, `path`,
+  `exam`, `stats` and the browser workspace. `--all` records one marker
+  for every scenario; the later of the two markers applies to a run.
+- It also clears the stage progress of the scenario (every scenario with
+  `--all`) in `web-progress.json` and keeps a copy in the marker. The
+  welcome flag stays.
+- It asks first: `Reset the progress of 001-storefront-down? 3 runs stop
+  counting toward clean solves, mastery and badges and its stage progress
+  is cleared; kubedrill journal keeps the history and kubedrill progress
+  restore 001-storefront-down undoes it. [y/N]`. `--yes` skips the
+  question; without a terminal and without `--yes` it fails as `down`
+  does.
+- The output names what changed: `001-storefront-down: 3 runs no longer
+  count; stage progress cleared` (or `no stage progress to clear`), then
+  `undo with: kubedrill progress restore 001-storefront-down`. `--all`
+  prints `every scenario: ...`.
+- A scenario with the active episode is refused: `001-storefront-down is
+  active (episode <id>); end the active run first (kubedrill solution, or
+  Give up in the page)`, exit 1. `--all` is refused while any episode is
+  active.
+- Runs that end after the marker count as usual, so the scenario starts
+  from zero.
+- `restore <ref>` removes the marker of the scenario and puts the saved
+  stage progress back (a stage done since the reset stays as it is):
+  `001-storefront-down: 3 runs count again; stage progress restored`.
+  `restore --all` removes the marker of everything only; scenarios reset
+  one by one keep theirs until restored by name. Without a marker:
+  `no reset of 001-storefront-down is recorded; nothing to restore`, exit
+  1, naming the markers that exist.
+- `kubedrill reset` is a different command: it redeploys the active
+  scenario.
 
 ### status
 

@@ -7,6 +7,7 @@ import { el, clear } from "./dom.js";
 import { skeleton, errorState } from "./ui.js";
 import { badgeSVG, pips, stateLabel, allBadges, isEarned, remember } from "./badge.js";
 import { openShare } from "./share.js";
+import { openReset } from "./reset.js";
 
 export function showBadges(app, ctx) {
   ctx.crumbs([{ href: "#/", text: "Home" }, { text: "Badges" }]);
@@ -81,7 +82,19 @@ function render(c) {
     el("section", { class: "bdg-legend", "aria-label": "How badges work" },
       legend("The ring is the method", "The five arcs come from the kubedrill mark: the five steps of the troubleshooting loop. They light as the badge's criteria are met."),
       legend("The shape is the tier", "Hexagon for a module, shield for a level, rosette for an exam track. The color follows the level."),
-      legend("Clean means clean", "A clean solve uses no guide and no hint, ends within the expected minutes and, when the audit log saw the run, reads before its first change. Mastered: 3 clean solves in your last 4 attempts, on distinct variants, across 2 sessions. The three dots are the variants solved clean in your last attempts.")));
+      legend("Clean means clean", "A clean solve uses no guide and no hint, ends within the expected minutes and, when the audit log saw the run, reads before its first change. Mastered: 3 clean solves in your last 4 attempts, on distinct variants, across 2 sessions. The three dots are the variants solved clean in your last attempts.")),
+    resetAll());
+}
+
+// resetAll is the footer that starts every assignment over.
+function resetAll() {
+  const b = el("button", { class: "btn small danger-quiet", type: "button", text: "Reset all progress" });
+  b.addEventListener("click", () => openReset(null, b));
+  return el("section", { class: "reset-all", "aria-labelledby": "reset-all-title" },
+    el("div", null,
+      el("h3", { id: "reset-all-title", text: "Start over" }),
+      el("p", { class: "small muted", text: "Every run stops counting toward clean solves, mastery and badges, and every stage checkmark is cleared. The journal keeps the history, and Undo or kubedrill progress restore --all brings it back." })),
+    b);
 }
 
 function legend(title, text) {

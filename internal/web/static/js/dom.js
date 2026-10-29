@@ -46,13 +46,18 @@ export function clear(node, ...children) {
 }
 
 let toastTimer = 0;
-export function toast(msg, isError) {
+// toast shows msg for a few seconds; action ({ label, run }) adds a button
+// that hides the toast and runs, and keeps the toast up for 10 seconds.
+export function toast(msg, isError, action) {
   const t = document.getElementById("toast");
   t.textContent = msg;
-  t.className = "toast" + (isError ? " error" : "");
+  t.className = "toast" + (isError ? " error" : "") + (action ? " with-action" : "");
+  if (action) {
+    t.appendChild(el("button", { class: "toast-action", type: "button", text: action.label, onclick: () => { t.hidden = true; clearTimeout(toastTimer); action.run(); } }));
+  }
   t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; }, isError ? 7000 : 3500);
+  toastTimer = setTimeout(() => { t.hidden = true; }, action ? 10000 : isError ? 7000 : 3500);
 }
 
 // store reads (one argument) or writes (two) a JSON value in localStorage;

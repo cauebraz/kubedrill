@@ -2,9 +2,11 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -118,6 +120,7 @@ type memJournal struct {
 	problems []string
 	seq      int
 	clock    time.Time
+	resets   journal.Resets
 }
 
 func (j *memJournal) Dir() string        { return j.dir }
@@ -225,6 +228,73 @@ func (j *memJournal) ModifyEnded(id string, fn func(*journal.Episode) error) (*j
 }
 
 func (j *memJournal) JournalID() string { return "0123abcd" }
+
+func (j *memJournal) Resets() (journal.Resets, error) {
+	r := journal.Resets{All: j.resets.All, Scenarios: maps.Clone(j.resets.Scenarios)}
+	return r, nil
+}
+
+// resetAt is the time of a reset: five minutes after the last start, so
+// every finished episode (ended three minutes after its start) is before it
+// and the next start is after it.
+func (j *memJournal) resetAt() time.Time {
+	if j.clock.IsZero() {
+		return time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	}
+	return j.clock.Add(5 * time.Minute)
+}
+
+func (j *memJournal) ResetProgress(id string, stages func(json.RawMessage) (json.RawMessage, error)) (journal.ResetResult, error) {
+	if j.current != nil && (id == "" || j.current.ScenarioID == id) {
+		return journal.ResetResult{}, fmt.Errorf("reset: %w", journal.ErrActive)
+	}
+	before, _ := j.Resets()
+	prev, _ := before.Get(id)
+	m := journal.Reset{At: j.resetAt()}
+	if stages != nil {
+		var err error
+		if m.Stages, err = stages(prev.Stages); err != nil {
+			return journal.ResetResult{}, err
+		}
+	}
+	after, _ := j.Resets()
+	if id == "" {
+		after.All = &m
+	} else {
+		if after.Scenarios == nil {
+			after.Scenarios = map[string]journal.Reset{}
+		}
+		after.Scenarios[id] = m
+	}
+	j.resets = after
+	return journal.ResetResult{ScenarioID: id, Runs: movedRuns(j.episodes, id, before, after), Reset: m}, nil
+}
+
+func (j *memJournal) RestoreProgress(id string) (journal.ResetResult, error) {
+	before, _ := j.Resets()
+	m, ok := before.Get(id)
+	if !ok {
+		return journal.ResetResult{}, fmt.Errorf("restore: %w", journal.ErrNoReset)
+	}
+	after, _ := j.Resets()
+	if id == "" {
+		after.All = nil
+	} else {
+		delete(after.Scenarios, id)
+	}
+	j.resets = after
+	return journal.ResetResult{ScenarioID: id, Runs: movedRuns(j.episodes, id, before, after), Reset: m}, nil
+}
+
+func movedRuns(eps []journal.Episode, id string, before, after journal.Resets) int {
+	n := 0
+	for _, e := range eps {
+		if e.EndedAt != nil && (id == "" || e.ScenarioID == id) && before.Counts(e) != after.Counts(e) {
+			n++
+		}
+	}
+	return n
+}
 
 type fakeFaults struct {
 	dir      string

@@ -595,3 +595,36 @@ func TestCleanVariantsCountsDistinctVariantsOfTheCleanSolves(t *testing.T) {
 		t.Errorf("mastery: got clean %d, clean variants %d, mastered %v, want 3, 2 (the hinted wrong-repo does not count), false", got.CleanInLast, got.CleanVariants, got.Mastered)
 	}
 }
+
+func TestProgressAfterAReset(t *testing.T) {
+	s := ScenarioInfo{ID: "s", Level: "L0", Concepts: []string{"pods"}, Minutes: 10, Variants: 1}
+	mastered := []journal.Episode{ep("s", 1, 0), ep("s", 2, 4*time.Hour), ep("s", 3, 8*time.Hour)}
+	marker := func(at time.Duration) *journal.Reset { return &journal.Reset{At: t0.Add(at)} }
+	tests := []struct {
+		name     string
+		resets   journal.Resets
+		extra    []journal.Episode
+		attempts int
+		clean    bool
+		mastered bool
+		badge    BadgeState
+	}{
+		{"no reset", journal.Resets{}, nil, 3, true, true, BadgeMastered},
+		{"reset after every run", journal.Resets{Scenarios: map[string]journal.Reset{"s": *marker(9 * time.Hour)}}, nil, 0, false, false, BadgeLocked},
+		{"reset between runs", journal.Resets{Scenarios: map[string]journal.Reset{"s": *marker(5 * time.Hour)}}, nil, 1, true, false, BadgeEarned},
+		{"reset of everything", journal.Resets{All: marker(9 * time.Hour)}, nil, 0, false, false, BadgeLocked},
+		{"another scenario reset", journal.Resets{Scenarios: map[string]journal.Reset{"t": *marker(9 * time.Hour)}}, nil, 3, true, true, BadgeMastered},
+		{"a run after the reset counts", journal.Resets{All: marker(9 * time.Hour)}, []journal.Episode{ep("s", 4, 10*time.Hour, hints(1))}, 1, false, false, BadgeInProgress},
+	}
+	for _, tt := range tests {
+		eps := tt.resets.Filter(append(append([]journal.Episode(nil), mastered...), tt.extra...))
+		m := ScenarioMastery(eps, s)
+		st := StandingOf(eps, s)
+		if m.Attempts != tt.attempts || st.Clean != tt.clean || m.Mastered != tt.mastered {
+			t.Errorf("%s: got attempts %d clean %v mastered %v, want %d %v %v", tt.name, m.Attempts, st.Clean, m.Mastered, tt.attempts, tt.clean, tt.mastered)
+		}
+		if b := ModuleBadge([]Standing{st}); b.State != tt.badge {
+			t.Errorf("%s: badge got %s, want %s", tt.name, b.State, tt.badge)
+		}
+	}
+}

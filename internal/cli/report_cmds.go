@@ -54,7 +54,7 @@ func (a *app) runList(level string, recommend bool) error {
 	if err != nil {
 		return fmt.Errorf("read current episode: %w", err)
 	}
-	eps, err := allEpisodes(j)
+	eps, err := countedEpisodes(j)
 	if err != nil {
 		return err
 	}
@@ -174,7 +174,7 @@ func (a *app) statusCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			eps, err := allEpisodes(j)
+			eps, err := countedEpisodes(j)
 			if err != nil {
 				return err
 			}
@@ -259,17 +259,26 @@ func (a *app) runJournal(ref string, last int) error {
 		}
 		return nil
 	}
+	resets, err := j.Resets()
+	if err != nil {
+		return err
+	}
 	sort.SliceStable(eps, func(i, k int) bool { return eps[i].StartedAt.After(eps[k].StartedAt) })
 	if last > 0 && len(eps) > last {
 		eps = eps[:last]
 	}
 	rows := make([][]string, 0, len(eps))
-	hidden := false
+	hidden, reset := false, false
 	for _, e := range eps {
 		variant := e.Variant
 		if e.EndedAt == nil {
 			variant = "-"
 			hidden = true
+		}
+		outcome := outcomeWord(e.Outcome)
+		if !resets.Counts(e) {
+			outcome += " (reset)"
+			reset = true
 		}
 		rows = append(rows, []string{
 			e.StartedAt.Local().Format("2006-01-02 15:04"),
@@ -277,7 +286,7 @@ func (a *app) runJournal(ref string, last int) error {
 			strconv.FormatInt(e.Seed, 10),
 			modeCell(e),
 			variant,
-			outcomeWord(e.Outcome),
+			outcome,
 			render.Minutes(e.DurationAt(a.now())),
 			strconv.Itoa(e.HintsUsed),
 		})
@@ -285,6 +294,9 @@ func (a *app) runJournal(ref string, last int) error {
 	table(a.stdout, []string{"STARTED", "SCENARIO", "SEED", "MODE", "VARIANT", "OUTCOME", "DURATION", "HINTS"}, rows)
 	if hidden {
 		a.println("- : hidden while the episode is active")
+	}
+	if reset {
+		a.println("(reset): a progress reset no longer counts the run; kubedrill progress restore counts it again")
 	}
 	return nil
 }
@@ -351,7 +363,7 @@ func (a *app) runPath() error {
 	if err != nil {
 		return err
 	}
-	eps, err := allEpisodes(j)
+	eps, err := countedEpisodes(j)
 	if err != nil {
 		return err
 	}
@@ -438,7 +450,7 @@ func (a *app) examCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			eps, err := allEpisodes(j)
+			eps, err := countedEpisodes(j)
 			if err != nil {
 				return err
 			}
@@ -487,7 +499,7 @@ func (a *app) statsCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			eps, err := allEpisodes(j)
+			eps, err := countedEpisodes(j)
 			if err != nil {
 				return err
 			}

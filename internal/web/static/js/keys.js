@@ -40,6 +40,27 @@ export function pushOverlay(close) {
   };
 }
 
+// trapFocus keeps Tab and Shift+Tab inside node while it is open; the
+// returned function releases it.
+export function trapFocus(node) {
+  const onKey = (e) => {
+    if (e.key !== "Tab") { return; }
+    const items = [...node.querySelectorAll("button, a[href], input, textarea, select, [tabindex]:not([tabindex='-1'])")].filter((x) => !x.disabled && x.offsetParent !== null);
+    if (!items.length) { return; }
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (e.shiftKey && (document.activeElement === first || !node.contains(document.activeElement))) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (document.activeElement === last || !node.contains(document.activeElement))) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+  node.addEventListener("keydown", onKey);
+  return () => node.removeEventListener("keydown", onKey);
+}
+
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && overlays.length) {
     e.preventDefault();

@@ -8,6 +8,12 @@ All notable changes to kubedrill. The format follows
 
 ### Added
 
+- Progress reset: `kubedrill progress reset <ref>|--all` makes the runs of
+  a scenario (or of every scenario) stop counting toward clean solves,
+  mastery, badges and every progress view and clears its stage progress;
+  the journal keeps the runs, marked `(reset)`, and `kubedrill progress
+  restore` undoes it. The browser workspace offers Reset progress on an
+  assignment and Reset all progress on the Badges screen, with Undo.
 - Badges: a module (hexagon), level (shield) and exam track (rosette)
   badge, each locked, in progress, earned or mastered from the clean-solve
   and mastery rules; a Badges screen with a 1200x627 share card (PNG,

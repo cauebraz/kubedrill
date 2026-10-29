@@ -301,6 +301,28 @@ Where to see progress:
   outcomes, verdicts and concepts.
 - `kubedrill journal`: every episode.
 
+### Starting over
+
+To do a scenario again from zero, reset its progress:
+
+```sh
+kubedrill progress reset 001
+kubedrill progress reset --all
+```
+
+In the browser workspace the same action is Reset progress at the foot of
+an assignment's stages (or on its Result stage), and Reset all progress on
+the Badges screen.
+
+A reset deletes nothing. Its runs stay in `kubedrill journal`, marked
+`(reset)`, and their debriefs stay readable; they stop counting toward
+clean solves, mastery, badges, the recommendation and every progress view,
+and the stage checkmarks of the page are cleared. Runs after the reset
+count as usual. End the active run first: a reset of the scenario you are
+in the middle of is refused. `kubedrill progress restore 001` (or
+`--all`), or Undo in the page, counts the runs again and brings the stage
+checkmarks back.
+
 ### Variants and seeds
 
 Each scenario has several variants: different root causes or parameters
@@ -314,8 +336,8 @@ kubedrill start 001 --seed 3
 ### Where your data lives
 
 Episodes are stored in `~/.local/share/kubedrill` (or `$XDG_DATA_HOME/kubedrill`,
-or `KUBEDRILL_DATA`). `episodes.jsonl` holds the history and `current.json`
-the active episode.
+or `KUBEDRILL_DATA`). `episodes.jsonl` holds the history, `current.json`
+the active episode and `resets.json` the progress resets.
 
 ## Telemetry
 

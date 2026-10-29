@@ -741,6 +741,122 @@ func TestBrowser(t *testing.T) {
 		b.call("Emulation.clearDeviceMetricsOverride", nil)
 	})
 
+	sub("reset one assignment and undo", func(t *testing.T) {
+		const row = `[...document.querySelectorAll('.assign-row')].find((r) => r.getAttribute('href') === '#/a/003-crashloop')`
+		seen := func() string {
+			return b.eval("(JSON.parse(localStorage.getItem('kd:badges-seen') || '{}'))['module:L0.2'] || ''")
+		}
+		if got := b.eval("fetch('/api/progress', { method: 'POST', headers: { 'X-Kubedrill': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ id: '003-crashloop', stage: 'learn', score: 1, total: 1 }) }).then((r) => String(r.status))"); got != "200" {
+			t.Fatalf("record the learn stage: got %s", got)
+		}
+		b.go_("#/catalog")
+		b.wait("catalog row", row)
+		if got := b.eval(row + ".querySelector('.pill').textContent"); got != "mastered" {
+			t.Fatalf("003 before the reset: got %q, want mastered", got)
+		}
+		b.go_("#/a/003-crashloop/learn")
+		b.wait("assignment", "document.querySelector('.stepper-badge .bdg.mastered') && document.querySelector('.stepper-foot .reset-link') && document.querySelector('.steps .step.done')")
+		b.click(".stepper-foot .reset-link")
+		b.wait("reset dialog", "document.querySelector('.modal.reset')")
+		if got := b.eval("document.activeElement.textContent"); got != "Keep my progress" {
+			t.Errorf("reset dialog focus: got %q, want Keep my progress", got)
+		}
+		if got := b.text(".modal.reset"); !strings.Contains(got, "clean solves, mastery and badges") || !strings.Contains(got, "stage checkmarks are cleared") || !strings.Contains(got, "stays in the journal") {
+			t.Errorf("reset dialog text: got %q", got)
+		}
+		for i := 0; i < 3; i++ {
+			b.call("Input.dispatchKeyEvent", map[string]any{"type": "keyDown", "key": "Tab", "code": "Tab", "windowsVirtualKeyCode": 9})
+			b.call("Input.dispatchKeyEvent", map[string]any{"type": "keyUp", "key": "Tab", "code": "Tab", "windowsVirtualKeyCode": 9})
+		}
+		if got := b.eval("String(!!document.activeElement.closest('.modal.reset'))"); got != "true" {
+			t.Errorf("focus after 3 Tabs: left the dialog (%s)", b.eval("document.activeElement.outerHTML.slice(0, 80)"))
+		}
+		b.shot("21-reset-dialog")
+		b.key("Escape", 0)
+		b.wait("dialog closed by Esc", "!document.querySelector('.modal.reset')")
+		if got := b.eval("String(document.activeElement === document.querySelector('.stepper-foot .reset-link'))"); got != "true" {
+			t.Error("focus after Esc: not back on the Reset progress link")
+		}
+		b.click(".stepper-foot .reset-link")
+		b.wait("reset dialog again", "document.querySelector('.modal.reset .btn.danger')")
+		b.click(".modal.reset .btn.danger")
+		b.wait("toast with Undo", "!document.querySelector('#toast').hidden && document.querySelector('#toast .toast-action')")
+		if got := b.text("#toast"); !strings.Contains(got, "003-crashloop: 3 runs no longer count; stage progress cleared") {
+			t.Errorf("reset toast: got %q", got)
+		}
+		b.wait("badge dropped", "document.querySelector('.stepper-badge .bdg.in-progress') && !document.querySelector('.steps .step.done')")
+		if got := seen(); got != "in-progress" {
+			t.Errorf("kd:badges-seen after the reset: L0.2 %q, want in-progress", got)
+		}
+		b.shot("22-reset-toast")
+		b.go_("#/catalog")
+		b.wait("catalog row", row)
+		if got := b.eval(row + ".querySelector('.pill').textContent"); got != "not started" {
+			t.Errorf("003 after the reset: got %q, want not started", got)
+		}
+		b.click("#toast .toast-action")
+		b.wait("undo", row+" && "+row+".querySelector('.pill').textContent === 'mastered'")
+		if got := b.eval(row + ".querySelector('.dots').getAttribute('aria-label')"); !strings.HasPrefix(got, "1 of") {
+			t.Errorf("stage dots after Undo: got %q, want the learn stage back", got)
+		}
+		if got := seen(); got != "mastered" {
+			t.Errorf("kd:badges-seen after Undo: L0.2 %q, want mastered", got)
+		}
+		b.go_("#/a/003-crashloop/learn")
+		b.wait("badge back", "document.querySelector('.stepper-badge .bdg.mastered') && document.querySelector('.steps .step.done')")
+	})
+
+	sub("reset all needs the word", func(t *testing.T) {
+		b.go_("#/badges")
+		b.wait("badges", "document.querySelector('.reset-all button')")
+		b.click(".reset-all button")
+		b.wait("reset all dialog", "document.querySelector('.modal.reset input.input')")
+		if got := b.eval("String(document.activeElement === document.querySelector('.modal.reset input.input'))"); got != "true" {
+			t.Error("reset all dialog: the confirm field does not have the focus")
+		}
+		disabled := func() string { return b.eval("String(document.querySelector('.modal.reset .btn.danger').disabled)") }
+		typeWord := func(w string) {
+			b.eval(fmt.Sprintf("(() => { const i = document.querySelector('.modal.reset input.input'); i.value = %q; i.dispatchEvent(new Event('input')); })()", w))
+		}
+		if disabled() != "true" {
+			t.Error("reset all: the button is enabled before typing")
+		}
+		typeWord("rese")
+		if disabled() != "true" {
+			t.Error("reset all: the button is enabled after typing rese")
+		}
+		typeWord("reset")
+		if disabled() != "false" {
+			t.Error("reset all: the button stays disabled after typing reset")
+		}
+		b.shot("23-reset-all-dialog")
+		b.call("Emulation.setDeviceMetricsOverride", map[string]any{"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": true})
+		time.Sleep(200 * time.Millisecond)
+		if over := b.eval("String([...document.querySelectorAll('.modal.reset, .modal.reset .btn, .modal.reset input')].some((e) => e.getBoundingClientRect().right > window.innerWidth + 1))"); over != "false" {
+			t.Error("reset all dialog at 390px: an element is past the right edge")
+		}
+		b.shot("23-reset-all-dialog-390px")
+		b.click(".modal.reset .btn.danger")
+		b.wait("everything reset", "!document.querySelector('#toast').hidden && document.querySelector('#toast').textContent.includes('Every assignment:') && document.querySelector('.badges .bdg-legend') && !document.querySelector('.badges .bdg.earned, .badges .bdg.mastered')")
+		if over := b.eval("String(document.documentElement.scrollWidth > window.innerWidth + 1)"); over != "false" {
+			t.Errorf("badges at 390px after the reset scrolls horizontally (scrollWidth %s)", b.eval("String(document.documentElement.scrollWidth)"))
+		}
+		b.shot("24-reset-all-toast-390px")
+		b.click("#toast .toast-action")
+		b.wait("undo everything", "document.querySelector('.badges .bdg.mastered')")
+		b.go_("#/a/003-crashloop/done")
+		b.wait("result at 390px", "document.querySelector('.reset-foot .reset-link')")
+		if over := b.eval("String(document.documentElement.scrollWidth > window.innerWidth + 1)"); over != "false" {
+			t.Errorf("result at 390px scrolls horizontally (scrollWidth %s)", b.eval("String(document.documentElement.scrollWidth)"))
+		}
+		if got := b.eval("String(document.querySelector('.reset-foot .reset-link').getBoundingClientRect().width > 0)"); got != "true" {
+			t.Error("result at 390px: the reset link is not visible")
+		}
+		b.eval("document.querySelector('.reset-foot').scrollIntoView()")
+		b.shot("25-result-reset-390px")
+		b.call("Emulation.clearDeviceMetricsOverride", nil)
+	})
+
 	sub("shortcuts help and kit", func(t *testing.T) {
 		b.key("?", 0)
 		b.wait("help", "document.querySelector('.shortcuts')")

@@ -368,9 +368,9 @@ func TestNextOffersActiveThenRecommendation(t *testing.T) {
 func TestSnapshots(t *testing.T) {
 	f := newFake()
 	c := newClient(t, f)
-	snap := func(name, path string) {
+	snapDo := func(name, method, path, reqBody string) {
 		t.Helper()
-		_, body := c.do("GET", path, "", false)
+		_, body := c.do(method, path, reqBody, method != "GET")
 		var v any
 		if err := json.Unmarshal([]byte(body), &v); err != nil {
 			t.Fatalf("%s: %v", path, err)
@@ -401,9 +401,12 @@ func TestSnapshots(t *testing.T) {
 			t.Errorf("%s changed; review and run with -update:\n%s", file, got)
 		}
 	}
+	snap := func(name, path string) { t.Helper(); snapDo(name, "GET", path, "") }
 	snap("catalog", "/api/catalog")
 	snap("assignment", "/api/assignment/001")
 	snap("next-idle", "/api/next")
+	snapDo("progress-reset", "POST", "/api/progress/reset", `{"id":"003-crashloop"}`)
+	snapDo("progress-restore", "POST", "/api/progress/restore", `{"id":"003-crashloop"}`)
 	c.start(`{"id":"001","stage":"practice"}`)
 	snap("session-live", "/api/session?live=1")
 }

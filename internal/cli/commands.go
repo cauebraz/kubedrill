@@ -62,6 +62,7 @@ func (a *app) rootCommand() *cobra.Command {
 		a.faultCommand(),
 		a.healCommand(),
 		a.resetCommand(),
+		a.progressCommand(),
 		a.nodeCommand(),
 		a.statusCommand(),
 		a.journalCommand(),

@@ -37,6 +37,23 @@ func allEpisodes(j Journal) ([]journal.Episode, error) {
 	return eps, nil
 }
 
+// countedEpisodes reads the episodes that count toward progress, oldest
+// first: every recorded one but those a progress reset no longer counts.
+// Every progress view (list, status, path, exam, stats, the recommendation
+// and the browser workspace) reads through it; journal and debrief read
+// allEpisodes, which keeps the reset ones.
+func countedEpisodes(j Journal) ([]journal.Episode, error) {
+	eps, err := allEpisodes(j)
+	if err != nil {
+		return nil, err
+	}
+	r, err := j.Resets()
+	if err != nil {
+		return nil, err
+	}
+	return r.Filter(eps), nil
+}
+
 func episodesOf(eps []journal.Episode, id string) []journal.Episode {
 	var out []journal.Episode
 	for _, e := range eps {

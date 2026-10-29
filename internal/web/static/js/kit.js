@@ -18,7 +18,9 @@ export function showKit(app, ctx) {
     section("Buttons",
       el("button", { class: "btn primary", text: "Primary" }), el("button", { class: "btn", text: "Default" }), el("button", { class: "btn ghost", text: "Ghost" }),
       el("button", { class: "btn small", text: "Small" }), el("button", { class: "btn", disabled: true, text: "Disabled" }),
-      el("button", { class: "btn", text: "Toast", onclick: () => toast("A toast message") }), el("button", { class: "btn", text: "Error toast", onclick: () => toast("An error toast", true) })),
+      el("button", { class: "btn", text: "Toast", onclick: () => toast("A toast message") }), el("button", { class: "btn", text: "Error toast", onclick: () => toast("An error toast", true) }),
+      el("button", { class: "btn", text: "Toast with Undo", onclick: () => toast("000-example: 3 runs no longer count; stage progress cleared.", false, { label: "Undo", run: () => toast("Undone") }) }),
+      el("button", { class: "btn danger", text: "Danger" }), el("button", { class: "btn small danger-quiet", text: "Danger, quiet" }), el("button", { class: "reset-link", text: "Reset progress" })),
     section("Pills", statusPill({ status: "todo" }), statusPill({ status: "solved" }), statusPill({ status: "active" }), statusPill({ status: "solved", progress: { diy: { done: true } } }), statusPill({ status: "mastered" }), el("span", { class: "pill bad", text: "fail" }), el("span", { class: "pill good live", text: "In meeting" })),
     section("Badges", [["module", "locked", 0, 0], ["module", "in-progress", 3, 1], ["level", "earned", 5, 1], ["track", "mastered", 5, 3]].map(([kind, state, lit, n]) => {
       const b = { state, lit, pips: n, code: kind === "track" ? "CKA" : kind === "level" ? "L1" : "L0.2", caption: "Kit sample, " + state };

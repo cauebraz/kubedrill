@@ -49,6 +49,10 @@ const (
 // active and the request did not ask to replace it.
 var ErrActiveElsewhere = errors.New("another episode is active")
 
+// ErrRunActive is returned by Backend.ResetProgress when the active episode
+// is in the scope of the reset; its text tells the learner what to do.
+var ErrRunActive = errors.New("end the active run first (kubedrill solution, or Give up in the page)")
+
 // Backend is what the server needs from kubedrill: the catalog, the
 // content of an assignment, the active episode and its live checks, the
 // episode actions and the workstation command of a terminal. Its methods
@@ -66,6 +70,28 @@ type Backend interface {
 	Debrief(ctx context.Context, episodeID string) (Debrief, error)
 	RecordDebrief(ctx context.Context, episodeID string, answers DebriefAnswers) error
 	Terminal(ctx context.Context, name string) (*exec.Cmd, func(), error)
+	ResetProgress(ctx context.Context, id string, stages StagesFunc) (ProgressChange, error)
+	RestoreProgress(ctx context.Context, id string) (ProgressChange, error)
+}
+
+// StagesFunc receives the resolved assignment id of a reset (empty for
+// every assignment) and the stage progress the marker it replaces saved
+// (nil when there is none), and returns the stage progress the new marker
+// saves.
+type StagesFunc = func(id string, prev json.RawMessage) (json.RawMessage, error)
+
+// ProgressChange is what a reset or a restore of progress changed. ID is
+// the assignment, empty with All for every assignment; Runs counts the
+// finished runs that stopped counting (reset) or count again (restore);
+// Stages says the stage progress was cleared or came back. Saved is the
+// stage progress the removed marker kept, which a restore puts back; the
+// page never sees it.
+type ProgressChange struct {
+	ID     string          `json:"id"`
+	All    bool            `json:"all"`
+	Runs   int             `json:"runs"`
+	Stages bool            `json:"stages"`
+	Saved  json.RawMessage `json:"-"`
 }
 
 // Catalog is the curriculum as the home page shows it, with the exam
@@ -268,7 +294,8 @@ type Validation struct {
 
 // Debrief is the summary of an ended episode, as kubedrill debrief prints
 // it: the run, the trajectory from telemetry, the diagnosis next to the
-// root cause, and the learner's stored answers.
+// root cause, and the learner's stored answers. Reset marks a run a
+// progress reset no longer counts.
 type Debrief struct {
 	EpisodeID        string         `json:"episodeId"`
 	ScenarioID       string         `json:"scenarioId"`
@@ -289,6 +316,7 @@ type Debrief struct {
 	Answers          DebriefAnswers `json:"answers"`
 	Solution         string         `json:"solution,omitempty"`
 	Stage            Stage          `json:"stage,omitempty"`
+	Reset            bool           `json:"reset,omitempty"`
 }
 
 // DebriefAnswers are the learner's reflections on an episode.
@@ -418,6 +446,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/diagnose", s.api(s.diagnose))
 	mux.HandleFunc("POST /api/progress", s.api(s.recordProgress))
 	mux.HandleFunc("POST /api/onboarded", s.api(s.onboarded))
+	mux.HandleFunc("POST /api/progress/reset", s.api(s.resetProgress))
+	mux.HandleFunc("POST /api/progress/restore", s.api(s.restoreProgress))
 	mux.Handle("GET /ws/terminal", s.terminal())
 	mux.Handle("GET /", s.static)
 	return s.guard(mux)
@@ -532,7 +562,7 @@ func (s *Server) api(fn apiFunc) http.HandlerFunc {
 			switch {
 			case errors.As(err, &he):
 				status = he.status
-			case errors.Is(err, ErrActiveElsewhere):
+			case errors.Is(err, ErrActiveElsewhere), errors.Is(err, ErrRunActive):
 				status = http.StatusConflict
 			}
 			fmt.Fprintf(s.d.Log, "web: %s %s: %v\n", r.Method, r.URL.Path, err)
@@ -712,7 +742,7 @@ func (s *Server) debrief(r *http.Request) (any, error) {
 		return nil, badRequest("%v", err)
 	}
 	d = s.debriefView(d)
-	if d.Outcome == "solved" && d.Stage != "" {
+	if d.Outcome == "solved" && d.Stage != "" && !d.Reset {
 		if err := s.progress.complete(d.ScenarioID, d.Stage, 1, 1); err != nil {
 			return nil, err
 		}
@@ -822,4 +852,75 @@ func (s *Server) recordProgress(r *http.Request) (any, error) {
 		return nil, err
 	}
 	return s.progress.all()[req.ID], nil
+}
+
+// progressScope is the body of a reset or a restore: one assignment by id,
+// or every assignment with all. Welcome, with all, shows the welcome flow
+// again after a reset.
+type progressScope struct {
+	ID      string `json:"id"`
+	All     bool   `json:"all"`
+	Welcome bool   `json:"welcome"`
+}
+
+func decodeScope(r *http.Request) (progressScope, error) {
+	var req progressScope
+	if err := decode(r, &req); err != nil {
+		return req, err
+	}
+	if (req.ID == "") == !req.All {
+		return req, badRequest("name one assignment with id, or every assignment with all")
+	}
+	if req.Welcome && !req.All {
+		return req, badRequest("welcome resets only with all")
+	}
+	return req, nil
+}
+
+// backendError keeps the conflict of an active run and turns any other
+// backend failure into a bad request.
+func backendError(err error) error {
+	if errors.Is(err, ErrRunActive) {
+		return err
+	}
+	return badRequest("%v", err)
+}
+
+// resetProgress records a reset in the journal, saving the stage progress
+// it then clears with the marker, so a restore puts it back.
+func (s *Server) resetProgress(r *http.Request) (any, error) {
+	req, err := decodeScope(r)
+	if err != nil {
+		return nil, err
+	}
+	ch, err := s.d.Backend.ResetProgress(r.Context(), req.ID, s.progress.snapshot)
+	if err != nil {
+		return nil, backendError(err)
+	}
+	ch.All = ch.ID == ""
+	if ch.Stages, err = s.progress.clear(ch.ID, req.Welcome); err != nil {
+		return nil, err
+	}
+	return ch, nil
+}
+
+// restoreProgress removes the reset marker and puts back the stage
+// progress it saved.
+func (s *Server) restoreProgress(r *http.Request) (any, error) {
+	req, err := decodeScope(r)
+	if err != nil {
+		return nil, err
+	}
+	if req.Welcome {
+		return nil, badRequest("the welcome flag is not restored")
+	}
+	ch, err := s.d.Backend.RestoreProgress(r.Context(), req.ID)
+	if err != nil {
+		return nil, backendError(err)
+	}
+	ch.All = ch.ID == ""
+	if ch.Stages, err = s.progress.restore(ch.Saved); err != nil {
+		return nil, err
+	}
+	return ch, nil
 }

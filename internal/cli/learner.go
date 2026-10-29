@@ -146,7 +146,7 @@ func (a *app) afterSolve(ctx context.Context, p render.Printer, ep *journal.Epis
 	p.Println()
 	p.Println(p.WrapLine(p.Style(render.StylePass.Bold(true), render.SolvedBanner(sc.Meta.Title, ep)), "  "))
 	if j, err := a.getJournal(); err == nil {
-		if eps, err := allEpisodes(j); err == nil {
+		if eps, err := countedEpisodes(j); err == nil {
 			if rec, ok := a.recommend(cat, eps); ok {
 				for _, l := range recommendationLines(p, cat, rec, "Recommended") {
 					p.Println(l)

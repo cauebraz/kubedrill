@@ -603,9 +603,36 @@ body.onboarding .nav, body.onboarding .crumbs, body.onboarding .session-pill { d
 
 /* ---------- toast ---------- */
 
-.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 40; max-width: 90vw; padding: 10px 14px; border-radius: var(--r-2); background: var(--bg-3); color: var(--fg); border: 1px solid var(--line-1); box-shadow: var(--shadow-2); font-size: var(--t-sm); animation: rise var(--base) var(--ease) both; }
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 40; width: max-content; max-width: min(90vw, 560px); padding: 10px 14px; border-radius: var(--r-2); background: var(--bg-3); color: var(--fg); border: 1px solid var(--line-1); box-shadow: var(--shadow-2); font-size: var(--t-sm); animation: rise var(--base) var(--ease) both; }
 .toast.error { border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
 .toast.error::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--bad); margin-right: 8px; vertical-align: middle; }
+.toast.with-action { display: flex; align-items: center; gap: 14px; }
+.toast-action { flex: none; padding: 4px 10px; border-radius: var(--r-1); border: 1px solid var(--line-2); background: var(--bg-2); color: var(--brand); font-size: var(--t-sm); font-weight: 600; cursor: pointer; transition: background var(--fast), border-color var(--fast); }
+.toast-action:hover { background: var(--bg-1); border-color: var(--brand); }
+.toast-action:focus-visible { outline: none; box-shadow: var(--ring); }
+
+/* ---------- progress reset ---------- */
+
+.btn.danger { background: var(--bad); border-color: var(--bad); color: var(--on-accent); }
+.btn.danger:hover { background: color-mix(in srgb, var(--bad) 85%, var(--fg)); border-color: transparent; }
+.btn.danger-quiet { background: transparent; border-color: var(--line-1); color: var(--bad); }
+.btn.danger-quiet:hover { background: var(--bad-dim); border-color: color-mix(in srgb, var(--bad) 40%, transparent); color: var(--bad); }
+.reset-link { padding: 2px 0; background: none; border: 0; color: var(--fg-2); font-size: var(--t-xs); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-2); cursor: pointer; transition: color var(--fast); }
+.reset-link:hover { color: var(--bad); text-decoration-color: currentColor; }
+.reset-link:focus-visible { outline: none; box-shadow: var(--ring); border-radius: 4px; }
+.stepper-foot { margin: 22px 8px 0; padding-top: 12px; border-top: 1px solid var(--line); }
+.assign.lab-mode .stepper-foot { display: none; }
+.reset-foot { margin: 18px 0 0; text-align: center; }
+.modal.reset .reset-list { margin: 0 0 16px; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--fg-1); font-size: var(--t-sm); line-height: 1.5; }
+.modal.reset .reset-word { margin-bottom: 12px; }
+.modal.reset .reset-subject { margin: -6px 0 14px; color: var(--fg-1); font-size: var(--t-sm); }
+.modal.reset .reset-word .input { font-family: var(--font-mono); }
+.check-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: var(--t-sm); color: var(--fg-1); cursor: pointer; }
+.check-row input { width: 16px; height: 16px; accent-color: var(--brand); }
+.reset-error { margin: 10px 0 0; padding: 8px 10px; border-radius: var(--r-1); background: var(--bad-dim); color: var(--fg); font-size: var(--t-sm); }
+.reset-all { margin-top: var(--s-6); padding: var(--s-5); border: 1px dashed var(--line-1); border-radius: var(--r-3); display: flex; gap: var(--s-5); align-items: center; justify-content: space-between; }
+.reset-all h3 { font-size: var(--t-md); margin-bottom: 4px; }
+.reset-all p { max-width: 620px; line-height: 1.6; }
 
 /* ---------- responsive ---------- */
 
@@ -624,7 +651,8 @@ body.onboarding .nav, body.onboarding .crumbs, body.onboarding .session-pill { d
   .step .label { white-space: nowrap; }
   .step .label small { display: none; }
   .step:not(.current) .label { display: none; }
-  .stepper .concepts, .stepper .stepper-mastery { display: none; }
+  .stepper .concepts, .stepper .stepper-mastery, .stepper .stepper-foot { display: none; }
+  .reset-all { flex-direction: column; align-items: flex-start; }
   .lab { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr) auto; }
   .lab-side { grid-row: auto; max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--line); }
   .lab-foot { grid-column: 1; flex-wrap: wrap; gap: 8px; }

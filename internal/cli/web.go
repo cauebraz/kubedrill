@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -218,10 +219,13 @@ func (b *webBackend) catalog() (Catalog, error) {
 }
 
 // webState is what several calls read together: the scenario catalog, the
-// curriculum, every episode and the active one.
+// episodes that count toward progress (eps), every recorded episode (all),
+// the reset markers and the active episode.
 type webState struct {
 	cat     Catalog
 	eps     []journal.Episode
+	all     []journal.Episode
+	resets  journal.Resets
 	current *journal.Episode
 }
 
@@ -238,11 +242,15 @@ func (b *webBackend) state() (webState, error) {
 	if err != nil {
 		return webState{}, fmt.Errorf("read current episode: %w", err)
 	}
-	eps, err := allEpisodes(j)
+	all, err := allEpisodes(j)
 	if err != nil {
 		return webState{}, err
 	}
-	return webState{cat: cat, eps: eps, current: current}, nil
+	resets, err := j.Resets()
+	if err != nil {
+		return webState{}, err
+	}
+	return webState{cat: cat, eps: resets.Filter(all), all: all, resets: resets, current: current}, nil
 }
 
 // masteryView is the CLI mastery of sc with the distinct variants solved,
@@ -692,28 +700,29 @@ func (b *webBackend) Diagnose(ctx context.Context, text string) error {
 	return err
 }
 
-// episode finds the episode with id among every recorded one.
-func (b *webBackend) episode(id string) (*journal.Episode, *scenario.Scenario, error) {
+// episode finds the episode with id among every recorded one, including
+// those a progress reset no longer counts; counts says whether it counts.
+func (b *webBackend) episode(id string) (ep *journal.Episode, sc *scenario.Scenario, counts bool, err error) {
 	st, err := b.state()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
-	for i := range st.eps {
-		if st.eps[i].ID != id {
+	for i := range st.all {
+		if st.all[i].ID != id {
 			continue
 		}
-		sc, err := st.cat.Find(st.eps[i].ScenarioID)
+		sc, err := st.cat.Find(st.all[i].ScenarioID)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, false, err
 		}
-		return &st.eps[i], sc, nil
+		return &st.all[i], sc, st.resets.Counts(st.all[i]), nil
 	}
-	return nil, nil, fmt.Errorf("no episode %q in the journal", id)
+	return nil, nil, false, fmt.Errorf("no episode %q in the journal", id)
 }
 
 // Debrief is what kubedrill debrief prints for the episode id.
 func (b *webBackend) Debrief(ctx context.Context, id string) (web.Debrief, error) {
-	ep, sc, err := b.episode(id)
+	ep, sc, counts, err := b.episode(id)
 	if err != nil {
 		return web.Debrief{}, err
 	}
@@ -731,6 +740,7 @@ func (b *webBackend) Debrief(ctx context.Context, id string) (web.Debrief, error
 		Telemetry:  "none",
 		FixTargets: nonNil(sc.Meta.FixTargets),
 		RootCause:  rootCause(sc, ep),
+		Reset:      !counts,
 	}
 	if rd, err := b.render(ep); err == nil {
 		d.Solution = rd.Solution
@@ -765,7 +775,7 @@ func (b *webBackend) Debrief(ctx context.Context, id string) (web.Debrief, error
 // RecordDebrief stores the learner's answers on the episode id, keeping a
 // principle written from the terminal.
 func (b *webBackend) RecordDebrief(ctx context.Context, id string, ans web.DebriefAnswers) error {
-	ep, _, err := b.episode(id)
+	ep, _, _, err := b.episode(id)
 	if err != nil {
 		return err
 	}
@@ -832,4 +842,46 @@ func (b *webBackend) Terminal(ctx context.Context, name string) (*exec.Cmd, func
 		_ = ws.RemoveContainer(cctx, name)
 	}
 	return cmd, cleanup, nil
+}
+
+// ResetProgress resets the progress of the scenario id names (every
+// scenario when id is empty), refusing while the active run is in scope;
+// the marker saves what stages returns.
+func (b *webBackend) ResetProgress(ctx context.Context, id string, stages web.StagesFunc) (web.ProgressChange, error) {
+	sid, err := b.a.scopeID(id)
+	if err != nil {
+		return web.ProgressChange{}, err
+	}
+	j, err := b.a.getJournal()
+	if err != nil {
+		return web.ProgressChange{}, err
+	}
+	var save func(json.RawMessage) (json.RawMessage, error)
+	if stages != nil {
+		save = func(prev json.RawMessage) (json.RawMessage, error) { return stages(sid, prev) }
+	}
+	res, err := resetProgress(j, sid, save)
+	if err != nil {
+		return web.ProgressChange{}, err
+	}
+	return web.ProgressChange{ID: sid, Runs: res.Runs}, nil
+}
+
+// RestoreProgress removes the reset marker of the scenario id names (of
+// every scenario when id is empty) and returns the stage progress it
+// saved.
+func (b *webBackend) RestoreProgress(ctx context.Context, id string) (web.ProgressChange, error) {
+	sid, err := b.a.scopeID(id)
+	if err != nil {
+		return web.ProgressChange{}, err
+	}
+	j, err := b.a.getJournal()
+	if err != nil {
+		return web.ProgressChange{}, err
+	}
+	res, err := restoreProgress(j, sid)
+	if err != nil {
+		return web.ProgressChange{}, err
+	}
+	return web.ProgressChange{ID: sid, Runs: res.Runs, Saved: res.Reset.Stages}, nil
 }

@@ -31,7 +31,7 @@ internal/cluster/         kind lifecycle (doctor, ensure, delete, kubeconfig, au
 internal/env/             learner loop and state machine: Start/Observe/Grade/Diagnose/Hint/Surrender/Submit/Expire
 internal/atomicfile/      file writes through a temporary file, a rename and a directory fsync
 internal/scriptrun/       bash runner for script checks, hook.sh, solve.sh and shortcuts: process-group kill after exit and on cancel, output cap, host env allowlist
-internal/journal/         episodes, outcomes, diagnosis, debrief and telemetry under ~/.local/share/kubedrill (XDG_DATA_HOME); a lock file (exclusive create, stale rule) serializes host and container writers
+internal/journal/         episodes, outcomes, diagnosis, debrief and telemetry under ~/.local/share/kubedrill (XDG_DATA_HOME); resets.json holds the progress reset markers (Resets.Filter drops the runs they no longer count); a lock file (exclusive create, stale rule) serializes host and container writers
 internal/progress/        pure rules over the journal: clean solve, mastery per scenario and concept, badges (module, level, exam track), Next, Stats
 internal/telemetry/       reads the audit log and the shell log (drops kubedrill's own requests), summarizes them into journal.Telemetry and a verdict
 internal/faults/          node faults through docker (pause, stop kubelet, tc netem), recorded in faults.json in the cluster state dir, Heal

@@ -11,15 +11,16 @@ the first page with a ```mermaid block and themes it from the tokens.
 | `favicon.svg` | The mark (a five-step ring, one step and the center in the brand teal) with its own light and dark colors through `prefers-color-scheme`; the top bar draws the same paths with `--fg` and `--brand` |
 | `app.js` | Entry: routes (`#/`, `#/catalog`, `#/exams`, `#/badges`, `#/a/<id>/<stage>`, `#/a/<id>/debrief/<episode>`, `#/kit`), navigation, theme, preview and server-down banners |
 | `js/api.js` | The JSON API, the NDJSON launch stream, the connection listener |
-| `js/dom.js` | `el`, `svg`, `clear`, `toast`, `store` (localStorage), `onLeave` cleanups, `shuffledOrder` (the choice order of a question, seeded by its text), icons |
-| `js/keys.js` | Shortcuts per screen (`bind`), the overlay stack Esc closes, the `?` help |
+| `js/dom.js` | `el`, `svg`, `clear`, `toast` (with an optional action button, such as Undo), `store` (localStorage), `onLeave` cleanups, `shuffledOrder` (the choice order of a question, seeded by its text), icons |
+| `js/keys.js` | Shortcuts per screen (`bind`), the overlay stack Esc closes, `trapFocus` (Tab stays inside a dialog), the `?` help |
 | `js/ui.js` | Shared components: stages, dots, mastery meter (clean solves out of 3), `cleanVariantsText` (distinct variants among the clean solves against the variants mastery needs), status pill and its vocabulary (`statusOf`: not started, in progress, live, complete, mastered), assignment row, `hideFixSection`, skeleton, error state |
 | `js/welcome.js` | The welcome flow (`#/welcome`): the five steps of the loop on a worked ticket, shown once per journal before the workspace opens |
 | `js/mermaid.js` | Renders ```mermaid blocks of scenario markdown with the vendored mermaid, themed from the tokens, redrawn on theme change |
 | `js/home.js`, `js/catalog.js`, `js/exams.js`, `js/badges.js` | The four top-level screens |
 | `js/badge.js` | The badge SVG (`badgeSVG(kind, badge, {size, level})`, built with `createElementNS`, text through `textContent`; under 64 pixels (`SMALL`) the center code gives way to the center dot of the mark), the shapes and ring arcs, `pips`, `stateLabel`, `colorVar`, `allBadges` (every badge of a catalog) and `remember` (the last states seen, in localStorage, so the result page names a change) |
+| `js/reset.js` | The progress reset dialog (one assignment, or everything behind typing `reset`), the reset and restore calls, and the toast with Undo; it updates `kd:badges-seen` after each |
 | `js/share.js` | The share dialog: the 1200x627 card drawn on a canvas with 2D primitives from the `.share-card` tokens, the name field, Download PNG and Copy text |
-| `js/assignment.js` | The assignment shell, stepper and concept drawer |
+| `js/assignment.js` | The assignment shell, stepper (Reset progress at its foot) and concept drawer |
 | `js/meeting.js`, `js/quiz.js`, `js/learn.js`, `js/lab.js`, `js/result.js` | The stages: meeting, quiz, learn and diagram, practice and DIY lab, debrief and result |
 | `js/kit.js` | The component kit (`#/kit`, linked when the server runs with `--static-dir`) |
 | `app.css` | The design system: tokens, then primitives, components and screens |
@@ -85,6 +86,10 @@ Rules:
   in the `aria-label` and a text label.
 - The share card (`canvas.share-card`) keeps the dark token set in both
   themes, like the terminal: `:root, .share-card` declares it.
+- An action that throws progress away (`.btn.danger` in its dialog,
+  `.btn.danger-quiet` or `.reset-link` where it is offered) sits away from
+  the actions that start a run, asks first with a dialog that names what
+  changes, and offers Undo in the toast.
 - Esc that closes an overlay stops there and never reaches the terminal.
   The lab's mentor is a docked column beside the terminal at 961 pixels and
   up (Esc inside it closes it), a drawer below that.

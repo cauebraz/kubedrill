@@ -5,6 +5,7 @@ import { el, clear, toast, store, duration } from "./dom.js";
 import { bind } from "./keys.js";
 import { masteryMeter, masteryNeed, cleanVariantsText, skeleton, errorState } from "./ui.js";
 import { badgeSVG, allBadges, remember, STATE_WORDS, KIND_WORDS } from "./badge.js";
+import { openReset } from "./reset.js";
 
 const VERDICTS = {
   "root-cause": ["good", "Root cause", "Your first change hit an object the fix belongs to."],
@@ -157,6 +158,13 @@ export function renderDone(stage, a) {
         el("dt", { text: "Attempts" }), el("dd", { text: m.attempts + ", " + m.solved + " solved" })),
       el("div", { class: "done-actions" },
         el("a", { class: "btn", href: base + "diy", text: "Run DIY again on another variant" }),
-        el("a", { class: "btn primary", href: "#/", text: "Back home" })))));
+        el("a", { class: "btn primary", href: "#/", text: "Back home" }))),
+    el("p", { class: "reset-foot small muted" }, "Want to do it again from scratch? ", resetLink(a))));
   bind("Enter", "Back home", () => { location.hash = "#/"; });
+}
+
+function resetLink(a) {
+  const b = el("button", { class: "reset-link", type: "button", text: "Reset this assignment's progress" });
+  b.addEventListener("click", () => openReset({ id: a.id, title: a.title }, b));
+  return b;
 }

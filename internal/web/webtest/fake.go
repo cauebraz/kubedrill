@@ -7,6 +7,7 @@ package webtest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -52,6 +53,7 @@ type Fake struct {
 	active   *activeEpisode
 	ended    map[string]*endedEpisode
 	records  map[string]*record
+	resets   map[string]*fakeReset
 	sequence int
 	hints    []string
 }
@@ -62,6 +64,13 @@ type record struct {
 	status   string
 	mastery  web.Mastery
 	standing progress.Standing
+}
+
+// fakeReset is a reset marker: the records it replaced with a fresh
+// history and the stage progress the server saved with it.
+type fakeReset struct {
+	records map[string]record
+	stages  json.RawMessage
 }
 
 type activeEpisode struct {
@@ -91,7 +100,7 @@ func New() *Fake {
 			mastery:  web.Mastery{Attempts: 3, Solved: 3, CleanInLast: 3, Last: 3, Variants: 3, VariantsSolved: 3, CleanVariants: 3, Mastered: true},
 			standing: progress.Standing{ID: id, Started: true, Clean: true, Mastered: true, CleanVariants: 3, VariantsClean: 3, FirstClean: &at}}
 	}
-	return &Fake{ended: map[string]*endedEpisode{}, Now: time.Now, records: map[string]*record{
+	return &Fake{ended: map[string]*endedEpisode{}, resets: map[string]*fakeReset{}, Now: time.Now, records: map[string]*record{
 		FullID: {status: "todo",
 			mastery:  web.Mastery{Attempts: 2, Last: 2, Variants: 3},
 			standing: progress.Standing{ID: FullID, Started: true}},
@@ -602,4 +611,97 @@ func (f *Fake) Terminal(_ context.Context, name string) (*exec.Cmd, func(), erro
 		f.mu.Unlock()
 	}
 	return cmd, cleanup, nil
+}
+
+// ResetProgress replaces the history of id (every assignment when id is
+// empty) with a fresh one, keeping the old records and the stage progress
+// stages returns for RestoreProgress. It refuses while a run in scope is
+// active.
+func (f *Fake) ResetProgress(_ context.Context, id string, stages web.StagesFunc) (web.ProgressChange, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if id != "" {
+		var ok bool
+		if id, ok = f.resolve(id); !ok {
+			return web.ProgressChange{}, fmt.Errorf("no scenario matches %q", id)
+		}
+	}
+	if f.active != nil && (id == "" || f.active.view.ScenarioID == id) {
+		return web.ProgressChange{}, fmt.Errorf("%s is active (episode %s); %w", f.active.view.ScenarioID, f.active.view.EpisodeID, web.ErrRunActive)
+	}
+	prev := f.resets[id]
+	r := &fakeReset{records: map[string]record{}}
+	if prev != nil {
+		r.records = prev.records
+	}
+	if stages != nil {
+		var old json.RawMessage
+		if prev != nil {
+			old = prev.stages
+		}
+		s, err := stages(id, old)
+		if err != nil {
+			return web.ProgressChange{}, err
+		}
+		r.stages = s
+	}
+	runs := 0
+	for sid, rec := range f.records {
+		if id != "" && sid != id {
+			continue
+		}
+		if _, kept := r.records[sid]; !kept {
+			r.records[sid] = *rec
+		}
+		runs += rec.mastery.Attempts
+		f.records[sid] = &record{status: "todo", mastery: web.Mastery{Variants: rec.mastery.Variants}, standing: progress.Standing{ID: sid}}
+	}
+	f.resets[id] = r
+	return web.ProgressChange{ID: id, Runs: runs}, nil
+}
+
+// RestoreProgress puts back the records the reset of id replaced, with
+// the runs recorded since added to them.
+func (f *Fake) RestoreProgress(_ context.Context, id string) (web.ProgressChange, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if id != "" {
+		var ok bool
+		if id, ok = f.resolve(id); !ok {
+			return web.ProgressChange{}, fmt.Errorf("no scenario matches %q", id)
+		}
+	}
+	r := f.resets[id]
+	if r == nil {
+		return web.ProgressChange{}, fmt.Errorf("restore progress of %q: no reset recorded", id)
+	}
+	delete(f.resets, id)
+	runs := 0
+	for sid, old := range r.records {
+		cur := f.records[sid]
+		back := old
+		if cur != nil && cur.mastery.Attempts > 0 {
+			back.mastery.Attempts += cur.mastery.Attempts
+			back.mastery.Solved += cur.mastery.Solved
+			back.standing.Started = true
+		}
+		runs += old.mastery.Attempts
+		f.records[sid] = &back
+	}
+	return web.ProgressChange{ID: id, Runs: runs, Saved: r.stages}, nil
+}
+
+// resolve finds the record whose id starts with ref. Callers hold mu.
+func (f *Fake) resolve(ref string) (string, bool) {
+	for sid := range f.records {
+		if sid == ref {
+			return sid, true
+		}
+	}
+	for sid := range f.records {
+		if strings.HasPrefix(sid, ref) {
+			return sid, true
+		}
+	}
+	return "", false
 }

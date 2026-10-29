@@ -188,7 +188,11 @@ func (a *app) presentEpisode(ctx context.Context, cat Catalog, j Journal, ep *jo
 	}
 	a.println()
 	if ep.Mode != journal.ModeExam && a.interactive() {
-		if err := a.offerWorkedExample(cat, ep, rd, past); err != nil {
+		counted, err := countedEpisodes(j)
+		if err != nil {
+			return err
+		}
+		if err := a.offerWorkedExample(cat, ep, rd, withoutEpisode(counted, ep.ID)); err != nil {
 			return err
 		}
 	}
@@ -315,7 +319,7 @@ func writeTicket(p render.Printer, ep *journal.Episode, rd *scenario.Rendered, e
 func (a *app) expectedLine(ep *journal.Episode, sc *scenario.Scenario) string {
 	expected := fmt.Sprintf("Expected: %d min", sc.Meta.Minutes)
 	if j, err := a.getJournal(); err == nil {
-		if eps, err := allEpisodes(j); err == nil {
+		if eps, err := countedEpisodes(j); err == nil {
 			m := progress.ScenarioMastery(episodesOf(withoutEpisode(eps, ep.ID), sc.Meta.ID), scenarioInfo(sc))
 			if m.Solved > 0 && m.MedianSolve > 0 {
 				expected += fmt.Sprintf(" (yours: %s median over %s)", render.Minutes(m.MedianSolve), render.Plural(m.Solved, "solve"))

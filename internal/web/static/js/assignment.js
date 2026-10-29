@@ -10,6 +10,7 @@ import { renderQuiz } from "./quiz.js";
 import { renderLearn } from "./learn.js";
 import { renderLab } from "./lab.js";
 import { renderDone, renderDebrief } from "./result.js";
+import { openReset } from "./reset.js";
 
 export function firstOpenStage(a) {
   for (const s of stagesFor(a)) {
@@ -48,7 +49,8 @@ export function showAssignment(app, ctx, id, stageId, extra) {
         el("span", null,
           el("span", { class: "eyebrow muted", text: "Module badge / " + STATE_WORDS[a.moduleBadge.state] }),
           el("span", { class: "small", text: a.moduleTitle }),
-          el("span", { class: "small muted", text: a.moduleBadge.caption }))) : null);
+          el("span", { class: "small muted", text: a.moduleBadge.caption }))) : null,
+      el("div", { class: "stepper-foot" }, resetButton(a)));
     const stage = el("section", { class: "stage", tabindex: "-1" });
     const lab = stageId === "practice" || stageId === "diy" || stageId === "exam";
     clear(app, el("div", { class: "assign" + (lab ? " lab-mode" : "") }, stepper, stage));
@@ -75,4 +77,12 @@ export function openConcept(c) {
     el("div", { class: "drawer-body" }, (c.body ? el("div", { class: "prose compact", html: c.body }) : el("div", { class: "prose compact" }, el("p", { text: c.summary || "No page for this concept yet." }))))));
   document.body.appendChild(back);
   closeBtn.focus();
+}
+
+// resetButton opens the reset dialog of assignment a; it sits low in the
+// stepper, away from the actions that start a run.
+export function resetButton(a) {
+  const b = el("button", { class: "reset-link", type: "button", text: "Reset progress", title: "Stop counting the runs of this assignment and clear its stage checkmarks; the journal keeps the history" });
+  b.addEventListener("click", () => openReset({ id: a.id, title: a.title }, b));
+  return b;
 }
